@@ -616,3 +616,4 @@ body:has(.ws) { max-width: none; margin: 0; padding: 0; background: var(--ws-bg)
 .ws-ask form { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .ws-ask .ws-field { width: 100%; margin: 0; }
 .ws-asked { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.ws-glyph-auto_approved { border: 1.5px solid var(--ws-ok); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--ws-surface), inset 0 0 0 4px var(--ws-ok); }

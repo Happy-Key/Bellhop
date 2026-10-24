@@ -22,8 +22,9 @@ const GROUPS: { id: CaseAttention; label: string; hint: string }[] = [
   { id: "reviewer", label: "Needs a bank reviewer", hint: "Authorize, confirm, review or unblock" },
   { id: "customer", label: "Waiting on the customer", hint: "The investigation needs the customer's answer" },
   { id: "system", label: "Investigating", hint: "The reasoning model is working; nobody needs to act" },
+  { id: "auto_approved", label: "Approved automatically", hint: "Policy AUTO-1 approved and paid (SIMULATED); no review needed" },
   { id: "no_report", label: "No report yet", hint: "Case opened, nothing recorded" },
-  { id: "decided", label: "Decided", hint: "An authorized outcome is recorded" },
+  { id: "decided", label: "Decided by a person", hint: "A person's outcome is recorded" },
 ];
 
 const FILTERS: { id: Filter; label: string }[] = [
@@ -31,6 +32,7 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "reviewer", label: "Reviewer" },
   { id: "customer", label: "Customer" },
   { id: "system", label: "Investigating" },
+  { id: "auto_approved", label: "Auto-approved" },
   { id: "decided", label: "Decided" },
 ];
 
@@ -76,7 +78,7 @@ export function ClaimsQueue() {
         const p = paymentSummary(c);
         return [caseRef(c._id), p.text, c.matched?.ref ?? "", c.status.headline, ...c.status.work.map((w) => w.title)].some((s) => s.toLowerCase().includes(term));
       })
-      .sort((a, b) => GROUPS.findIndex((g) => g.id === a.triage.attention) - GROUPS.findIndex((g) => g.id === b.triage.attention) || lastTouched(b) - lastTouched(a));
+      .sort((a, b) => GROUPS.findIndex((g) => g.id === a.status.attention) - GROUPS.findIndex((g) => g.id === b.status.attention) || lastTouched(b) - lastTouched(a));
   }, [cases, filter, search]);
 
   const selected = visible.find((c) => c._id === selectedId) ?? null;
@@ -121,7 +123,8 @@ export function ClaimsQueue() {
             ) : (
               <>
                 {cases.length} {cases.length === 1 ? "case" : "cases"}. Needs a reviewer: <strong>{counts.reviewer}</strong> · waiting on the customer:{" "}
-                <strong>{counts.customer}</strong> · investigating: <strong>{counts.system}</strong> · decided: <strong>{counts.decided}</strong>.
+                <strong>{counts.customer}</strong> · investigating: <strong>{counts.system}</strong> · approved automatically:{" "}
+                <strong>{counts.auto_approved}</strong> · decided by a person: <strong>{counts.decided}</strong>.
               </>
             )}{" "}
             <span className="ws-muted">Live from Convex. Synthetic data.</span>

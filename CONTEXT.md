@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (text chat merged with the voice-call fixes)_
+_Last updated: 2026-10-24 (automatic approvals get their own queue category)_
 
 ## What this is
 
@@ -50,7 +50,7 @@ Rules that always hold:
 | Demo personas | ✅ `/call` picker: Margaret (P01, auto-approve), Grace (P19, own device → person), Victor (P12, identity fail → person), Samuel (P16, scam → specialist). Each has its own seeded Nessie account; its case sets itself up. Margaret verified live end to end. Committed and pushed (rebased onto `936dea4`) |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
 | Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, **203 tests**, build pass |
+| Checks | ✅ `npm run verify`: typecheck, lint, **204 tests**, build pass |
 
 ## Branch and git
 
@@ -102,7 +102,8 @@ Rules that always hold:
 
 ## Claims workstation (`/review`)
 
-- **Queue** `/review`: groups Needs a bank reviewer / Waiting on the customer / Investigating / No report yet / Decided;
+- **Queue** `/review`: groups Needs a bank reviewer / Waiting on the customer / Investigating / **Approved automatically**
+  (AUTO-1, no review needed; a flagged one goes back to the reviewer group) / No report yet / Decided by a person;
   rows show the active work item, any proposal and blockers; search, filter, keyboard selection. Read-only
   `review:queue` query; view model `lib/review/caseStatus.ts`.
 - **Case workspace** `/review/<id>` (rebuilt conclusion-first 2026-10-24): **What happened** (model summary or the
@@ -225,3 +226,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | **Claims queue crash fixed** (`review:queue`: "Cannot read properties of undefined (reading 'filter')"). Cause: 3 of the 11 dev cases (created before ~07:20 on 2026-10-24) keep an older stored analysis: no `facts.txnDecisions`/`facts.answers`, and questions without `key`/`audience`/`priority`. An analysis is recomputed only when the case's evidence changes, and the new rule-based investigation reads `facts.txnDecisions` once a payment is matched. Fix: `readStoredAnalysis()` (`lib/domain/triage.ts`) fills the gaps, and every reader uses it (queue, model input in `proposals.ts`, case workspace, old case page). Not recomputing old cases on purpose: that would re-run AUTO-1 (possible payouts) and the reasoning model. Regression test fails without the fix with the same error. Queue verified on dev (11 cases). 199 tests. Not committed |
 | 2026-10-24 | **Text chat alternative to the call** (user request). `/call` gets a Call / Chat by text switch. `convex/chat.ts`: `startChat` (a voice session with `channel: "text"`; on a reported case it issues the first waiting question so the reply links to it), `send` (action: same `recordVoiceUtterance` + new shared `takeTurn` in `convex/intakeTurn.ts`, which the webhook now also uses), `waitingQuestions`. `issueNextQuestion` extracted in `convex/voice.ts`. **Reviewer questions:** new `reviewerQuestions` table and `convex/reviewerQuestions.ts` (ask, withdraw), asked first on calls and chats, answered by the linked reply, passed to the model (`caseFacts.reviewerQuestions`), shown in `/review/<id>` and in case status. Schema: optional `voiceSessions.channel`, new table (already pushed to `friendly-grouse-183` by the watcher). 8 new tests, 199 pass; checked in headless Chrome (new chat and existing-case waiting list). Committed and pushed |
 | 2026-10-24 | Merged `origin/foundation` (voice loop/ending fixes `a742dfb`, queue crash fix `c0e064a`) into the text-chat commit. Conflicts resolved: `issueVoiceQuestion` keeps upstream's no-acknowledgement, wrap-up and closing (`end_call`) but chooses via the shared `issueNextQuestion` (reviewer → model → rules); the wait constants (12 s / 16 s) moved into `convex/intakeTurn.ts`, which both the webhook and the chat use; the chat ends on the closing message; `/call` keeps upstream's new-case-per-report plus the Call / Chat switch; schema keeps both `channel` and `closingAt`. 203 tests pass |
+| 2026-10-24 | **Automatic approvals get their own queue category** (user request): `CaseAttention` gains `auto_approved`; AUTO-1 approvals that aren't flagged show under "Approved automatically" (status "Approved automatically"), not with person-decided cases or the review queue; a flagged one stays in "Needs a bank reviewer". "Decided" renamed "Decided by a person". Also fixed the queue sorting by the old rule triage instead of the case status. 204 tests pass. Checked before pushing: the live-call fix files (`VoiceCall.tsx`, `cartesia.ts`, `voiceTurn.ts`, `model.ts`, `triage.ts`, `integrations.md`) are identical to upstream `c0e064a`; the voice turn differs only by asking open reviewer questions first. Committed and pushed |

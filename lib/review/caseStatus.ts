@@ -12,7 +12,12 @@ import { EMPTY_INVESTIGATION, orderWorkItems, ruleBasedInvestigation, type Inves
 import { triageCase, type StoredAnalysis } from "../domain/triage";
 import type { EvidenceFetchState } from "../domain/workflow";
 
-export type CaseAttention = "reviewer" | "customer" | "system" | "no_report" | "decided";
+/**
+ * Who acts on a case. "auto_approved": approved and paid (SIMULATED) under policy AUTO-1 with no
+ * person needed, kept apart from cases a person decided and from the review queue. An automatic
+ * approval that later facts call into question is flagged and goes back to "reviewer".
+ */
+export type CaseAttention = "reviewer" | "customer" | "system" | "no_report" | "auto_approved" | "decided";
 
 export interface AssessmentRow {
   proposal: CaseProposal;
@@ -142,7 +147,7 @@ export function caseStatus(i: CaseStatusInput): CaseStatus {
     attention = "reviewer";
     headline = `Review the approval: ${outcome.needsReview}`;
   } else if (outcome) {
-    attention = "decided";
+    attention = outcome.by === "policy" ? "auto_approved" : "decided";
     headline = outcome.label;
   } else if (i.bankFetch.status !== "ok") {
     attention = "reviewer";
@@ -177,7 +182,7 @@ export function caseStatus(i: CaseStatusInput): CaseStatus {
   const work = orderWorkItems(investigation.workItems);
   const active = work.find((w) => w.status !== "done" && w.status !== "not_needed");
   const statusLabel =
-    outcome ? (outcome.needsReview ? "Approval flagged for review" : "Decided")
+    outcome ? (outcome.needsReview ? "Approval flagged for review" : outcome.by === "policy" ? "Approved automatically" : "Decided")
     : disposition?.awaitingPerson ? "Awaiting authorization"
     : disposition ? (disposition.resolution ? "Decided" : `Proposed: ${DECISION_LABEL[disposition.decision].toLowerCase()}`)
     : attention === "customer" ? "Awaiting the customer"
