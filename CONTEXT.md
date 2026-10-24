@@ -2,6 +2,7 @@
 
 > Living summary of where the project stands. **Update it on every prompt that changes anything**: change
 > the sections below and add an entry to the revision log at the bottom.
+> New agent? Start with `docs/agent-handoff.md` (self-contained briefing).
 > Details live in `docs/status.md` (checklist), `docs/integrations.md` (verified provider
 > facts), `docs/architecture.md` (design), and `CLAUDE.md` (rules).
 
@@ -208,6 +209,8 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | First live voice test passed (Playground → webhook tool → Convex → dashboard). Found `end_call` not enabled; usage recorded |
 | 2026-10-24 | Committed and pushed tool registration (`ed41f61`). Browser call client built: `components/VoiceCall.tsx` + `lib/voice/`, 9 new tests; not run live |
 | 2026-10-24 | Live browser call failed: `dynamic_variables_not_allowed` for browser tokens. Switched to binding by call ID (`bindVoiceCall`, tool sends `system__conversation_id`); 74 tests pass; tool needs re-registering |
+| 2026-10-24 | Pulled merged `foundation` (`ff904d8`, includes `client-view`); handoff commit rebased on top. `npm run verify` passes on the merged tree (100 tests; build includes `/call`). Local `.env.local` targets `dev:dynamic-chihuahua-120` |
+| 2026-10-24 | `docs/agent-handoff.md` added: briefing for other LLMs/agents (rules, branch state, API changes, decisions, pending actions). Dry-run merge of `origin/client-view` into `foundation`: no conflicts |
 | 2026-10-24 | Bitdeer integration paused by the user (nothing configured; scripted mode). `foundation` pushed so another agent's frontend changes can merge |
 | 2026-10-24 | **Bitdeer reinstated** as the extraction provider (user reversed the removal). Docs re-checked; the model now gets the question being answered; `npm run live:reasoning` check script added; integration steps in `docs/integrations.md` |
 | 2026-10-24 | Decisions on the 13 questions recorded. CLAUDE.md scope widened; Bitdeer removed from docs and code comments; CFPB FAQ excerpt in `regulatory.ts` replaced with word-for-word quotes (user-approved); Nessie deposits read probe (200, empty); consent and AI notice added to the agent instructions |
