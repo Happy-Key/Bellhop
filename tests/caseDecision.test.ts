@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { analyzeCase } from "../lib/domain/workflow";
 import { interpretStatementScripted } from "../lib/domain/interpret";
-import { buildCaseReasoningInput, executionPlan, inputSignature, readyForDecision, validateProposal, type CaseProposal } from "../lib/domain/caseDecision";
+import { buildCaseReasoningInput, executionPlan, inputSignature, proposedAmount, readyForAssessment, validateProposal, type CaseProposal } from "../lib/domain/caseDecision";
+import { EMPTY_INVESTIGATION, diffInvestigations, ruleBasedInvestigation, type Investigation, type WorkItem } from "../lib/domain/investigation";
 import type { AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 import type { Statement, TransactionEvidence } from "../lib/domain/schemas";
 import { OpenAICompatibleReasoningProvider } from "../lib/providers/reasoning";
@@ -22,7 +23,7 @@ const proposal = (over: Partial<CaseProposal>): CaseProposal => ({
   summary: "Customer disputes a $389 purchase that matches the bank record.",
   rationale: [{ point: "The record matches the reported amount and payee.", refs: ["T:p-1", "S1"] }],
   legalBasis: [{ sourceRef: "R:reg-e.1005.2m", reading: "likely_applies", note: "Initiated by someone else per the customer." }],
-  missingInformation: [],
+  investigation: EMPTY_INVESTIGATION,
   nextQuestion: null,
   documents: [],
   ...over,
@@ -31,7 +32,10 @@ const proposal = (over: Partial<CaseProposal>): CaseProposal => ({
 describe("case decision proposals", () => {
   it("builds a model input with the rule route, evidence and citable refs, and signs it", () => {
     const { analysis, input } = clear();
-    expect(readyForDecision(analysis, 1, true)).toBe(true);
+    expect(analysis.questions.some((q) => q.blocking)).toBe(false);
+    expect(readyForAssessment(1, true)).toBe(true);
+    expect(readyForAssessment(0, true)).toBe(false);
+    expect(readyForAssessment(1, false)).toBe(false);
     expect(input.caseFacts).toMatchObject({ matchedPaymentRef: "T:p-1", ruleRoute: { action: "reimbursement_review" } });
     expect(input.citableRefs).toEqual(expect.arrayContaining(["S1", "T:p-1", "R:reg-e.1005.2m"]));
     expect(inputSignature(input)).toBe(inputSignature(clear().input));
@@ -68,6 +72,79 @@ describe("case decision proposals", () => {
     expect(executionPlan("approve", eligible).kind).toBe("auto_approved");
     expect(executionPlan("approve", failing)).toMatchObject({ kind: "needs_person_to_approve", note: expect.stringContaining("amount_limit") });
     expect(executionPlan("deny", eligible).kind).toBe("needs_person_to_confirm_denial");
+  });
+});
+
+const work = (key: string, status: WorkItem["status"], refs: string[] = []): WorkItem => ({ key, title: `Doing ${key}`, doneTitle: `Done ${key}`, detail: "d", status, outcome: status === "done" ? `outcome ${key}` : null, refs });
+const inv = (over: Partial<Investigation>): Investigation => ({ ...EMPTY_INVESTIGATION, ...over });
+
+describe("the model's investigation", () => {
+  it("is reassessed whether or not the rules have blocking questions; the previous assessment doesn't change the signature", () => {
+    const { input } = caseInput(["There's a charge from Volt Electronics"]);
+    expect(input.caseFacts.openQuestions.some((q) => q.blocking)).toBe(true);
+    const withPrev = { ...input, previous: { decision: "request_information", investigation: inv({ workItems: [work("identify_payment", "awaiting_customer")] }) } };
+    expect(inputSignature(withPrev)).toBe(inputSignature(input));
+  });
+
+  it("drops items citing unknown evidence, downgrades uncorroborated findings, and lists every adjustment", () => {
+    const r = validateProposal(
+      proposal({
+        investigation: inv({
+          findings: [
+            { text: "Record matches.", basis: "corroborated", refs: ["T:p-1"] },
+            { text: "Customer never shared codes.", basis: "corroborated", refs: ["S1"] },
+            { text: "Made up.", basis: "reported", refs: ["S9"] },
+          ],
+          hypotheses: [{ text: "Card testing", status: "supported", refs: [] }],
+          workItems: [work("a", "done", ["T:p-1"]), work("a", "in_progress"), work("b", "in_progress", ["X:nope"])],
+        }),
+      }),
+      clear().input,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const i = r.proposal.investigation;
+    expect(i.findings.map((f) => [f.text, f.basis])).toEqual([["Record matches.", "corroborated"], ["Customer never shared codes.", "reported"]]);
+    expect(i.hypotheses[0]!.status).toBe("open");
+    expect(i.workItems.map((w) => w.key)).toEqual(["a"]);
+    expect(r.problems.join(" | ")).toMatch(/shown as reported.*unknown evidence S9|unknown evidence S9.*shown as reported/s);
+    expect(r.problems.join(" | ")).toMatch(/duplicate work item key a/);
+  });
+
+  it("rejects approve while the model itself lists a blocking uncertainty, and request_information without a question", () => {
+    const { input } = clear();
+    expect(validateProposal(proposal({ investigation: inv({ uncertainties: [{ text: "Was the card lost?", blocking: true }] }) }), input)).toMatchObject({ ok: false, problems: [expect.stringMatching(/blocking uncertainty/)] });
+    expect(validateProposal(proposal({ decision: "request_information", nextQuestion: null }), input)).toMatchObject({ ok: false, problems: [expect.stringMatching(/needs a nextQuestion/)] });
+  });
+
+  it("computes a proposed approval's amount from the matched record, never from the model", () => {
+    expect(proposedAmount("approve", "T:p-1", [txn])).toBe(389);
+    expect(proposedAmount("escalate", "T:p-1", [txn])).toBeNull();
+    expect(proposedAmount("approve", null, [txn])).toBeNull();
+  });
+
+  it("records what changed between assessments", () => {
+    const before = { investigation: inv({ workItems: [work("who", "awaiting_customer"), work("old", "in_progress")], findings: [{ text: "F1", basis: "reported", refs: ["S1"] }] }), decision: "request_information" };
+    const after = { investigation: inv({ workItems: [work("who", "done"), work("scam", "in_progress")], hypotheses: [{ text: "Impostor scam", status: "supported", refs: ["S2"] }], findings: [{ text: "F2", basis: "reported", refs: ["S2"] }] }), decision: "escalate" };
+    expect(diffInvestigations(before, after).map((c) => c.text)).toEqual([
+      "Done who: outcome who",
+      "Started: Doing scam",
+      "Removed from the plan: Doing old",
+      "Finding: F2",
+      "Finding withdrawn: F1",
+      "Supported: Impostor scam",
+      "Proposed: escalate (was request information)",
+    ]);
+    expect(diffInvestigations(after, after)).toEqual([]);
+  });
+
+  it("the rule-based fallback derives work from the analysis, labelled as such by the caller", () => {
+    const { analysis } = clear();
+    const r = ruleBasedInvestigation(analysis, 1);
+    expect(r.workItems.map((w) => [w.key, w.status])).toEqual([["identify_payment", "done"], ["who_initiated", "done"]]);
+    expect(r.findings[0]).toMatchObject({ basis: "corroborated", refs: expect.arrayContaining(["T:p-1"]) });
+    const scam = caseInput(["I sent $389 to Volt Electronics because a caller from the bank told me to"]).analysis;
+    expect(ruleBasedInvestigation(scam, 1).workItems.map((w) => w.key)).toContain("scam_type");
   });
 });
 

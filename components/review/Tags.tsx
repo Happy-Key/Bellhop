@@ -2,7 +2,7 @@
  * Who-acts markers. Customer and bank items always carry a distinct shape AND a text label, so
  * the distinction never depends on color.
  */
-import type { Attention } from "@/lib/domain/triage";
+import type { CaseAttention } from "@/lib/review/caseStatus";
 
 export function AudienceTag({ audience }: { audience: "customer" | "reviewer" }) {
   return (
@@ -13,7 +13,7 @@ export function AudienceTag({ audience }: { audience: "customer" | "reviewer" })
   );
 }
 
-export function AttentionGlyph({ attention }: { attention: Attention }) {
+export function AttentionGlyph({ attention }: { attention: CaseAttention }) {
   return <span className={`ws-glyph ws-glyph-${attention}`} aria-hidden="true" />;
 }
 

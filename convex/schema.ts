@@ -130,14 +130,16 @@ export default defineSchema({
   }).index("by_case", ["caseId"]),
 
   /**
-   * Whole-case decisions proposed by the reasoning model (lib/domain/caseDecision.ts). One row per
-   * case state sent to the model (`signature`); only the newest row for a case is acted on.
+   * The reasoning model's assessments of a case: its investigation and proposed next step or
+   * disposition (lib/domain/caseDecision.ts, lib/domain/investigation.ts). One row per case state
+   * sent to the model (`signature`); only the newest row for a case is acted on, and earlier rows
+   * are kept as the audit history.
    */
   caseProposals: defineTable({
     caseId: v.id("cases"),
     signature: v.string(),
     status: v.union(v.literal("pending"), v.literal("done"), v.literal("rejected_by_validation"), v.literal("failed")),
-    /** "manual" when a reviewer asked for it; "auto" when the case reached a decision point. */
+    /** "manual" when a reviewer asked for it; "auto" when the case state changed. */
     trigger: v.union(v.literal("auto"), v.literal("manual")),
     provider: v.optional(v.string()),
     /** Exactly what was sent to the model (CaseReasoningInput), kept for audit. */
@@ -150,6 +152,8 @@ export default defineSchema({
     problems: v.optional(v.array(v.string())),
     error: v.optional(v.string()),
     plan: v.optional(v.object({ kind: v.string(), note: v.string() })),
+    /** What changed since the previous accepted assessment, computed by code (lib/domain/investigation.ts). */
+    changeLog: v.optional(v.array(v.object({ kind: v.string(), text: v.string() }))),
     /** A person's answer to a proposal that needs one. */
     resolution: v.optional(v.object({ accepted: v.boolean(), note: v.string(), at: v.number(), decisionId: v.optional(v.id("reimbursementDecisions")) })),
   }).index("by_case", ["caseId"]),

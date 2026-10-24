@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (intake questions tailored to automatic approval)_
+_Last updated: 2026-10-24 (the model's investigation drives the workflow; workspace rebuilt conclusion-first)_
 
 ## What this is
 
@@ -16,7 +16,8 @@ accounts. **Consumers file claims, and the software is an extension of their ban
 
 1. A customer reports a suspicious payment, by voice (Cartesia agent, `/call` page or case page)
    or by text.
-2. Bitdeer extracts the facts, and the backend asks one question at a time.
+2. Bitdeer extracts the facts, then reassesses the whole case: what is established, what is uncertain, which
+   investigative work matters, and the next question (asked one at a time; rules are the fallback).
 3. The claim is matched against live (mock) Nessie bank records.
 4. It is checked against evidence: payment origin, merchant history, refunds, a CRS identity
    check and CRS Fraud Finder.
@@ -34,18 +35,18 @@ Rules that always hold:
 
 | Area | State |
 |---|---|
-| Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call`, **bank claims workstation `/review`** (queue + investigation workspace) and **synthetic guided-intake demo `/review/demo`** (merged from `bank-dashboard` 2026-10-24). The workstation does not yet show AUTO-1 results or payouts; use the case page for those |
+| Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call`, **bank claims workstation `/review`** (queue grouped by who acts + conclusion-first case workspace with a collapsed decision record) and **pitch demo `/review/demo`** (five-act scripted replay; rebuilt 2026-10-24). The workspace shows AUTO-1 checks and payouts in the decision record |
 | Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. **Latest code is deployed** (pushed with `npx convex dev --once`) |
 | Bank records (Nessie) | ✅ Live: purchases **and deposits** (deposits drive the refund check; never matched as the disputed payment) |
 | Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ⚠️ **Credits not approved ($0.00 balance); may be refused at any moment.** Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
 | Voice (Cartesia) | ✅ Live: one question per turn (`question_id`), **tailored to what AUTO-1 needs** (mostly a yes or no about one named bank record); waits up to 8 s for extraction; at most one "anything else?" in a row; a display error can't end a call |
 | CRS | ✅ Identity check and **Fraud Finder** live (persona bodies only; Fraud Finder verified on P01, score 11) |
-| Case decisions (Bitdeer) | 🟡 **Built, mock-tested, not run live** (committed on `foundation`): the model proposes approve / deny / request information / escalate with cited reasons, a legal reading and draft letters. Info requests and escalations are automatic; approvals pay out automatically only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Validated before use. Off switch: `CASE_REASONING=off`. The personal review deployment has no Bitdeer key (scripted) |
+| Case investigation (Bitdeer) | 🟡 **Built, mock-tested, not run live.** The model reassesses each case whenever it changes: findings (reported / corroborated), hypotheses, uncertainties, the work items it chooses, the next question, and a proposed disposition (approve / deny / request information / escalate) with cited reasons, legal reading and drafts. Every assessment is kept with a code-computed diff. Info requests and escalations are automatic; approvals pay out automatically only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Rules = guardrail + labelled fallback. Off switch: `CASE_REASONING=off`. The personal review deployment has no Bitdeer key (rule fallback shown) |
 | Automatic reimbursement | ✅ Built: AUTO-1 v2, 14 checks, SIMULATED deposit that can't be paid twice. ⚠️ **The first live deposit hasn't been made yet** |
 | Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown) |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
 | Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify` (with the `bank-dashboard` merge): typecheck, lint, **152 tests**, build pass |
+| Checks | ✅ `npm run verify`: typecheck, lint, **180 tests**, build pass |
 
 ## Branch and git
 
@@ -73,9 +74,11 @@ Rules that always hold:
 1. **A full demo rehearsal on dev**, including the **first live SIMULATED deposit**. The code follows
    Nessie's spec (`medium: "balance"`, `status: "completed"`, integer amount), but nothing has run live
    yet. A rejection shows on the case, with Retry payout.
-2. **A voice re-test with Bitdeer on**, including the new tailored questions (not yet heard live). Check the pacing with the 8 s wait, and that varied acknowledgements
+2. **A voice re-test with Bitdeer on**, including the model-chosen questions (not yet heard live). Check the pacing: extraction
+   plus reassessment must fit the 12 s webhook budget, otherwise the rule question is used. Also check that varied acknowledgements
    follow the updated agent instructions (paste them from `docs/integrations.md` into the Cartesia Playground).
-3. **Buttons for a person:** approve or reverse claims outside AUTO-1. Today only the checklist is shown.
+3. **More reviewer actions:** persist override and return-to-agent, and let a person reverse a flagged approval. Approving or
+   confirming a model proposal already works in `/review/<id>`.
 4. **Login and access control** before any non-synthetic use (Convex Auth now, bank SSO later; decided).
 5. **The redesign phases** in `docs/claim-intake-design.md`: per-payment fact model, screening results,
    disputes and recovery events, deadline estimates, documents.
@@ -90,20 +93,32 @@ Rules that always hold:
   progressed (each reply with the question it answered), payments and evidence with reconciliation states,
   findings (supported / missing / conflicting / superseded), decision trace, prepared-output states, filterable
   timeline. View models in `lib/review/`. Only live action: Retrieve bank records.
-- **Demo** `/review/demo`: scripted fixtures run through the real rules in the browser; two branches; demo-only
-  review controls labelled "demo, not saved". No AI, Convex or Nessie calls.
-- Not yet in the workstation: AUTO-1 checklist, payout state, payment-origin presets, Fraud Finder. Its wording
-  still says "a person decides", which predates AUTO-1.
+- **Demo** `/review/demo`: a five-act pitch (problem → conversation → the answer that changes the
+  interpretation → finished case → a person decides). The customer's lines and the model's outputs are a
+  scripted replay (`lib/fixtures/pitchDemo.ts`); the match, rule fallback, proposal validator, execution plan
+  and AUTO-1 run on it for real (`lib/review/pitchDemo.ts`). Evidence and rule text open on demand. No AI,
+  Convex or Nessie calls; buttons say "Demo, not saved". The old guided-intake walkthrough now lives only as a
+  test fixture (`tests/helpers/`).
+- Case workspace `/review/<id>` (rebuilt 2026-10-24): **What happened** (model summary or the customer's words, payment,
+  status, blockers) → **Investigation** (work items, active first) → **Established and open** (findings, uncertainties,
+  hypotheses) → collapsed **Decision record** (evidence, rules/policies/AUTO-1 checks/rule trace, assessment history,
+  conversation, documents, activity). Right column: authorized outcome, proposed disposition with computed amount and
+  authorize controls, next step, "Reassess now". Evidence links open the collapsed section holding the source.
+- Queue `/review`: groups Needs a bank reviewer / Waiting on the customer / Investigating / No report / Decided; rows show
+  the active work item and any proposal.
+- Not yet in the workstation: payment-origin presets, CRS controls (use `/cases/<id>`). Override and return-to-agent are
+  not persisted.
 
 ## Case decisions by the reasoning model (user decision 2026-10-24)
 
 - Bitdeer is the reasoning model; no Claude API. Not every decision needs a person; the model may propose denials.
 - Files: `lib/domain/caseDecision.ts` (schema, input, validation, who acts), `convex/proposals.ts`, `convex/caseReasoning.ts`,
   `components/review/CaseDecision.tsx` (panel at the top of the right column in `/review/<id>`).
-- The voice agent asks the model's question when the rules have nothing to ask (same 2-per-call limit).
+- The voice agent asks the model's current question first; the webhook waits for the reassessment (12 s total budget).
+  If none is ready, the rule question is used and logged `rule_question_fallback` (same 2-per-call limit).
 - Route wording in `workflow.ts` / `triage.ts` updated (no rule changes). Stored analyses keep the old text until their next recompute.
-- To try it live: on a deployment with the Bitdeer env vars (shared dev has them), finish a case to a decision point or press
-  "Ask the model now". Bitdeer credits were $0.00 and unapproved at last check.
+- To try it live: on a deployment with the Bitdeer env vars (shared dev has them), submit a statement (the model reassesses automatically) or press
+  "Reassess now". Bitdeer credits were $0.00 and unapproved at last check.
 
 ## Known limitations
 
@@ -178,3 +193,5 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Switching the working copy to `foundation` means the running `npx convex dev` watcher pushes foundation's schema and functions (AUTO-1, payouts, payment origins) to the personal review deployment `friendly-grouse-183`. It has no Bitdeer key, so extraction there stays scripted |
 | 2026-10-24 | **Intake questions tailored to automatic approval (AUTO-1).** Fixed four ways a legitimate claim got stuck: (1) two amounts in one statement blocked the claim for good (the question returned after being answered, and the reply created an amount conflict); it now confirms the one matched record by name. (2) "They asked for a code but I didn't give it" was read as *shared*; the question now asks what the customer *gave*, and refusals parse as not shared. (3) "No." / "I don't recognize it" in reply to "did you make it?" didn't parse; now read as someone else. (4) Missing details were one three-part question; now one at a time, exact amount (with cents) first, skipping a detail the customer doesn't know. Also: two possible records → yes/no about the likelier one ("no" leaves the other as the match); the initiation question names the matched payment; "I sent it" read from a free-form account gets one read-back (`confirm:authorization`) so a misread denial isn't lost; replies to which-payment questions that restate the amount or date supersede the earlier value (`settles()` in `lib/domain/facts.ts`). `autoApproval.ts` unchanged. 8 new tests. Rebased onto the `bank-dashboard` merge (`e8f06d2`); its triage and guided-intake demo tests updated to the new key (`tentative:<ref>` for two possible records) and the named initiation question. 152 tests pass. Pushed to `origin/foundation`; not run live; not pushed to Convex |
 | 2026-10-24 | Bitdeer whole-case decision proposals (user decision: Bitdeer, no Claude API; model may propose denials; not every decision needs a person). New `caseProposals` table and `approved_by_person` outcome; voice uses the model's question as a fallback; decision panel in `/review/<id>`; `CLAUDE.md` updated. 11 new tests (155 total); verify passes. Not run live. Committed and pushed to `foundation`, merged with the intake-question commit `c858e1b`. The running `convex dev` watcher pushed the new functions to `friendly-grouse-183` (scripted there, so no model calls) |
+| 2026-10-24 | **Demo rebuilt as a pitch** (`/review/demo`, from the user's revision brief): five short acts led by the value statement; one scripted scenario (an unfamiliar $49 gift-card payment; the customer reveals a bank impersonator told them to buy it; the agent revises its interpretation and asks about the card PIN; the proposal is escalate to the scam specialist). Model outputs are labelled as a scripted replay; the guardrails run for real. Removed the old walkthrough UI and its demo-only workspace plumbing (snapshots, banner, demo review controls); its scenario moved to `tests/helpers/` for the view tests. `npm run verify` passes, 165 tests |
+| 2026-10-24 | **The model's investigation drives the workflow** (user's restructuring brief). New `lib/domain/investigation.ts`: the model's findings (reported/corroborated), hypotheses, uncertainties, work items and change notes, with validation (unknown refs dropped, uncorroborated findings downgraded, all listed), a code-computed diff, and a labelled rule-based fallback. Case reasoning now runs on every case-state change (not only at decision points) and gets the previous assessment; `missingInformation` replaced by `investigation`; `caseProposals.changeLog` added (optional field). Voice asks the model's question first, waiting up to 12 s total; rule question is the logged fallback. New `lib/review/caseStatus.ts` (who acts, headline, disposition, authorized outcome). Workspace rebuilt conclusion-first with a collapsed decision record; queue regrouped (reviewer / customer / investigating / no report / decided). Pitch demo shows the planned work changing. Removed NextSteps, ReviewControls and the case brief. Docs: CLAUDE.md, architecture, integrations. 180 tests pass. Not run against live Bitdeer |

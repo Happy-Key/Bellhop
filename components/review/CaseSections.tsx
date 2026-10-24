@@ -6,7 +6,7 @@ import type { Doc } from "@/convex/_generated/dataModel";
 import type { StoredAnalysis } from "@/lib/domain/triage";
 import { RECONCILIATION_LABEL, reconciliation } from "@/lib/review/workspace";
 import { RefChip, refAnchor, useIsActive } from "./EvidenceRef";
-import { RetrieveButton } from "./NextSteps";
+import { RetrieveButton } from "./RetrieveButton";
 import { clockTime, exactTime, FIELD_LABEL, humanize, POSITION_LABEL, shortKey, shortRef, shortTime, usd } from "./format";
 import { useWorkspaceMode } from "./WorkspaceMode";
 import type { CaseView } from "./types";

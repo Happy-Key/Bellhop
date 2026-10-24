@@ -1,123 +1,25 @@
 "use client";
 
 /**
- * Case brief, findings and open questions, decision trace, and prepared outputs. Display only:
- * the content comes from the stored analysis through lib/review/workspace.ts.
+ * The rule-based guardrail's view of a case: its findings and open questions, decision trace, and
+ * prepared outputs. Shown inside the decision record. Display only: the content comes from the
+ * stored analysis through lib/review/workspace.ts.
  */
 import type { StoredAnalysis, Triage } from "@/lib/domain/triage";
 import { RECOMMENDATION_LABEL, STAGE_LABEL } from "@/lib/domain/triage";
 import {
   OUTPUT_STATE_LABEL,
-  RECONCILIATION_LABEL,
   RULE_ASSUMPTIONS,
   SOURCE_KIND_LABEL,
   decisionTrace,
   groupFindings,
   preparedOutputs,
-  reconciliation,
   type FindingItem,
 } from "@/lib/review/workspace";
 import { useState } from "react";
 import { goToRef, RefChip } from "./EvidenceRef";
 import { AudienceTag, KindTag } from "./Tags";
-import { ClampedText } from "./CaseSections";
-import { CREDENTIALS_LABEL, POSITION_LABEL, exactTime, humanize, usd } from "./format";
-import type { CaseView, Payment } from "./types";
-import { useWorkspaceMode } from "./WorkspaceMode";
-
-// ---------- Case brief ----------
-
-export function CaseBrief({ data, analysis, triage, payment }: { data: CaseView; analysis: StoredAnalysis | null; triage: Triage; payment: Payment | null }) {
-  const mode = useWorkspaceMode();
-  const first = data.statements[0];
-  const facts = analysis?.facts;
-  const rec = payment ? reconciliation(analysis, payment.ref) : null;
-  const blocker = triage.steps.find((s) => s.blocking) ?? null;
-  const next = triage.lead;
-  const reported = facts
-    ? [
-        ...facts.amounts.map((a) => ({ text: usd(a.value), ref: a.statementRef })),
-        ...facts.merchantTerms.map((m) => ({ text: `payee “${m.value}”`, ref: m.statementRef })),
-        ...facts.dates.map((d) => ({ text: d.value, ref: d.statementRef })),
-      ]
-    : [];
-  return (
-    <section id="brief" className="ws-section" aria-labelledby="brief-h">
-      <div className="ws-section-head">
-        <h2 id="brief-h">Case brief</h2>
-        <p className="ws-muted ws-small">
-          Assembled from the stored analysis{mode === "demo" ? " of the scripted demo inputs" : ""}. It is not a generated narrative; every line links to its evidence.
-        </p>
-      </div>
-      {first ? (
-        <blockquote className="ws-quote">
-          <ClampedText text={first.text} />
-          <footer>
-            <RefChip refId={first.ref} /> · {first.channel} · report received <strong>{exactTime(first.receivedAt)}</strong>
-          </footer>
-        </blockquote>
-      ) : (
-        <p className="ws-muted">No report yet. The case was opened {exactTime(data.case.createdAt)}.</p>
-      )}
-
-      <dl className="ws-brief">
-        <dt><KindTag kind="reported" /></dt>
-        <dd>
-          {!facts?.authorization && reported.length === 0 && facts?.scamIndicators.length === 0 ? (
-            <span className="ws-muted">Nothing reported yet.</span>
-          ) : (
-            <>
-              {facts?.authorization && <span className="ws-brief-item">{POSITION_LABEL[facts.authorization.value]} <RefChip refId={facts.authorization.statementRef} /></span>}
-              {facts?.credentialSharing && <span className="ws-brief-item">{CREDENTIALS_LABEL[facts.credentialSharing.value]} <RefChip refId={facts.credentialSharing.statementRef} /></span>}
-              {reported.length > 0 && (
-                <span className="ws-brief-item">
-                  Payment described as {reported.map((r, i) => <span key={`${r.ref}-${r.text}`}>{i > 0 && ", "}{r.text} <RefChip refId={r.ref} /></span>)}
-                </span>
-              )}
-              {facts && facts.scamIndicators.length > 0 && (
-                <span className="ws-brief-item">Mentions {facts.scamIndicators.map((s) => <span key={`${s.statementRef}-${s.value}`}>“{s.value}” <RefChip refId={s.statementRef} /></span>)}</span>
-              )}
-            </>
-          )}
-        </dd>
-        <dt><KindTag kind="observed" /></dt>
-        <dd>
-          {payment ? (
-            <span className="ws-brief-item">
-              {payment.matched ? "Bank record" : "Candidate record"} {usd(payment.amount)} · {payment.merchant ?? "unknown payee"} · {payment.date ?? "date unknown"} · status {payment.status ?? "unknown"} <RefChip refId={payment.ref} />
-            </span>
-          ) : (
-            <span className="ws-muted">No bank record is linked to the report yet.</span>
-          )}
-        </dd>
-        <dt><KindTag kind="inferred" /></dt>
-        <dd>
-          <span className="ws-brief-item">Stage: {STAGE_LABEL[analysis?.stage ?? "intake"]}</span>
-          {rec && payment && (
-            <span className="ws-brief-item">
-              {RECONCILIATION_LABEL[rec.state]} {rec.confirmedBy && <>(customer confirmed in <RefChip refId={rec.confirmedBy} />)</>}
-            </span>
-          )}
-          {facts && facts.conflicts.length > 0 && <span className="ws-brief-item ws-warn-text">⚠ Statements disagree on {facts.conflicts.map((c) => humanize(c.field)).join(", ")}</span>}
-          <span className="ws-small ws-muted">Rule-based, not a model.</span>
-        </dd>
-        <dt><KindTag kind="recommended" /></dt>
-        <dd>
-          {analysis ? (
-            <span className="ws-brief-item">
-              Draft route: <strong>{RECOMMENDATION_LABEL[analysis.recommendation.action]}</strong> · <a href="#trace">decision trace</a>
-            </span>
-          ) : (
-            <span className="ws-muted">No draft route yet.</span>
-          )}
-          {next && <span className="ws-brief-item">Proposed next action: {triage.headline}</span>}
-        </dd>
-        <dt className="ws-brief-blocker">Key blocker</dt>
-        <dd>{blocker ? <>{blocker.audience === "customer" && blocker.key !== "awaiting_report" ? "Customer to answer: " : ""}{blocker.title} <span className="ws-muted ws-small">— {blocker.why}</span></> : <span className="ws-muted">None. Nothing blocks review.</span>}</dd>
-      </dl>
-    </section>
-  );
-}
+import type { CaseView } from "./types";
 
 // ---------- Findings and open questions ----------
 

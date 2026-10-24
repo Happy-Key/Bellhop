@@ -27,13 +27,20 @@ External: Nessie (read-only) · reasoning provider (OpenAI-compatible, optional)
 - **`convex/`** holds persistence, idempotency, the activity log, and external calls in
   actions. It recomputes `cases.analysis` after every evidence change, so the UI reacts
   automatically.
-- **Case decisions:** at a decision point the reasoning model proposes approve / deny / request
-  information / escalate (`lib/domain/caseDecision.ts` validates it and decides who acts;
-  `convex/proposals.ts` stores and applies it; `convex/caseReasoning.ts` calls Bitdeer). Only the
-  newest proposal for the current case state can be acted on.
+- **The investigation is the model's:** whenever a case's state changes (and its bank records are
+  in), the reasoning model reassesses the whole case. It returns its investigation (findings marked
+  reported or corroborated, hypotheses, material uncertainties, and the investigative work items it
+  chooses for this case) plus the next step: request information (with the question), escalate,
+  approve or deny. `lib/domain/investigation.ts` and `lib/domain/caseDecision.ts` validate it (refs,
+  provenance downgrades, blocking checks) and decide who acts; approval amounts are computed from the
+  matched record. `convex/proposals.ts` stores every assessment with a code-computed diff against the
+  previous one; `convex/caseReasoning.ts` calls Bitdeer. The voice agent asks the model's current
+  question; the fixed rules are a guardrail (approve/deny blocked while they have blocking questions)
+  and the labelled fallback when the model is off, still assessing or failed. Only the newest
+  assessment for the current case state can be acted on.
 - **`lib/review/`** holds pure view models for the bank workstation (`/review`): guided-intake
-  progression, the timeline, findings groups, the decision trace, prepared-output states, and the
-  adapter that runs the synthetic guided-intake demo through the real rules. It only re-reads stored
+  progression, the timeline, findings groups, the decision trace, prepared-output states, the
+  investigation-first case status (`caseStatus.ts`), and the pitch demo builder (`pitchDemo.ts`). It only re-reads stored
   data and decides nothing.
 - **`app/` and `components/`** are a plain dashboard. There is no backend logic in Next.js:
   no API routes, and no duplicated backend.

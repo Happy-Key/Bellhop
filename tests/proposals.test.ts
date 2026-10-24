@@ -13,7 +13,7 @@ const raw = (decision: string, refs: string[]) => ({
   summary: "s",
   rationale: [{ point: "p", refs }],
   legalBasis: [],
-  missingInformation: [],
+  investigation: { findings: [{ text: "The $389 record matches.", basis: "corroborated", refs: ["T:p-1"] }], hypotheses: [], uncertainties: [], workItems: [{ key: "identify_payment", title: "Identifying the payment", doneTitle: "Payment identified", detail: "d", status: decision === "request_information" ? "awaiting_customer" : "done", outcome: null, refs: [] }], changes: [] },
   nextQuestion: decision === "request_information" ? "Did you still have your card?" : null,
   documents: [{ kind: "customer_letter", text: "Dear customer…" }],
 });
@@ -42,7 +42,32 @@ async function withLive(fn: () => Promise<void>) {
 }
 
 describe("model-proposed case decisions", () => {
-  it("asks the model once per case state at a decision point, and not in scripted mode", async () => {
+  it("reassesses even while the rules still have blocking questions, keeps every assessment, and records what changed", async () => {
+    await withLive(async () => {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      await t.mutation(internal.cases.storeTransactions, { caseId, transactions: [txn], warnings: [] });
+      await t.mutation(api.cases.submitStatement, { caseId, text: "There is a charge from Volt Electronics", clientEventId: "evt-00000001" });
+      const s = (await t.query(api.cases.view, { caseId }))!.statements[0]!;
+      await t.mutation(internal.statements.applyInterpretation, { statementId: s._id, attemptId: s.currentAttemptId!, interpretation: { ...interp, amounts: [], authorization: "unspecified", credentialSharing: "unspecified" }, proposedFindings: [], followUpQuestion: null });
+      const view = (await t.query(api.cases.view, { caseId }))!;
+      expect((view.case.analysis as { questions: { blocking: boolean }[] }).questions.some((q) => q.blocking)).toBe(true);
+      const first = (await t.query(api.proposals.latest, { caseId })).proposal!;
+      expect(first).toMatchObject({ status: "pending", trigger: "auto" });
+      await t.mutation(internal.proposals.applyResult, { proposalId: first._id, provider: "bitdeer:m", result: { ok: true, raw: raw("request_information", ["S1"]) } });
+
+      const second = await t.mutation(api.proposals.requestProposal, { caseId });
+      await t.mutation(internal.proposals.applyResult, { proposalId: second, provider: "bitdeer:m", result: { ok: true, raw: raw("escalate", ["T:p-1"]) } });
+      const latest = await t.query(api.proposals.latest, { caseId });
+      expect(latest.accepted?._id).toBe(second);
+      expect(latest.history.map((h) => h.decision)).toEqual(["escalate", "request_information"]);
+      expect(latest.history[0]!.changeLog.map((c) => c.text)).toEqual(["Payment identified", "Proposed: escalate (was request information)"]);
+      expect(latest.history[1]!.changeLog.map((c) => c.text)).toEqual(["Started: Identifying the payment", "Finding: The $389 record matches.", "Proposed: request information"]);
+      expect((await t.query(api.cases.view, { caseId }))!.activity.some((a) => a.kind === "investigation_updated")).toBe(true);
+    });
+  });
+
+  it("asks the model once per case state, and not in scripted mode", async () => {
     const scripted = convexTest(schema, modules);
     const id = await scripted.mutation(api.cases.createSynthetic, {});
     await scripted.mutation(internal.cases.storeTransactions, { caseId: id, transactions: [txn], warnings: [] });
@@ -105,6 +130,30 @@ describe("model-proposed case decisions", () => {
       const q = await t.mutation(api.proposals.requestProposal, { caseId });
       await t.mutation(internal.proposals.applyResult, { proposalId: q, provider: "bitdeer:m", result: { ok: false, error: "HTTP 402: insufficient balance" } });
       expect((await t.query(api.proposals.latest, { caseId })).proposal).toMatchObject({ status: "failed", error: expect.stringContaining("402") });
+    });
+  });
+
+  it("on a call, the model's current question leads; without one, the rule question is the logged fallback", async () => {
+    await withLive(async () => {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      await t.mutation(internal.cases.storeTransactions, { caseId, transactions: [txn], warnings: [] });
+      const { token } = await t.mutation(api.voice.createVoiceSession, { caseId });
+      const r = await t.mutation(internal.voice.recordVoiceUtterance, { sessionToken: token, utterance: "There is a charge from Volt Electronics", utteranceKey: "k1" });
+      if (!r.ok) throw new Error("not recorded");
+      const s = (await t.query(api.cases.view, { caseId }))!.statements[0]!;
+      await t.mutation(internal.statements.applyInterpretation, { statementId: s._id, attemptId: s.currentAttemptId!, interpretation: { ...interp, amounts: [], authorization: "unspecified", credentialSharing: "unspecified" }, proposedFindings: [], followUpQuestion: null });
+      const issue = (key: string) => t.mutation(internal.voice.issueVoiceQuestion, { sessionId: r.sessionId, idempotencyKey: key, ref: "S1", duplicate: false, awaitingInterpretation: false });
+
+      // The model is still assessing: the rule question is used and the fallback is logged.
+      const fallback = await issue(r.idempotencyKey);
+      expect(fallback.question).not.toBeNull();
+      expect((await t.query(api.cases.view, { caseId }))!.activity.some((a) => a.kind === "rule_question_fallback")).toBe(true);
+
+      const p = (await t.query(api.proposals.latest, { caseId })).proposal!;
+      await t.mutation(internal.proposals.applyResult, { proposalId: p._id, provider: "bitdeer:m", result: { ok: true, raw: raw("request_information", ["S1"]) } });
+      const led = await issue("k-next");
+      expect(led.question).toBe("Did you still have your card?");
     });
   });
 });

@@ -1,9 +1,11 @@
 /**
- * Case decisions proposed by the reasoning model (Bitdeer). The model call is in
- * convex/caseReasoning.ts; the rules for who acts are in lib/domain/caseDecision.ts.
+ * The reasoning model's assessment of each case (Bitdeer): its investigation (findings,
+ * hypotheses, uncertainties, work items) and the proposed next step or disposition. The model
+ * call is in convex/caseReasoning.ts; the rules for who acts are in lib/domain/caseDecision.ts.
  *
- * - The model is asked automatically when a case reaches a decision point (nothing blocking left)
- *   and live reasoning is on, at most once per case state, or when a reviewer asks.
+ * - The model reassesses the case automatically whenever its state changes (live reasoning on),
+ *   at most once per case state, or when a reviewer asks. Every assessment is kept, with a
+ *   code-computed diff against the one before, so revisions are recorded rather than replaced.
  * - Only the newest proposal for the CURRENT case state is acted on.
  * - Approvals pay out automatically only when policy AUTO-1 also passes; denials always need a
  *   person. No function here takes an account ID or an amount from the client.
@@ -12,7 +14,8 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { buildCaseReasoningInput, executionPlan, inputSignature, readyForDecision, validateProposal, CaseProposalOutput, type CaseReasoningInput } from "../lib/domain/caseDecision";
+import { buildCaseReasoningInput, executionPlan, inputSignature, readyForAssessment, validateProposal, CaseProposalOutput, type CaseProposal, type CaseReasoningInput } from "../lib/domain/caseDecision";
+import { diffInvestigations } from "../lib/domain/investigation";
 import type { AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 import type { CaseAnalysis } from "../lib/domain/workflow";
 import { loadCaseInput, logActivity, reasoningConfig, toDomainProviderEvidence, toDomainStatement, toDomainTransaction } from "./model";
@@ -22,11 +25,17 @@ export function caseReasoningEnabled(): boolean {
   return reasoningConfig().mode === "live" && process.env.CASE_REASONING !== "off";
 }
 
+/** The newest assessment that completed and passed validation. */
+const lastAccepted = (ctx: QueryCtx, caseId: Id<"cases">) =>
+  ctx.db.query("caseProposals").withIndex("by_case", (q) => q.eq("caseId", caseId)).order("desc").filter((q) => q.eq(q.field("status"), "done")).first();
+
 async function currentInput(ctx: QueryCtx, caseId: Id<"cases">): Promise<{ input: CaseReasoningInput; analysis: CaseAnalysis; c: Doc<"cases"> } | null> {
   const { c, statements, transactions, providerEvidence } = await loadCaseInput(ctx, caseId);
   const analysis = c.analysis as CaseAnalysis | null;
   if (!analysis) return null;
+  const prev = (await lastAccepted(ctx, caseId))?.proposal as CaseProposal | undefined;
   const input = buildCaseReasoningInput({
+    previous: prev?.investigation ? { decision: prev.decision, investigation: prev.investigation } : null,
     analysis,
     statements: statements.map(toDomainStatement),
     transactions: transactions.map(toDomainTransaction),
@@ -39,15 +48,15 @@ async function currentInput(ctx: QueryCtx, caseId: Id<"cases">): Promise<{ input
 const newest = (ctx: QueryCtx, caseId: Id<"cases">) => ctx.db.query("caseProposals").withIndex("by_case", (q) => q.eq("caseId", caseId)).order("desc").first();
 
 /**
- * Called after every analysis recompute. Asks the model only at a decision point, only when no
- * interpretation is still pending, and never twice for the same case state.
+ * Called after every analysis recompute. Asks the model to reassess once no interpretation is
+ * pending and the bank records are in, and never twice for the same case state.
  */
 export async function maybeRequestProposal(ctx: MutationCtx, caseId: Id<"cases">) {
   if (!caseReasoningEnabled()) return;
   const statements = await ctx.db.query("statements").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect();
   if (statements.some((s) => s.interpretationStatus === "pending")) return;
   const cur = await currentInput(ctx, caseId);
-  if (!cur || !readyForDecision(cur.analysis, statements.length, (cur.c.bankFetch as { status: string }).status === "ok")) return;
+  if (!cur || !readyForAssessment(statements.length, (cur.c.bankFetch as { status: string }).status === "ok")) return;
   await request(ctx, caseId, cur.input, "auto");
 }
 
@@ -57,7 +66,7 @@ async function request(ctx: MutationCtx, caseId: Id<"cases">, input: CaseReasoni
   if (last && last.signature === signature && (trigger === "auto" || last.status === "pending")) return last._id;
   const proposalId = await ctx.db.insert("caseProposals", { caseId, signature, status: "pending", trigger, input, requestedAt: Date.now() });
   const cfg = reasoningConfig();
-  await logActivity(ctx, caseId, `reasoning:${cfg.mode === "live" ? cfg.label : "scripted"}`, "case_reasoning_requested", `Whole case sent to the reasoning model for a decision proposal (${trigger === "auto" ? "decision point reached" : "requested by a reviewer"}).`);
+  await logActivity(ctx, caseId, `reasoning:${cfg.mode === "live" ? cfg.label : "scripted"}`, "case_reasoning_requested", `Whole case sent to the reasoning model to reassess (${trigger === "auto" ? "the case changed" : "requested by a reviewer"}).`);
   await ctx.scheduler.runAfter(0, internal.caseReasoning.proposeLive, { proposalId });
   return proposalId;
 }
@@ -106,7 +115,11 @@ export const applyResult = internalMutation({
     }
     const c = await ctx.db.get(p.caseId);
     const plan = executionPlan(checked.proposal.decision, (c?.autoApproval ?? null) as AutoApprovalEvaluation | null);
-    await ctx.db.patch(proposalId, { status: "done", provider, completedAt: at, proposal: checked.proposal, problems: checked.problems, plan });
+    const prevRow = await lastAccepted(ctx, p.caseId);
+    const prev = prevRow?.proposal as CaseProposal | undefined;
+    const changeLog = diffInvestigations(prev?.investigation ? { investigation: prev.investigation, decision: prev.decision } : null, { investigation: checked.proposal.investigation, decision: checked.proposal.decision });
+    await ctx.db.patch(proposalId, { status: "done", provider, completedAt: at, proposal: checked.proposal, problems: checked.problems, plan, changeLog });
+    if (changeLog.length) await logActivity(ctx, p.caseId, actor, "investigation_updated", `Investigation updated: ${changeLog.map((x) => x.text).join("; ")}`.slice(0, 1000));
     await logActivity(ctx, p.caseId, actor, "case_decision_proposed", `MODEL PROPOSES: ${checked.proposal.decision.replace("_", " ")}. ${plan.note}`);
     if (checked.proposal.decision === "deny") {
       // A rule-based approval that the model now disputes goes to a person; nothing is reversed.
@@ -118,15 +131,25 @@ export const applyResult = internalMutation({
   },
 });
 
-/** The newest proposal for a case, and whether it was made for the case as it stands now. */
+/**
+ * The newest assessment for a case and whether it was made for the case as it stands now, the
+ * newest accepted one (what the workspace shows while a reassessment runs), and the history of
+ * accepted assessments with their recorded changes.
+ */
 export const latest = query({
   args: { caseId: v.id("cases") },
   handler: async (ctx, { caseId }) => {
     const p = await newest(ctx, caseId);
     const cur = await currentInput(ctx, caseId);
+    const signature = cur ? inputSignature(cur.input) : null;
+    const rows = await ctx.db.query("caseProposals").withIndex("by_case", (q) => q.eq("caseId", caseId)).order("desc").take(50);
+    const strip = (r: Doc<"caseProposals">) => ({ ...r, input: undefined, current: r.signature === signature });
+    const accepted = rows.filter((r) => r.status === "done");
     return {
       enabled: caseReasoningEnabled(),
-      proposal: p ? { ...p, input: undefined, current: !!cur && inputSignature(cur.input) === p.signature } : null,
+      proposal: p ? strip(p) : null,
+      accepted: accepted[0] ? strip(accepted[0]) : null,
+      history: accepted.map((r) => ({ _id: r._id, completedAt: r.completedAt ?? r.requestedAt, provider: r.provider ?? null, decision: (r.proposal as CaseProposal | undefined)?.decision ?? null, changeLog: r.changeLog ?? [], resolution: r.resolution ?? null })),
     };
   },
 });
@@ -186,7 +209,7 @@ export const resolve = mutation({
   },
 });
 
-/** The model's question, when it asked for information and the rules have nothing to ask. */
+/** The model's question, when its assessment of the case as it stands now asks for information. */
 export async function modelQuestionFor(ctx: QueryCtx, caseId: Id<"cases">): Promise<{ key: string; text: string } | null> {
   const p = await newest(ctx, caseId);
   if (!p || p.status !== "done") return null;

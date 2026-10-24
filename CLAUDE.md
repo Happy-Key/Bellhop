@@ -56,6 +56,15 @@ matched record, approve/deny while blocking questions are open, and denials that
 statements are rejected. The rule-based route stays as the guardrail and fallback; a failed model
 call is shown, never silently replaced.
 
+**The investigation determines the workflow (decided 2026-10-24).** The model reassesses the case
+whenever its state changes, not only at a decision point. It maintains the investigation: findings
+(reported vs corroborated), hypotheses, material uncertainties, the investigative work items it
+chooses for this case, and why its assessment changed (`lib/domain/investigation.ts`). It also picks
+the next customer question. Code keeps the controls: ref and provenance checks, computed amounts, a
+recorded diff between assessments, and who may act. Keep hypothesis, finding, proposed disposition
+and authorized outcome distinct in the UI. The workspace shows the conclusion first; the decision
+record (evidence, rules, history, documents, activity) is collapsed and opens on demand.
+
 **Non-goals:**
 - moving real money, denying reimbursements automatically, approving outside policy AUTO-1, or
   filing complaints

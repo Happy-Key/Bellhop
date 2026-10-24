@@ -15,7 +15,7 @@ export function WorkstationBar() {
       </Link>
       <nav aria-label="Workstation" className="ws-nav">
         <Link href="/review" aria-current={inQueue ? "page" : undefined}>Claims queue</Link>
-        <Link href="/review/demo" aria-current={inDemo ? "page" : undefined}>Guided intake demo</Link>
+        <Link href="/review/demo" aria-current={inDemo ? "page" : undefined}>Demo</Link>
         <Link href="/call">Customer line</Link>
         <Link href="/">Developer console</Link>
       </nav>

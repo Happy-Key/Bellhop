@@ -34,6 +34,11 @@ const ToolBody = z
  */
 const DEFAULT_INTERPRETATION_WAIT_MS = 8000;
 const MAX_INTERPRETATION_WAIT_MS = 12_000;
+/**
+ * Total time a tool call may wait, including the reasoning model's reassessment that chooses the
+ * next question. If the reassessment isn't ready by then, the rule-based question is used (logged).
+ */
+const MAX_TOTAL_WAIT_MS = 12_000;
 const POLL_MS = 250;
 
 function interpretationWaitMs(): number {
@@ -79,8 +84,9 @@ http.route({
     // Live interpretation runs in the background. Wait for it briefly so the next question reflects
     // what the customer just said; if it isn't ready, the agent is told to acknowledge instead.
     let awaiting = result.pending;
+    const started = Date.now();
     if (awaiting && "statementId" in result && result.statementId) {
-      const deadline = Date.now() + interpretationWaitMs();
+      const deadline = started + interpretationWaitMs();
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, POLL_MS));
         const status = await ctx.runQuery(internal.voice.statementStatus, { statementId: result.statementId });
@@ -92,7 +98,17 @@ http.route({
         }
       }
     }
-    // Questions come from the backend workflow. No recommendation or eligibility is sent to the agent.
+    // Once the statement is interpreted, the reasoning model reassesses the case and picks the next
+    // question. The reassessment row is created in the same transaction that stores the
+    // interpretation, so "not pending" here means there is nothing to wait for.
+    if (!awaiting) {
+      const deadline = started + MAX_TOTAL_WAIT_MS;
+      while (Date.now() < deadline && (await ctx.runQuery(internal.voice.assessmentPending, { sessionId: result.sessionId }))) {
+        await new Promise((r) => setTimeout(r, POLL_MS));
+      }
+    }
+    // Questions come from the backend: the model's assessment, or the rules as the fallback. No
+    // recommendation or eligibility is sent to the agent.
     const response = await ctx.runMutation(internal.voice.issueVoiceQuestion, {
       sessionId: result.sessionId,
       idempotencyKey: result.idempotencyKey,

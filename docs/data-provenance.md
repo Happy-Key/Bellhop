@@ -56,17 +56,21 @@ row is kept as superseded history.
 Values are returned by the CRS sandbox for CRS-published test personas, unchanged. Linking a
 persona to a case is a **synthetic association** we create; CRS and Nessie are separate datasets.
 
-## Guided intake demo (`/review/demo`)
+## Demo (`/review/demo`)
 
-**Entirely scripted. No provider data.** The customer replies and four bank records are fixtures in
-`lib/fixtures/guidedIntakeDemo.ts`. The records use the Nessie shape but were never in Nessie, and
-the payees are named "Demo …". The scenario clock is fixed (2026-10-21 15:02 UTC), so the times are
-not real.
+**A scripted replay. No provider data.** The page is a five-act pitch: the problem, the
+customer's conversation, the turn that changes the agent's interpretation, the finished case,
+and the person's decision. The customer's lines, four bank records and the reasoning model's
+outputs (working interpretations, chosen questions, and the whole-case proposal in the
+`CaseProposalOutput` shape) are fixtures in `lib/fixtures/pitchDemo.ts`. The records use the
+Nessie shape but were never in Nessie, and the payees are named "Demo …". The scenario clock is
+fixed (2026-10-21 15:02 UTC).
 
-The questions, matches, findings, considerations and draft routes on that page are **derived**: the
-browser runs the fixtures through the app's own rules (`lib/review/demoCase.ts`). No model,
-Convex or Nessie call is made, and nothing is stored. Review actions taken on that page live only
-in browser memory and are labelled "demo, not saved".
+What is **computed**, not scripted: the record match, the facts read from the replies, the
+rule-based fallback route, the proposal validator, the execution plan and policy AUTO-1 all run on
+the fixture in the browser (`lib/review/pitchDemo.ts`; `tests/pitchDemo.test.ts` checks they agree
+with the script). No model, Convex or Nessie call is made, and nothing is stored. The authorize,
+override and return buttons change only the page and say "Demo, not saved".
 
 ## Display-only changes in the claims workstation (`/review`)
 

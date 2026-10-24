@@ -1,20 +1,17 @@
 /**
- * View-model adapter for the SYNTHETIC guided-intake demo (/review/demo).
- *
- * Runs the scripted fixture (lib/fixtures/guidedIntakeDemo.ts) through the same pure functions the
- * backend uses: the scripted extractor, the reply parser, analyzeCase and selectVoiceQuestion. The
- * result has the shape of `cases.view`, so the workspace renders it with the same components as a
- * live case. There are no Convex, Nessie or model calls, and nothing is stored.
+ * Test fixture: builds a case in the `cases.view` shape from the scripted guided-intake scenario
+ * (./guidedIntakeDemo.ts), using the same pure functions the backend uses. The workspace
+ * view-model tests use it. It was the old /review/demo walkthrough, now replaced by the pitch demo.
  */
 import type { Id } from "../../convex/_generated/dataModel";
-import { interpretAnswer, relatedRefFromKey } from "../domain/answers";
-import { interpretStatementScripted } from "../domain/interpret";
-import type { AskedQuestion, OpenQuestion, Statement, WorkflowStage } from "../domain/schemas";
-import type { StoredAnalysis } from "../domain/triage";
-import { selectVoiceQuestion } from "../domain/voiceTurn";
-import { analyzeCase, type CaseInput, type EvidenceFetchState } from "../domain/workflow";
-import { DEMO_BRANCHES, DEMO_RECORDS_AT, DEMO_START, DEMO_TRANSACTIONS, demoBeats, type DemoBeat, type DemoBranch } from "../fixtures/guidedIntakeDemo";
-import type { CaseView, ViewActivity, ViewStatement, ViewTransaction } from "./types";
+import { interpretAnswer, relatedRefFromKey } from "../../lib/domain/answers";
+import { interpretStatementScripted } from "../../lib/domain/interpret";
+import type { AskedQuestion, OpenQuestion, Statement, WorkflowStage } from "../../lib/domain/schemas";
+import type { StoredAnalysis } from "../../lib/domain/triage";
+import { selectVoiceQuestion } from "../../lib/domain/voiceTurn";
+import { analyzeCase, type CaseInput, type EvidenceFetchState } from "../../lib/domain/workflow";
+import { DEMO_BRANCHES, DEMO_RECORDS_AT, DEMO_START, DEMO_TRANSACTIONS, demoBeats, type DemoBeat, type DemoBranch } from "./guidedIntakeDemo";
+import type { CaseView, ViewActivity, ViewStatement, ViewTransaction } from "../../lib/review/types";
 
 /** What the rules produced right after one customer reply. */
 export interface DemoSnapshot {

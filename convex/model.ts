@@ -112,7 +112,7 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
     await logActivity(ctx, caseId, "validator", "findings_rejected", `${analysis.rejectedFindings.length} proposed finding(s) rejected: ${analysis.rejectedFindings.map((r) => r.reasons.join("; ")).join(" | ")}`);
   }
   await applyAutoApproval(ctx, caseId, evaluation);
-  // At a decision point, the reasoning model proposes the case decision (live mode only).
+  // The reasoning model reassesses the case whenever its state changes (live mode only).
   await maybeRequestProposal(ctx, caseId);
 }
 

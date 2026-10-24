@@ -1,12 +1,8 @@
 /**
- * SYNTHETIC DEMO — scripted scenario for the guided-intake walkthrough (/review/demo).
- *
- * Fixed customer replies and fixture bank records. They are never stored in Convex or Nessie.
- * lib/review/demoCase.ts runs them through the app's real rule-based pipeline, so every question,
- * match and draft route shown in the walkthrough is what the rules produce for these inputs.
- * The narration below describes that output; tests/demo.test.ts checks that the two agree.
+ * SYNTHETIC test fixture: a scripted guided-intake scenario with two branches. ./demoCase.ts runs it
+ * through the app's rule-based pipeline for the workspace view-model tests.
  */
-import type { TransactionEvidence } from "../domain/schemas";
+import type { TransactionEvidence } from "../../lib/domain/schemas";
 
 export type DemoBranch = "other_person" | "customer_sent";
 

@@ -11,10 +11,12 @@
  *    investigation and a written explanation; automated denials drew CFPB action).
  *
  * Model output is evidence-checked, never trusted: unknown refs, uncited decisions, and denials that
- * rest only on the customer's own words are rejected.
+ * rest only on the customer's own words are rejected. The same call carries the model's whole
+ * investigation (findings, hypotheses, uncertainties, work items), checked in investigation.ts.
  */
 import { z } from "zod";
 import type { AutoApprovalEvaluation } from "./autoApproval";
+import { InvestigationOutput, validateInvestigation, type Investigation } from "./investigation";
 import { REGULATORY_SOURCES } from "./regulatory";
 import { evidenceKindOf, type ProviderEvidence, type Statement, type TransactionEvidence } from "./schemas";
 import type { CaseAnalysis } from "./workflow";
@@ -35,7 +37,8 @@ export const CaseProposalOutput = z.object({
   legalBasis: z
     .array(z.object({ sourceRef: z.string(), reading: z.enum(["likely_applies", "likely_does_not_apply", "unclear"]), note: text(400) }))
     .max(8),
-  missingInformation: z.array(text(300)).max(6),
+  /** The model's current investigation of the case (lib/domain/investigation.ts). */
+  investigation: InvestigationOutput,
   nextQuestion: text(300).nullable(),
   documents: z
     .array(z.object({ kind: z.enum(["investigation_summary", "customer_letter", "information_request"]), text: text(3000).pipe(z.string().min(1)) }))
@@ -84,6 +87,8 @@ export interface CaseReasoningInput {
   autoApproval: { policy: string; eligible: boolean; failedChecks: { id: string; detail: string }[] } | null;
   legalSources: { ref: string; kind: string; citation: string; excerpt: string; applicability: string }[];
   citableRefs: string[];
+  /** The previous assessment, so the model revises it rather than starting over. Not part of the signature. */
+  previous: { decision: string; investigation: Investigation } | null;
 }
 
 export function buildCaseReasoningInput(a: {
@@ -92,6 +97,7 @@ export function buildCaseReasoningInput(a: {
   transactions: TransactionEvidence[];
   providerEvidence: ProviderEvidence[];
   autoApproval: AutoApprovalEvaluation | null;
+  previous?: { decision: string; investigation: Investigation } | null;
 }): CaseReasoningInput {
   const { analysis } = a;
   const refs = [...a.statements.map((s) => s.ref), ...a.transactions.map((t) => t.ref), ...a.providerEvidence.map((p) => p.ref), ...REGULATORY_SOURCES.map((s) => s.ref)];
@@ -113,6 +119,7 @@ export function buildCaseReasoningInput(a: {
       : null,
     legalSources: REGULATORY_SOURCES.map((s) => ({ ref: s.ref, kind: s.kind, citation: s.citation, excerpt: s.excerpt, applicability: s.applicability })),
     citableRefs: refs,
+    previous: a.previous ?? null,
   };
 }
 
@@ -154,19 +161,39 @@ export function validateProposal(p: CaseProposal, input: CaseReasoningInput): Va
   if ((p.decision === "approve" || p.decision === "deny") && input.caseFacts.openQuestions.some((q) => q.blocking)) {
     fatal.push(`${p.decision} while blocking questions are open`);
   }
+  if ((p.decision === "approve" || p.decision === "deny") && p.investigation.uncertainties.some((u) => u.blocking)) {
+    fatal.push(`${p.decision} while the model itself lists a blocking uncertainty`);
+  }
+  if (p.decision === "request_information" && !p.nextQuestion) fatal.push("request_information needs a nextQuestion");
   if (fatal.length) return { ok: false, problems: [...fatal, ...problems] };
-  return { ok: true, proposal: { ...p, rationale, legalBasis }, problems };
+  const inv = validateInvestigation(p.investigation, input.citableRefs);
+  return { ok: true, proposal: { ...p, rationale, legalBasis, investigation: inv.investigation }, problems: [...problems, ...inv.problems] };
 }
 
-/** A fingerprint of everything the model reads, so the same case state isn't sent twice. */
+/**
+ * A fingerprint of the case state the model reads, so the same state isn't sent twice. The
+ * previous assessment is left out: it changes when an assessment lands, the case state doesn't.
+ */
 export function inputSignature(input: CaseReasoningInput): string {
-  const s = JSON.stringify({ ...input, legalSources: input.legalSources.map((l) => l.ref) });
+  const s = JSON.stringify({ ...input, previous: undefined, legalSources: input.legalSources.map((l) => l.ref) });
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
   return `v1:${(h >>> 0).toString(16)}:${s.length}`;
 }
 
-/** The model is asked for a decision only when the rules have nothing blocking left to ask. */
-export function readyForDecision(analysis: CaseAnalysis, statementCount: number, bankFetchOk: boolean): boolean {
-  return statementCount > 0 && bankFetchOk && !analysis.questions.some((q) => q.blocking);
+/**
+ * The model reassesses the case whenever its state changes, once there is a statement and the
+ * account's records are in. It decides what is needed next; the rules no longer gate when it is asked.
+ */
+export function readyForAssessment(statementCount: number, bankFetchOk: boolean): boolean {
+  return statementCount > 0 && bankFetchOk;
+}
+
+/**
+ * The amount a proposed approval would pay: the matched bank record's amount, computed here and
+ * never taken from model output.
+ */
+export function proposedAmount(decision: ProposedDecision, matchedRef: string | null, transactions: readonly { ref: string; amount: number }[]): number | null {
+  if (decision !== "approve" || !matchedRef) return null;
+  return transactions.find((t) => t.ref === matchedRef)?.amount ?? null;
 }

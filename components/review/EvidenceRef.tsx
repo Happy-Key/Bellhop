@@ -28,10 +28,11 @@ const KIND: [RegExp, string][] = [
   [/^R:/, "Regulatory source"],
 ];
 
-/** Scrolls to and focuses the source element for a ref, if it is on the page. */
+/** Scrolls to and focuses the source element for a ref, opening collapsed sections that hold it. */
 export function goToRef(refId: string) {
   const el = document.getElementById(refAnchor(refId));
   if (!el) return;
+  for (let d = el.closest("details"); d; d = d.parentElement?.closest("details") ?? null) d.open = true;
   el.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   el.focus({ preventScroll: true });
 }

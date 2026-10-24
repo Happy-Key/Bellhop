@@ -143,6 +143,17 @@ export const recordVoiceUtterance = internalMutation({
   },
 });
 
+/** Polled by the HTTP endpoint: whether the reasoning model is reassessing this call's case. */
+export const assessmentPending = internalQuery({
+  args: { sessionId: v.id("voiceSessions") },
+  handler: async (ctx, { sessionId }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) return false;
+    const p = await ctx.db.query("caseProposals").withIndex("by_case", (q) => q.eq("caseId", session.caseId)).order("desc").first();
+    return p?.status === "pending";
+  },
+});
+
 /** Polled by the HTTP endpoint while a live interpretation is in flight. */
 export const statementStatus = internalQuery({
   args: { statementId: v.id("statements") },
@@ -189,13 +200,16 @@ export const issueVoiceQuestion = internalMutation({
         await ctx.db.patch(sessionId, { handedOffKeys: [...handedOff, ...newlyHandedOff.map((q) => q.key)] });
         await logActivity(ctx, session.caseId, "voice", "question_handed_to_reviewer", `Asked ${MAX_ASKS_PER_CALL} times on this call without being settled, so not asked again: ${newlyHandedOff.map((q) => `"${q.text}"`).join("; ")}. Needs reviewer follow-up.`);
       }
-      // When the rules have nothing to ask, the reasoning model's question (if it asked for
-      // information about the case as it stands now) is used, with the same per-call repeat limit.
-      let next: { key: string; kind: string; text: string } | null = choice.question;
-      if (!next) {
-        const mq = await modelQuestionFor(ctx, session.caseId);
-        const asked = mq ? (await ctx.db.query("intakeTurns").withIndex("by_session_key", (x) => x.eq("sessionId", sessionId).eq("questionKey", mq.key)).collect()).length : 0;
-        if (mq && asked < MAX_ASKS_PER_CALL) next = { key: mq.key, kind: "model_question", text: mq.text };
+      // The reasoning model chooses the next question when its assessment of the case as it stands
+      // now asks for information. Otherwise (model off, still assessing, failed, or not asking) the
+      // rule-based question is the fallback, logged as such. The per-call repeat limit applies to both.
+      let next: { key: string; kind: string; text: string } | null = null;
+      const mq = await modelQuestionFor(ctx, session.caseId);
+      const mqAsked = mq ? (await ctx.db.query("intakeTurns").withIndex("by_session_key", (x) => x.eq("sessionId", sessionId).eq("questionKey", mq.key)).collect()).length : 0;
+      if (mq && mqAsked < MAX_ASKS_PER_CALL) next = { key: mq.key, kind: "model_question", text: mq.text };
+      else if (choice.question) {
+        next = choice.question;
+        await logActivity(ctx, session.caseId, "voice", "rule_question_fallback", `Asked the rule-based question "${choice.question.text}" because the reasoning model has no current question for this case state${mq ? " (its question was already asked twice on this call)" : ""}.`);
       }
       if (next) {
         const turnId = await ctx.db.insert("intakeTurns", {

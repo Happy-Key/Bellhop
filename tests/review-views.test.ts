@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StoredAnalysis } from "../lib/domain/triage";
-import { demoBeats } from "../lib/fixtures/guidedIntakeDemo";
-import { buildDemoState } from "../lib/review/demoCase";
+import { demoBeats } from "./helpers/guidedIntakeDemo";
+import { buildDemoState } from "./helpers/demoCase";
 import { intakeProgress } from "../lib/review/intake";
 import { buildTimeline } from "../lib/review/timeline";
 import type { CaseView } from "../lib/review/types";
