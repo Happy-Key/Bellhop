@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Customer view: only the voice call. Each visit opens one synthetic case, created when the first
- * call starts and reused for "Call again", so the bank sees the whole conversation on one case.
+ * Customer view: only the voice call. A new report opens a new synthetic case on every call (live
+ * 2026-10-24: reusing it for "Call again" put rehearsals on a case that was already complete);
+ * "An existing case" continues one, and the case just used is pre-selected there.
  * Apart from the demo case list below, nothing here reads case data; the bank dashboard is at "/".
  *
  * DEMO ONLY: a picker chooses a SYNTHETIC demo persona (lib/fixtures/demoPersonas.ts) whose case
@@ -11,7 +12,7 @@
  * The call can instead continue an EXISTING case (DEMO ONLY: any case can be picked, since there are
  * no customer logins), so the customer can call back with more information after a review.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -26,39 +27,22 @@ export default function CustomerCallPage() {
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [existingId, setExistingId] = useState<Id<"cases"> | null>(null);
   const [inCall, setInCall] = useState(false);
-  const caseId = useRef<Promise<Id<"cases">> | null>(null);
   const persona = getDemoPersona(personaId);
   // A case deleted from the developer tab drops out of the list, and out of the selection.
   const existing = cases?.find((c) => c._id === existingId) ?? null;
 
-  const choosePersona = (id: string | null) => {
-    if (id === personaId) return;
-    setPersonaId(id);
-    caseId.current = null; // a different customer gets a new case on the next call
-  };
+  const chooseExisting = (id: string) => setExistingId(id ? (id as Id<"cases">) : null);
 
-  const chooseMode = (m: "new" | "existing") => {
-    if (m === mode) return;
-    setMode(m);
-    caseId.current = null;
-  };
-
-  const chooseExisting = (id: string) => {
-    setExistingId(id ? (id as Id<"cases">) : null);
-    caseId.current = null;
-  };
-
-  const resolveCase = () => {
+  /** Runs once per call start. */
+  const resolveCase = async () => {
     if (mode === "existing") {
       // The button is disabled until a case is chosen; this guards a stale click.
-      if (!existing) return Promise.reject(new Error("Choose a case to call back about."));
-      return Promise.resolve(existing._id);
+      if (!existing) throw new Error("Choose a case to call back about.");
+      return existing._id;
     }
-    caseId.current ??= (personaId ? createForPersona({ personaId }) : createPlain({})).catch((e: unknown) => {
-      caseId.current = null; // let the next attempt retry
-      throw e;
-    });
-    return caseId.current;
+    const id = await (personaId ? createForPersona({ personaId }) : createPlain({}));
+    setExistingId(id); // ready under "An existing case" for a call back
+    return id;
   };
 
   const onInCallChange = useCallback((v: boolean) => setInCall(v), []);
@@ -82,7 +66,7 @@ export default function CustomerCallPage() {
               ["existing", "An existing case", "Call back with more information"],
             ] as const
           ).map(([m, title, sub]) => (
-            <button key={m} type="button" role="radio" aria-checked={mode === m} className={`persona-option${mode === m ? " persona-selected" : ""}`} disabled={inCall} onClick={() => chooseMode(m)}>
+            <button key={m} type="button" role="radio" aria-checked={mode === m} className={`persona-option${mode === m ? " persona-selected" : ""}`} disabled={inCall} onClick={() => setMode(m)}>
               <strong>{title}</strong>
               <span>{sub}</span>
             </button>
@@ -125,7 +109,7 @@ export default function CustomerCallPage() {
                     aria-checked={personaId === id}
                     className={`persona-option${personaId === id ? " persona-selected" : ""}`}
                     disabled={inCall}
-                    onClick={() => choosePersona(id)}
+                    onClick={() => setPersonaId(id)}
                   >
                     <strong>{p ? p.name : "No persona"}</strong>
                     <span>{p ? `${p.home.city}, ${p.home.state} · CRS ${p.crsPersonaId}` : "Plain case, no setup"}</span>

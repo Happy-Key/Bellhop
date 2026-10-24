@@ -52,13 +52,17 @@ export function buildRecordStatementTool(endpointUrl: string, toolSecret: string
     type: "webhook",
     name: RECORD_STATEMENT_TOOL_NAME,
     description:
-      "Records what the customer just said about their disputed payment in the case file and returns the one question to ask next. " +
+      "Records what the customer just said about their disputed payment in the case file and returns what to say next. " +
       "Call it after every complete customer statement about the claim, including short answers and corrections. " +
-      "Then ask the returned `question`, in your own natural words, and nothing else. If `question` is null, ask whether there is anything else they want to add. " +
+      "Before calling it, tell the customer you are working on it and they should wait, for example \"Okay, understood. Give me a moment while I go through the details.\" " +
+      "(after a short yes or no: \"Okay, one moment.\"). Never say \"I'll note that\". " +
+      "Then say the returned `question`, in your own natural words, and nothing else. " +
+      "If `end_call` is true, `question` is the closing message: say it, then end the call right away with the end_call tool, without waiting for a reply. " +
       "Pass the `question_id` from the previous result back as `question_id`. Do not draw your own conclusions about the case.",
-    pre_tool_speech: "auto",
+    // "force": the agent always speaks before the call, so the customer knows to wait (live 2026-10-24: silence after "I'll note that").
+    pre_tool_speech: "force",
     execution_mode: "immediate",
-    response_timeout_secs: 15,
+    response_timeout_secs: 20,
     api_schema: {
       url: endpointUrl,
       method: "POST",

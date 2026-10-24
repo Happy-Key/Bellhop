@@ -10,7 +10,7 @@
  * transcript shown here is display only.
  */
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
-import { useAction, useMutation } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AGENT_SAMPLE_RATE, INPUT_CHUNK_SAMPLES, Resampler, decodePcm16Base64, encodePcm16Base64 } from "@/lib/voice/pcm";
@@ -18,6 +18,16 @@ import { agentWebSocketUrl, audioInputMessage, clientToolRefusal, parseAgentEven
 
 /** Hard cap per call: agent minutes are billed. */
 const MAX_CALL_SECONDS = 180;
+
+/**
+ * Hang-up safety net: once the backend has given the agent its closing message (end_call), the page
+ * hangs up after the closing has been heard, in case the agent waits for the caller's goodbye
+ * (live 2026-10-24). "Heard" = at least CLOSING_MIN_AUDIO_S of agent audio after the closing, then
+ * CLOSING_SILENCE_MS of silence; CLOSING_MAX_WAIT_MS caps the wait if the agent never speaks.
+ */
+const CLOSING_MIN_AUDIO_S = 3;
+const CLOSING_SILENCE_MS = 2500;
+const CLOSING_MAX_WAIT_MS = 30_000;
 
 const CAPTURE_WORKLET = `
 class PcmCapture extends AudioWorkletProcessor {
@@ -42,9 +52,13 @@ interface CallResources {
   sources: Set<AudioBufferSourceNode>;
   nextPlayTime: number;
   timer: ReturnType<typeof setInterval> | null;
+  /** When this page saw the backend close the call, and how much agent audio has arrived since. */
+  closingSeenAt: number | null;
+  audioAfterClosingS: number;
+  lastAudioEndAt: number;
 }
 
-const emptyResources = (): CallResources => ({ sessionToken: null, ws: null, ctx: null, stream: null, nodes: [], sources: new Set(), nextPlayTime: 0, timer: null });
+const emptyResources = (): CallResources => ({ sessionToken: null, ws: null, ctx: null, stream: null, nodes: [], sources: new Set(), nextPlayTime: 0, timer: null, closingSeenAt: null, audioAfterClosingS: 0, lastAudioEndAt: 0 });
 
 interface VoiceCallProps {
   /** The case to bind the call to, or a resolver run when the call starts (the customer view creates its case lazily). */
@@ -64,6 +78,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
   const [turns, setTurns] = useState<Turn[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [agentSpeaking, setAgentSpeaking] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const res = useRef<CallResources>(emptyResources());
 
   function stopPlayback() {
@@ -93,9 +108,11 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     src.start(start);
     res.current.nextPlayTime = start + buffer.duration;
     res.current.sources.add(src);
+    if (res.current.closingSeenAt !== null) res.current.audioAfterClosingS += buffer.duration;
     setAgentSpeaking(true);
     src.onended = () => {
       res.current.sources.delete(src);
+      res.current.lastAudioEndAt = Date.now();
       if (res.current.sources.size === 0) setAgentSpeaking(false);
     };
   }
@@ -117,6 +134,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     if (r.ws && r.ws.readyState <= WebSocket.OPEN) r.ws.close(1000, "call ended by customer");
     void r.ctx?.close().catch(() => {});
     setAgentSpeaking(false);
+    setSessionToken(null);
   }
 
   function fail(message: string) {
@@ -226,6 +244,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
       setDetail("Starting voice session…");
       const session = await createSession({ caseId: typeof caseId === "function" ? await caseId() : caseId });
       res.current.sessionToken = session.token;
+      setSessionToken(session.token);
       const token = await mintToken({});
       if (!token.ok) return fail(token.error);
       if (!token.agentId) return fail("CARTESIA_AGENT_ID is not set in the Convex environment");
@@ -259,6 +278,25 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
   useEffect(() => {
     onInCallChange?.(inCall);
   }, [inCall, onInCallChange]);
+
+  const closing = useQuery(api.voice.sessionClosing, sessionToken && status === "live" ? { sessionToken } : "skip");
+  useEffect(() => {
+    if (!closing || status !== "live") return;
+    const r = res.current;
+    r.closingSeenAt ??= Date.now();
+    const timer = setInterval(() => {
+      if (res.current !== r) return clearInterval(timer); // already torn down
+      const now = Date.now();
+      const closingHeard = r.audioAfterClosingS >= CLOSING_MIN_AUDIO_S && r.sources.size === 0 && now - r.lastAudioEndAt >= CLOSING_SILENCE_MS;
+      if (closingHeard || now - r.closingSeenAt! >= CLOSING_MAX_WAIT_MS) {
+        clearInterval(timer);
+        teardown();
+        setStatus("ended");
+        setDetail("The assistant ended the call.");
+      }
+    }, 250);
+    return () => clearInterval(timer);
+  }, [closing, status]);
   if (variant === "customer") {
     // The boundary keeps a display error from unmounting VoiceCall, whose cleanup would hang up the call.
     return (
