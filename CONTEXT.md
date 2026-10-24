@@ -35,7 +35,8 @@ Rules that always hold:
 | Regulatory considerations | ✅ Curated official sources (Reg E and CFPB), scenario-scoped, no deadline math. 3 excerpts need word-for-word verification |
 | Developer agent (Factory Droid) | ❌ Not started |
 | Simulated reimbursement | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, 99 unit tests, production build all pass (2026-10-24) |
+| Checks | ✅ `npm run verify`: typecheck, lint, 107 unit tests, production build all pass (2026-10-24, branch `bank-dashboard`) |
+| Claims workstation (`/review`) | ✅ Built on branch `bank-dashboard` (pushed, not merged): queue + case review; browser-tested on the personal review deployment |
 | Backend consistency fixes | ✅ Mock-tested 2026-10-24, **not yet pushed or run live** (see "What needs to be added" item 1) |
 
 ## What works today (end to end)
@@ -78,6 +79,17 @@ Rules that always hold:
     and their transcript: no cases, costs or call internals. The first call creates a synthetic case,
     and "Call again" reuses it; bank staff review it on the dashboard (`/`). This uses the same `VoiceCall`
     component with `variant="customer"`. Not yet run live, and the queries are still unauthenticated.
+
+12. **Claims workstation** at `/review` (branch `bank-dashboard`, pushed; not merged into `foundation`). The bank-side view.
+    - **Queue** (`/review`, deep link `?case=<id>`): cases grouped by who acts (needs a reviewer / needs customer
+      information / no report yet), with search, a filter, and ↑ ↓ Enter keyboard selection. Backed by the
+      read-only `review:queue` query and the pure `lib/domain/triage.ts`.
+    - **Case review** (`/review/<id>`): sections and a payment switcher (matcher candidates only), an evidence
+      trail (reported fact → statement → bank record → the matcher's own reasons), statements with the question
+      each answered, bank records, identity evidence, the draft packet, a timeline, and next steps split into
+      bank and customer items keyed by stable question keys.
+    - The only action is **Retrieve bank records** (live Nessie). There's no assignment, SLA, deadline, outbound
+      contact, approval or sign-in.
 
 ## Key design decisions
 
@@ -217,3 +229,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Branch `client-view` (off `foundation` `f9bb26a`): customer-only call page `/call`, route-aware banner (`components/SiteBanner.tsx`), `VoiceCall` gains `variant` + lazy case resolver. Committed and pushed to `origin/client-view`; `npm run verify` passes (74 tests, build includes `/call`) |
 | 2026-10-24 | Separate personal Convex dev deployment for `client-view` review (user-created; own keys). `VOICE_TOOL_SECRET` generated and set there; `record_statement` tool registered live on a new, separate Cartesia agent |
 | 2026-10-24 | Merged `client-view` into `foundation` (no conflicts); `npm run verify` passes on the merge (100 tests) |
+| 2026-10-24 | Claims workstation `/review` built on branch `bank-dashboard` (new files plus `SiteBanner.tsx`; new read-only `review:queue`; 8 new tests; verify passes). `review:queue` was pushed to the personal review deployment by the user's running `npx convex dev`; 6 synthetic demo cases seeded there (with approval) and browser-tested in Chrome (desktop, 390 px, dark mode, keyboard, live retrieval). Committed and pushed to `origin/bank-dashboard` |

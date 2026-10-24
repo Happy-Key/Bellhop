@@ -15,6 +15,7 @@ import type * as http from "../http.js";
 import type * as model from "../model.js";
 import type * as nessie from "../nessie.js";
 import type * as reasoning from "../reasoning.js";
+import type * as review from "../review.js";
 import type * as statements from "../statements.js";
 import type * as system from "../system.js";
 import type * as validators from "../validators.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   model: typeof model;
   nessie: typeof nessie;
   reasoning: typeof reasoning;
+  review: typeof review;
   statements: typeof statements;
   system: typeof system;
   validators: typeof validators;
