@@ -17,13 +17,16 @@ Legend: [x] done and tested · [~] implemented, not yet verified live · [ ] not
 
 ## Phase 3: Voice and reasoning
 - [x] Shared statement path for text and voice; idempotent retries
-- [~] Cartesia webhook-tool endpoint (tested locally over HTTP; not yet called by Cartesia)
-- [~] Cartesia access-token minting (not run live)
-- [ ] Browser call client (agent WebSocket, microphone audio)
+- [x] Cartesia webhook-tool endpoint (called by Cartesia live, 2026-10-24)
+- [x] Cartesia access-token minting (live, 2026-10-24)
+- [x] Browser call client (`components/VoiceCall.tsx`): live call verified 2026-10-24
 - [x] Webhook tool registration: `voiceSetup:registerVoiceTool` (idempotent; mock-tested; run live by the user 2026-10-24, tool created and attached)
 - [~] Managed Agent instructions pasted into the Playground (welcome message and the rest of the prompt not done yet)
 - [x] First live call (Playground preview, 2026-10-24): `session_token` dynamic variable → webhook tool → Convex → dashboard
-- [ ] Enable the `end_call` system tool and lower the inactivity timeout
+- [x] Found live: browser tokens can't send dynamic variables. Switched to call-ID binding (`voice:bindVoiceCall` + `system__conversation_id`); tested with convex-test; tool must be re-registered
+- [x] `end_call` system tool enabled (works live)
+- [ ] Lower the inactivity timeout; finish the welcome message and prompt
+- [ ] Voice quality: spoken amounts and cents, agent-question context on answers, repetition, voice corrections
 - [~] OpenAI-compatible live reasoning provider (mock-tested; Bitdeer credits not claimed)
 
 ## Phase 4: CRS evidence

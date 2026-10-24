@@ -90,5 +90,9 @@ export default defineSchema({
     caseId: v.id("cases"),
     createdAt: v.number(),
     expiresAt: v.number(),
-  }).index("by_token", ["token"]),
+    /** Cartesia call ID (`session_ready.call_id`), bound once by the browser when the call starts. */
+    callId: v.optional(v.string()),
+  })
+    .index("by_token", ["token"])
+    .index("by_call", ["callId"]),
 });

@@ -15,8 +15,12 @@ import { ProviderError, redact, type FetchLike } from "./errors";
 export const CARTESIA_BASE_URL = "https://api.cartesia.ai";
 export const CARTESIA_VERSION = "2026-08-14";
 export const RECORD_STATEMENT_TOOL_NAME = "record_statement";
-/** Dynamic variable the browser sets in `session_create.dynamic_variables`. */
-export const SESSION_TOKEN_VARIABLE = "session_token";
+/**
+ * Cartesia system variable holding the call ID (https://docs.cartesia.ai/agents/dynamic-variables.md).
+ * Browser access tokens cannot supply custom dynamic variables (`dynamic_variables_not_allowed`,
+ * seen live 2026-10-24), so the case is found by the call ID the browser bound to its session.
+ */
+export const CALL_ID_VARIABLE = "system__conversation_id";
 const MAX_TOOL_PAGES = 20;
 
 const ToolSummary = z.object({ id: z.string().min(1), name: z.string(), type: z.string() }).loose();
@@ -38,8 +42,8 @@ export interface WebhookToolDefinition {
 
 /**
  * The tool Cartesia calls after each customer statement. The model supplies only the
- * utterance; the session token comes from a dynamic variable, so the model never sees or
- * chooses which case it writes to.
+ * utterance; the call ID comes from a system variable, so the model never sees or chooses
+ * which case it writes to.
  */
 export function buildRecordStatementTool(endpointUrl: string, toolSecret: string): WebhookToolDefinition {
   if (!/^https:\/\//.test(endpointUrl)) throw new ProviderError("cartesia", "not_configured", `webhook URL must be public HTTPS (got ${endpointUrl}); use a cloud Convex deployment`);
@@ -60,7 +64,7 @@ export function buildRecordStatementTool(endpointUrl: string, toolSecret: string
         type: "object",
         properties: {
           utterance: { type: "string", description: "The customer's latest complete statement, in their own words. Do not summarize, interpret, or add anything." },
-          session_token: { type: "string", dynamic_variable: SESSION_TOKEN_VARIABLE },
+          call_id: { type: "string", dynamic_variable: CALL_ID_VARIABLE },
         },
         required: ["utterance"],
       },

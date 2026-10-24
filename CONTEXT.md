@@ -31,11 +31,11 @@ Rules that always hold:
 | Bank records (Capital One Nessie) | ✅ **Live**: synthetic demo account seeded (5 purchases); retrieval verified |
 | Identity evidence (CRS sandbox) | ✅ **Live**: TransUnion identity check on test personas; verified with P12 (3 issues) and P01 (clean) |
 | Reasoning | ⚠️ **Scripted mode** (deterministic, labelled). Live model provider built but not configured |
-| Voice (Cartesia) | 🟡 **Partial**: key, agent ID and tool secret set in Convex; backend endpoint live and secured. `record_statement` tool registered and attached. **First live call worked** (Playground preview → Convex → dashboard). `end_call` not enabled yet; browser call client not built. Agent balance $0.91 |
+| Voice (Cartesia) | ✅ **Live**: browser call from the case page works end to end (2026-10-24). The call is linked to the case by call ID; statements are recorded through the `record_statement` webhook tool; End call works. Quality issues are open (see below). Agent balance about $0.86 |
 | Regulatory considerations | ✅ Curated official sources (Reg E and CFPB), scenario-scoped, no deadline math. 3 excerpts need word-for-word verification |
 | Developer agent (Factory Droid) | ❌ Not started |
 | Simulated reimbursement | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, 63 unit tests, production build all pass |
+| Checks | ✅ `npm run verify`: typecheck, lint, 74 unit tests, production build all pass |
 
 ## What works today (end to end)
 
@@ -65,9 +65,14 @@ Rules that always hold:
    - escalate (e.g. a customer-initiated scam payment)
    - reimbursement **review**
 9. **Activity log and integration status** are on every case page.
-10. **Voice endpoint.** `POST <deployment>.convex.site/voice/tools/record-statement` is
-    authenticated by `VOICE_TOOL_SECRET`. It's bound to one case by a backend-issued
-    session token, ignores retried calls, and feeds the same workflow as text.
+10. **Voice calls.** The case page has a **Start voice call** button (`components/VoiceCall.tsx`).
+    - Convex mints a 60 s Cartesia access token; the browser opens the agent WebSocket.
+    - On `session_ready`, the browser binds `call_id` to a backend-issued voice session
+      (`voice:bindVoiceCall`), then starts the microphone.
+    - The agent's `record_statement` webhook tool POSTs each statement, with `call_id` filled from
+      `system__conversation_id`, to `<deployment>.convex.site/voice/tools/record-statement`
+      (bearer `VOICE_TOOL_SECRET`). It feeds the same workflow as text and ignores retries.
+    - Calls are hard-capped at 3 minutes.
 
 ## Key design decisions
 
@@ -88,14 +93,32 @@ Rules that always hold:
 
 ## What needs to be added (priority order)
 
-1. **Cartesia voice**
-   - Finish the agent in the Playground: welcome message (no `{{variables}}`) and the rest of
-     the instructions.
-   - Enable the `end_call` system tool, set the inactivity timeout to about 30 s, and add the
-     goodbye line to the instructions.
-   - Pass the session token as a dynamic variable when a call starts: send it as
-     `session_create.dynamic_variables.session_token` (confirmed in the docs, not yet tested live).
-   - Build the browser microphone and agent WebSocket client.
+1. **Voice quality** (from the live browser test, 2026-10-24; case `jx72bbhya9tfz6ctaw67rt28sh8gxa6n`, S1–S7):
+   - **Spoken amounts are missed.** `extractAmounts` (`lib/domain/interpret.ts:32`) only matches `$19.99`
+     or "19.99 dollars".
+     - "a bill for 19.99" gave `[]` (S3).
+     - "24 dollars and 99 cents … not 19 dollars and 99 cents" gave `[24, 19]` (S5).
+     - Fix: accept bare decimals in a money context, "N dollars and M cents", and probably spelled-out
+       numbers. Add tests first.
+   - **Answers lack context.** The customer's replies become "Yes." / "Yes. that one." (S6, S7), and the
+     agent's question isn't stored. Proposed (deterministic, no model input): when the tool returns
+     `next_questions`, store the question the agent was told to ask, and attach it to the next voice
+     statement as `inResponseTo`. Show it in the dashboard. Optional extras: show agent turns in the
+     activity log, or fetch the Cartesia transcript after the call (`GET /agents/calls/{call_id}`).
+   - **The agent repeats itself.** It confirmed the $24.99 dispute twice, then asked for the amount again.
+     Likely causes:
+     - the backend keeps returning the same blocking question, because "yes" never resolves it
+       (see the two items above);
+     - the Playground prompt;
+     - the scripted interpreter can't resolve ambiguity from short answers.
+     - Fixing amounts and context should reduce it. Then tune the prompt.
+   - **Voice corrections aren't linked.** S5 was a correction, but voice statements never set
+     `correctsRef`. Consider detecting "actually / not X like I said" in the scripted interpreter.
+   - **Smaller issues:** the merchant extractor over-captures ("Volt Electronics. I" in a text statement).
+     Identical words said twice in one call are deduplicated (there is no turn ID).
+   - **Still to do:** the welcome message and the rest of the Playground instructions. Lower the
+     inactivity timeout. Add a login or rate limit before sharing the app URL (starting a call is
+     public and billed).
 2. **Live reasoning.** Decide on Bitdeer, claim its credits, set the `REASONING_*`
    variables, and run the first live test.
 3. **Simulated reimbursement.** A Nessie deposit labelled SIMULATED, with explicit human
@@ -110,9 +133,9 @@ Rules that always hold:
 
 ## Waiting on you
 
-- **Cartesia:** in the Playground, enable End call, lower the inactivity timeout, and add the
-  goodbye line. Calls cost about $0.09 each from the $0.91 balance until the promo code is
-  applied, so keep tests short and hang up manually.
+- **Cartesia:** tune the Playground prompt (repetition) and lower the inactivity timeout. The balance
+  is about $0.86 until the promo code is applied; the last call cost $0.05. Re-run
+  `voiceSetup:registerVoiceTool` whenever the tool definition changes.
 - **Reasoning:** decide whether to claim Bitdeer credits.
 - **Factory:** API key and `droid` CLI install, when we reach that step.
 - **Housekeeping:**
@@ -149,3 +172,6 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-23 | Cartesia webhook-tool registration action (`voiceSetup:registerVoiceTool`) with 8 mocked tests; dry run verified on cloud dev; not run live |
 | 2026-10-24 | User ran tool registration live (created and attached) and pasted the instructions; clarified that `next_questions` is a response field, not a tool |
 | 2026-10-24 | First live voice test passed (Playground → webhook tool → Convex → dashboard). Found `end_call` not enabled; usage recorded |
+| 2026-10-24 | Committed and pushed tool registration (`ed41f61`). Browser call client built: `components/VoiceCall.tsx` + `lib/voice/`, 9 new tests; not run live |
+| 2026-10-24 | Live browser call failed: `dynamic_variables_not_allowed` for browser tokens. Switched to binding by call ID (`bindVoiceCall`, tool sends `system__conversation_id`); 74 tests pass; tool needs re-registering |
+| 2026-10-24 | **Live browser voice call worked** (call-ID binding confirmed: `system__conversation_id` = `session_ready.call_id`); End call works; $0.05. Logged issues: spoken amounts and cents missed, answers lack the agent's question, agent repeats itself, voice corrections unlinked |

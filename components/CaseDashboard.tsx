@@ -10,6 +10,7 @@ import { getSource } from "@/lib/domain/regulatory";
 import { DEMO_STATEMENTS } from "@/lib/fixtures/demo";
 import { CRS_PERSONAS, getCrsPersona } from "@/lib/fixtures/crsPersonas";
 import { IntegrationStatus } from "./IntegrationStatus";
+import { VoiceCall } from "./VoiceCall";
 
 type StoredAnalysis = Omit<CaseAnalysis, "rejectedFindings"> & { rejectedFindings: { finding: string; reasons: string[] }[] };
 
@@ -102,7 +103,7 @@ function Statements({ caseId, statements }: { caseId: Id<"cases">; statements: D
           <div key={d}><button onClick={() => setText(d)}>use</button> {d}</div>
         ))}
       </details>
-      <p className="muted">Voice input: Cartesia backend endpoints exist; the browser call client is not implemented yet.</p>
+      <VoiceCall caseId={caseId} />
     </section>
   );
 }

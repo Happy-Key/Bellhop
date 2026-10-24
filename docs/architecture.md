@@ -67,7 +67,9 @@ Rejected findings are shown in the UI and logged.
 - **Account access is decided by the backend:** `cases.nessieAccountId` is set from
   `NESSIE_DEMO_ACCOUNT_ID`. No client or model argument can choose an account. Nessie IDs are
   format-checked before they are used in a URL.
-- Voice tool calls are tied to a case by a backend-issued `session_token` (30-minute TTL) and
+- Voice tool calls are tied to a case through a backend-issued voice session (30-minute TTL).
+  The browser binds Cartesia's `call_id` to the session once (`voice.bindVoiceCall`: one call per
+  session, one session per call). The tool sends that ID from `system__conversation_id`, and is
   authenticated with the `VOICE_TOOL_SECRET` bearer token.
 - Statement text is evidence only. The LLM prompt says so explicitly, and model output is
   schema-validated, then evidence-validated.
@@ -90,10 +92,18 @@ Rejected findings are shown in the UI and logged.
   transcripts.
 - The tool response returns the backend's blocking questions, so the agent asks what the
   workflow needs rather than inventing its own.
-- Not built yet:
-  - The browser microphone/WebSocket client for `wss://api.cartesia.ai/v1/agents/websocket/{agent_id}`.
-  - The agent and tool configuration in Cartesia.
-  - A public Convex deployment (Cartesia can't reach 127.0.0.1).
+- Browser call client: `components/VoiceCall.tsx` on the case page, using `lib/voice/` (pure PCM and
+  protocol helpers).
+  - Steps: microphone permission, then `voice.createVoiceSession`, then `voice.createCartesiaAccessToken`
+    (agent grant, 60 s), then `wss://api.cartesia.ai/v1/agents/websocket/{agent_id}?access_token=…`.
+  - On `session_ready`, the browser calls `voice.bindVoiceCall(sessionToken, call_id)` and only then starts
+    the microphone, so a tool call can't arrive before the binding exists. (Browser tokens may not send
+    `dynamic_variables`.)
+  - Microphone audio goes through an AudioWorklet, is resampled to 16 kHz and sent as 40 ms
+    `pcm_16000` chunks. Agent audio is scheduled with Web Audio and stopped immediately on
+    `audio_output_clear`.
+  - The transcript in the UI is display only. Statements are recorded by the webhook tool.
+  - Calls are hard-capped at 3 minutes (billed per minute).
 
 ## Live reasoning
 

@@ -28,6 +28,7 @@ The pipeline: intake (text, later voice) → live Nessie bank records → determ
 - `lib/domain/`: pure, browser-safe domain logic (schemas, interpretation, facts, matching,
   findings validation, regulatory, workflow).
 - `lib/providers/`: typed external clients behind interfaces, with injectable fetch.
+- `lib/voice/`: browser-safe voice-call helpers (PCM conversion, agent WebSocket protocol).
 - `lib/fixtures/`: synthetic demo data.
 - `convex/`: schema, functions, actions, and the HTTP router. `model.ts` holds shared helpers;
   `_generated/` is committed.

@@ -11,12 +11,18 @@ import { z } from "zod";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { voiceIdempotencyKey } from "../lib/domain/idempotency";
+import { CALL_ID_PATTERN } from "./voice";
 
-const ToolBody = z.object({
-  session_token: z.string().regex(/^vs_[a-f0-9]{32}$/),
-  utterance: z.string().min(1).max(4000),
-  turn_id: z.string().min(1).max(128).optional(),
-});
+// Live calls send call_id (from Cartesia's system__conversation_id). session_token remains for
+// direct testing. Exactly one must be present.
+const ToolBody = z
+  .object({
+    call_id: z.string().regex(CALL_ID_PATTERN).optional(),
+    session_token: z.string().regex(/^vs_[a-f0-9]{32}$/).optional(),
+    utterance: z.string().min(1).max(4000),
+    turn_id: z.string().min(1).max(128).optional(),
+  })
+  .refine((b) => !!b.call_id !== !!b.session_token, "exactly one of call_id or session_token");
 
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -41,9 +47,13 @@ http.route({
 
     const parsed = ToolBody.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return json(400, { error: "invalid body" });
-    const { session_token, utterance, turn_id } = parsed.data;
-    const key = await voiceIdempotencyKey(session_token, utterance, turn_id);
-    const result = await ctx.runMutation(internal.voice.recordVoiceUtterance, { sessionToken: session_token, utterance, idempotencyKey: key });
+    const { call_id, session_token, utterance, turn_id } = parsed.data;
+    const key = await voiceIdempotencyKey((call_id ?? session_token)!, utterance, turn_id);
+    const result = await ctx.runMutation(internal.voice.recordVoiceUtterance, {
+      ...(call_id ? { callId: call_id } : { sessionToken: session_token }),
+      utterance,
+      idempotencyKey: key,
+    });
     if (!result.ok) return json(404, { error: result.error });
     // Plain, short response the voice agent can relay. Questions come from the backend workflow.
     return json(200, {

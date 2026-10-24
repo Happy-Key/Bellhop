@@ -67,6 +67,45 @@ describe("Convex case workflow", () => {
     const view = await t.query(api.cases.view, { caseId });
     expect(view?.statements.map((s) => s.channel)).toEqual(["voice"]);
   });
+
+  it("binds one Cartesia call to one voice session, and refuses rebinding", async () => {
+    const t = convexTest(schema, modules);
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    const s1 = await t.mutation(api.voice.createVoiceSession, { caseId });
+    const s2 = await t.mutation(api.voice.createVoiceSession, { caseId });
+    await expect(t.mutation(api.voice.bindVoiceCall, { sessionToken: s1.token, callId: "not-a-call" })).rejects.toThrow(/invalid Cartesia call ID/);
+    await expect(t.mutation(api.voice.bindVoiceCall, { sessionToken: "vs_nope", callId: "ac_aaaaaaaaaa" })).rejects.toThrow(/unknown or expired/);
+    expect(await t.mutation(api.voice.bindVoiceCall, { sessionToken: s1.token, callId: "ac_aaaaaaaaaa" })).toEqual({ ok: true });
+    expect(await t.mutation(api.voice.bindVoiceCall, { sessionToken: s1.token, callId: "ac_aaaaaaaaaa" })).toEqual({ ok: true }); // retry is a no-op
+    await expect(t.mutation(api.voice.bindVoiceCall, { sessionToken: s1.token, callId: "ac_bbbbbbbbbb" })).rejects.toThrow(/already bound to another call/);
+    await expect(t.mutation(api.voice.bindVoiceCall, { sessionToken: s2.token, callId: "ac_aaaaaaaaaa" })).rejects.toThrow(/already bound to another voice session/);
+  });
+
+  it("records tool calls by call ID through the authenticated HTTP endpoint", async () => {
+    process.env.VOICE_TOOL_SECRET = "test-secret";
+    try {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      const { token } = await t.mutation(api.voice.createVoiceSession, { caseId });
+      const post = (body: unknown, auth = "Bearer test-secret") =>
+        t.fetch("/voice/tools/record-statement", { method: "POST", headers: { Authorization: auth, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+      expect((await post({ call_id: "ac_cccccccccc", utterance: "hi" }, "Bearer wrong")).status).toBe(401);
+      const unbound = await post({ call_id: "ac_cccccccccc", utterance: "I didn't make a $49 charge" });
+      expect(unbound.status).toBe(404);
+      expect(await unbound.json()).toEqual({ error: "this call is not linked to a case (or its session expired)" });
+      expect((await post({ call_id: "ac_cccccccccc", session_token: token, utterance: "x" })).status).toBe(400);
+
+      await t.mutation(api.voice.bindVoiceCall, { sessionToken: token, callId: "ac_cccccccccc" });
+      const ok = await post({ call_id: "ac_cccccccccc", utterance: "I didn't make a $49 charge" });
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toMatchObject({ recorded: "S1", duplicate: false });
+      const view = await t.query(api.cases.view, { caseId });
+      expect(view?.statements.map((s) => [s.ref, s.channel])).toEqual([["S1", "voice"]]);
+    } finally {
+      delete process.env.VOICE_TOOL_SECRET;
+    }
+  });
 });
 
 describe("CRS persistence", () => {
