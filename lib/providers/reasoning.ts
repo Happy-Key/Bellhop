@@ -77,6 +77,17 @@ export interface OpenAICompatibleConfig {
   model: string;
   providerLabel: string;
   timeoutMs?: number;
+  /**
+   * Sent as `reasoning_effort` when set (REASONING_EFFORT). On Bitdeer's GLM-5.3-Flash, "low" cuts the
+   * whole-case call from ~50–110 s (8–9k thinking tokens, past the 60 s timeout) to 12–16 s, with
+   * every probe proposal still passing validation (measured 2026-10-24).
+   */
+  reasoningEffort?: "low" | "medium" | "high";
+}
+
+/** REASONING_EFFORT from the environment, or undefined when unset or not one of low / medium / high. */
+export function reasoningEffortFromEnv(value: string | undefined): OpenAICompatibleConfig["reasoningEffort"] {
+  return value === "low" || value === "medium" || value === "high" ? value : undefined;
 }
 
 const SYSTEM_PROMPT = `You extract structured facts from ONE customer statement about a suspected fraudulent bank payment.
@@ -133,6 +144,7 @@ export class OpenAICompatibleReasoningProvider implements ReasoningProvider {
     const body = {
       model: this.cfg.model,
       temperature: 0,
+      ...(this.cfg.reasoningEffort ? { reasoning_effort: this.cfg.reasoningEffort } : {}),
       messages: [
         { role: "system", content: system },
         { role: "user", content: JSON.stringify(user) },

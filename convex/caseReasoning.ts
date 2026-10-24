@@ -7,7 +7,7 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { OpenAICompatibleReasoningProvider } from "../lib/providers/reasoning";
+import { OpenAICompatibleReasoningProvider, reasoningEffortFromEnv } from "../lib/providers/reasoning";
 import { redact } from "../lib/providers/errors";
 
 export const proposeLive = internalAction({
@@ -21,7 +21,13 @@ export const proposeLive = internalAction({
       await ctx.runMutation(internal.proposals.applyResult, { proposalId, provider: label, result: { ok: false, error: "REASONING_BASE_URL / REASONING_API_KEY / REASONING_MODEL not all set" } });
       return;
     }
-    const provider = new OpenAICompatibleReasoningProvider({ baseUrl: REASONING_BASE_URL, apiKey: REASONING_API_KEY, model: REASONING_MODEL, providerLabel: label });
+    const provider = new OpenAICompatibleReasoningProvider({
+      baseUrl: REASONING_BASE_URL,
+      apiKey: REASONING_API_KEY,
+      model: REASONING_MODEL,
+      providerLabel: label,
+      reasoningEffort: reasoningEffortFromEnv(process.env.REASONING_EFFORT),
+    });
     try {
       const raw = await provider.proposeCase(job.input as Parameters<typeof provider.proposeCase>[0]);
       await ctx.runMutation(internal.proposals.applyResult, { proposalId, provider: provider.id, result: { ok: true, raw } });
