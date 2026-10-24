@@ -97,6 +97,19 @@ describe("OpenAI-compatible reasoning provider (mocked)", () => {
   it("throws on HTTP errors", async () => {
     await expect(provider("{}", 429).interpret(ctx)).rejects.toMatchObject({ kind: "http", httpStatus: 429 });
   });
+
+  it("sends the question being answered so short replies can be read, with bearer auth", async () => {
+    let sent: { url: string; auth: string | null; body: { messages: { content: string }[] } } | null = null;
+    const out = { amounts: [], dates: [], merchantTerms: [], authorization: "authorized", credentialSharing: "unspecified", scamIndicators: [], findings: [], followUpQuestion: null };
+    const p = new OpenAICompatibleReasoningProvider({ baseUrl: "https://api-inference.bitdeer.ai/v1/", apiKey: "k", model: "m", providerLabel: "bitdeer" }, async (url, init) => {
+      sent = { url: String(url), auth: new Headers(init?.headers).get("authorization"), body: JSON.parse(String(init?.body)) };
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] }));
+    });
+    await p.interpret({ ...ctx, statement: { ...ctx.statement, text: "Me." }, questionAsked: "Did you personally enter and send this payment, or did someone else do that?" });
+    expect(sent!.url).toBe("https://api-inference.bitdeer.ai/v1/chat/completions");
+    expect(sent!.auth).toBe("Bearer k");
+    expect(JSON.parse(sent!.body.messages[1]!.content)).toMatchObject({ statement: "Me.", questionAsked: expect.stringContaining("personally enter and send") });
+  });
 });
 
 describe("redaction and idempotency", () => {

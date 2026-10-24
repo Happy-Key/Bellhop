@@ -5,8 +5,9 @@
  * Implementations:
  *  - ScriptedReasoningProvider: deterministic patterns, always labelled "scripted".
  *  - OpenAICompatibleReasoningProvider: any documented OpenAI-compatible
- *    /chat/completions endpoint. No provider is chosen; disabled until one is
- *    configured and verified. Failures throw — callers must NOT fall back to scripted.
+ *    /chat/completions endpoint. The chosen provider is Bitdeer
+ *    (https://api-inference.bitdeer.ai/v1), configured through REASONING_* env vars.
+ *    Failures throw — callers must NOT fall back to scripted.
  */
 import { z } from "zod";
 import { interpretStatementScripted, SCRIPTED_PROVIDER } from "../domain/interpret";
@@ -15,6 +16,8 @@ import { ProviderError, redact, type FetchLike } from "./errors";
 
 export interface ReasoningContext {
   statement: { ref: string; text: string; receivedAt: number };
+  /** The question this statement replies to, so short answers ("Yes.", "me") can be read. */
+  questionAsked?: string | null;
   priorStatements: { ref: string; text: string }[];
   /** Evidence refs the model is allowed to cite. Anything else is rejected downstream. */
   citableRefs: string[];
@@ -77,6 +80,9 @@ authorization ("denies_authorization"|"authorized_induced"|"authorized"|"unspeci
 credentialSharing ("shared"|"not_shared"|"unspecified"), scamIndicators (string[]),
 findings (array of {id,text,category:"model_inference",evidenceRefs:string[],status:"tentative"|"unverified",contradictions:string[]}),
 followUpQuestion (string|null).
+authorization records who the customer says entered and sent the payment: "denies_authorization" = someone else did it or the customer does not recognize it; "authorized_induced" = the customer sent it after being deceived; "authorized" = the customer sent it, no deception mentioned.
+If questionAsked is present, the statement is the customer's reply to that question: read short replies ("Yes.", "me", "someone else") in its context.
+Text like [REDACTED:code] marks a value removed for privacy; never ask for it.
 Only cite evidenceRefs from the provided list. Never state that fraud occurred or that a refund is owed.`;
 
 export class OpenAICompatibleReasoningProvider implements ReasoningProvider {
@@ -98,6 +104,7 @@ export class OpenAICompatibleReasoningProvider implements ReasoningProvider {
             statementRef: ctx.statement.ref,
             statementReceivedAt: new Date(ctx.statement.receivedAt).toISOString(),
             statement: ctx.statement.text,
+            questionAsked: ctx.questionAsked ?? null,
             priorStatements: ctx.priorStatements,
             citableRefs: ctx.citableRefs,
           }),

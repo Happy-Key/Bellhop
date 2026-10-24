@@ -89,8 +89,9 @@ package.json).
 - Claude Code is the **development** assistant only. The app must not require the Anthropic
   API or SDK.
 - Reasoning sits behind `ReasoningProvider` (`lib/providers/reasoning.ts`). It is `scripted`
-  and always labelled. Bitdeer was dropped from the stack (2026-10-24); no live provider is
-  chosen. Don't add one without the user's decision.
+  by default and always labelled. **Live extraction is done through Bitdeer** (decided
+  2026-10-24), via its OpenAI-compatible API and the `REASONING_*` env vars. See
+  `docs/integrations.md`.
 - The Cartesia Managed Agent LLM handles the voice conversation only; case reasoning stays in
   Convex.
 - Never silently fall back from live to scripted. Never enable a paid service or buy credits
@@ -152,7 +153,7 @@ Cartesia covers Sonic TTS, Ink STT, voices, and Managed Agents.
 
 See `docs/integrations.md` and `docs/status.md`.
 - Nessie: live and verified.
-- Reasoning: scripted active.
+- Reasoning: scripted active; Bitdeer chosen for live extraction, not yet configured.
 - Cartesia: backend partial.
 - CRS: identity check live and verified. Factory: researched, not implemented.
 

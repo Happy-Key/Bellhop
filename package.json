@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "verify": "run-s typecheck lint test build",
     "live:nessie": "tsx scripts/live-check-nessie.ts",
+    "live:reasoning": "tsx scripts/live-check-reasoning.ts",
     "seed:nessie": "tsx scripts/seed-nessie.ts"
   },
   "dependencies": {

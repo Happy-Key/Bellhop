@@ -41,17 +41,29 @@ Claude Code is the development assistant only. **The app does not use the Anthro
    - Cartesia Managed Agents use a hosted LLM chosen from a catalog of "models from OpenAI, Anthropic and Google Gemini". "You do not need a provider account or API key" (https://docs.cartesia.ai/agents/models.md). `GET /v1/agents/models` lists the models available to your account, with token prices.
    - That LLM is reachable **only inside an agent call** (audio over WebSocket or telephony). There is no documented text chat-completions endpoint, so it cannot interpret text-channel statements.
    - **Whether event credits cover agent LLM tokens: UNVERIFIED.** The CalHacks page (https://docs.cartesia.ai/calhacks) documents no credit amount.
-2. **CREAO.** An agent platform (`developer.creao.ai/v1`, runs/agents/webhooks). **No OpenAI-compatible inference was found.** Not suitable as a drop-in reasoning provider.
-
-(Bitdeer was evaluated as an OpenAI-compatible candidate and **dropped from the stack on 2026-10-24**; its credits were never claimed and no code depended on it.)
+2. **Bitdeer AI (chosen 2026-10-24 for extraction).** Docs re-checked 2026-10-24 (https://developers.bitdeer.ai/docs/api):
+   - Base URL `https://api-inference.bitdeer.ai/v1`; `POST /v1/chat/completions`; `Authorization: Bearer {API_KEY}`. Works with the community `openai` client by setting `base_url`. **verified (docs)**
+   - Keys: Bitdeer AI Console → API Keys, https://www.bitdeer.ai/en/model/apikeys. Credits: create an account at https://www.bitdeer.ai/en, then submit the sponsor credit form.
+   - `GET /v1/models` lists the models a key can use (`npm run live:reasoning -- --models`).
+   - Text models in the catalog (https://developers.bitdeer.ai/docs/api/models-catalog): `deepseek-ai/DeepSeek-V4.1-Flash`, `deepseek-ai/DeepSeek-V4.1-Flash-1017`, `deepseek-ai/DeepSeek-V4-Flash`, `zai-org/GLM-5.3`, `zai-org/GLM-5.3-Flash`, `Qwen/Qwen3.8-27B`, `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B`.
+   - **UNVERIFIED (not in the docs):** `response_format` / JSON mode, `temperature`, rate limits, context lengths, latency. We don't send `response_format`. The provider accepts plain or ```json-fenced JSON and rejects anything else as `malformed_response`.
+3. **CREAO.** An agent platform (`developer.creao.ai/v1`, runs/agents/webhooks). **No OpenAI-compatible inference was found.** Not suitable as a drop-in reasoning provider.
 
 **Decision (2026-10-24):**
 - The Cartesia agent handles the *conversation* on the voice channel.
-- Case reasoning (statement interpretation) stays behind `ReasoningProvider` in Convex, so text and voice share one interpreter.
-- **No live interpretation provider is chosen.** `REASONING_PROVIDER=scripted`: the labelled pattern extractor plus the rule-based answer reader (`lib/domain/answers.ts`). The generic `OpenAICompatibleReasoningProvider` stays in the code, unconfigured and mock-tested, so a provider can be added later through env vars alone.
+- **Statement extraction is done by Bitdeer** through `OpenAICompatibleReasoningProvider` in Convex (`convex/reasoning.ts`), so text and voice share one interpreter. Until the env vars are set, `REASONING_PROVIDER=scripted` (labelled). There is never a silent fallback.
+- The model gets the statement (after redaction), earlier statements, the question being answered (`questionAsked`), and the refs it may cite. Its output is schema-validated and its findings evidence-validated.
+- Short replies are also read by the rule-based answer reader, in both modes.
 - To avoid a second reasoning agent, the voice agent's prompt should only relay what the customer said and the backend's questions. It should not draw its own conclusions about the case.
 
-To enable live reasoning later, set these in Convex env: `REASONING_PROVIDER=openai-compatible`, `REASONING_PROVIDER_LABEL=<name>`, `REASONING_BASE_URL=<provider /v1 URL>`, `REASONING_MODEL=<model id>`, `REASONING_API_KEY=…`. The provider rejects malformed output (tested with mocks).
+**How to turn it on:**
+1. In `.env.local`: `REASONING_BASE_URL=https://api-inference.bitdeer.ai/v1`, `REASONING_API_KEY=…`, `REASONING_PROVIDER_LABEL=bitdeer`.
+2. `npm run live:reasoning -- --models` lists the models; pick one into `REASONING_MODEL`.
+3. `npm run live:reasoning` interprets two synthetic statements, printing the latency and the parsed output.
+4. Convex env: `npx convex env set REASONING_PROVIDER openai-compatible`, plus `REASONING_PROVIDER_LABEL bitdeer`, `REASONING_BASE_URL https://api-inference.bitdeer.ai/v1` and `REASONING_MODEL <id>`. Then `npx convex env set REASONING_API_KEY <key>` (type it in your terminal; never paste it in chat).
+5. Record a statement on a synthetic case. It shows "pending", then "model: bitdeer:<model>", or a visible failure with Retry.
+
+**Data note:** with live extraction on, statement text leaves our backend for Bitdeer. That is fine for synthetic data. Real customer data would need the bank's vendor review and a data agreement.
 
 ## Cartesia (voice)
 
@@ -133,9 +145,10 @@ To enable live reasoning later, set these in Convex env: `REASONING_PROVIDER=ope
 ## Unresolved questions
 
 1. Cartesia: event credit amount, and whether Managed Agent LLM tokens are covered. (Dynamic-variable passing is resolved; see the Cartesia section.)
-2. Nessie: the purchase and transfer POST bodies (the seed script will reveal the purchase body).
-3. CRS: your account's rate limit, and whether non-persona requests cost anything. The OFAC and military endpoints mentioned on the event page aren't in the OpenAPI spec.
-4. Factory: credits, and whether `run()` accepts an autonomy level directly.
+2. Bitdeer: credit amount, JSON-mode support, rate limits and latency per model (the live check script measures latency).
+3. Nessie: the purchase and transfer POST bodies (the seed script will reveal the purchase body).
+4. CRS: your account's rate limit, and whether non-persona requests cost anything. The OFAC and military endpoints mentioned on the event page aren't in the OpenAPI spec.
+5. Factory: credits, and whether `run()` accepts an autonomy level directly.
 
 ### CRS implementation notes (2026-10-23)
 - Code: `lib/providers/crs.ts`, `convex/crs.ts` (action), `convex/crsData.ts`. The test personas are in `lib/fixtures/crsPersonas.ts` (P01, P12, P14, P16, P19), copied verbatim from the CRS persona file.

@@ -16,6 +16,7 @@ export const contextForReasoning = internalQuery({
     const { transactions: txns } = await currentEvidence(ctx, s.caseId);
     return {
       statement: { ref: s.ref, text: s.text, receivedAt: s.receivedAt },
+      questionAsked: s.inResponseTo?.text ?? null,
       priorStatements: all.filter((x) => x.receivedAt < s.receivedAt).map((x) => ({ ref: x.ref, text: x.text })),
       citableRefs: [...all.map((x) => x.ref), ...txns.map((t) => t.ref), ...REGULATORY_REFS],
     };

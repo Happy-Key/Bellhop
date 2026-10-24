@@ -32,7 +32,7 @@ or certify compliance. Every screen result here is a routing aid for a human.
 | Nessie (`lib/providers/nessie.ts`) | Capital One's public **mock** banking API | Read-only purchases for one backend-bound demo account | Data is visible to all Nessie users; synthetic only |
 | CRS (`lib/providers/crs.ts`) | **CRS Credit API** sandbox (StitchCredit), TransUnion *Identity Manager Verification – basic* | Identity-element check on 5 published **test personas** | **Not a CRM.** No CRM integration exists anywhere in the repo |
 | Cartesia (`convex/voice.ts`, `convex/http.ts`, `lib/voice/`) | Cartesia **Managed Agent** (hosted LLM + STT/TTS) | Voice conversation; one webhook tool `record_statement` | Agent LLM runs the conversation only |
-| Reasoning (`lib/providers/reasoning.ts`) | Generic OpenAI-compatible chat endpoint (no provider; Bitdeer dropped) | Live statement interpretation | **Not configured.** Scripted extractor is active |
+| Reasoning (`lib/providers/reasoning.ts`) | OpenAI-compatible chat endpoint; provider: Bitdeer (chosen 2026-10-24) | Live statement interpretation | **Not configured.** Scripted extractor is active |
 | Factory | — | — | Not implemented |
 
 ### A.2 Verified characteristics (the ones you asked me to check)
@@ -627,7 +627,7 @@ with your go-ahead.
 | **1. Access control** | `caseMembers`, `convex/access.ts`, `tenantId`/`environment` on cases; every public function checks; demo identity policy until an auth provider is chosen | `convex/*.ts`, `components/*` | Breaking for anonymous use; needs the auth decision (§I). Can stub a "demo reviewer" identity first |
 | **2. Fact model** | Fact registry, `facts` table, answer states; interpreter output written as facts (dual write with the existing interpretation); backfill internal mutation for dev cases (sandbox) | new `lib/domain/facts/registry.ts`, `lib/domain/facts/state.ts`, `convex/facts.ts`; `convex/model.ts` | Old `analysis` keeps working; the UI is unchanged |
 | **3. Transactions, incidents, question engine** | `incidents`, `disputedTransactions`, per-transaction initiation; `selectNextQuestion`; new webhook response | new `lib/domain/intake/questions.ts`, `select.ts`; `convex/voice.ts`, `convex/http.ts`; `lib/providers/cartesia.ts` (tool description) | Multi-transaction matching reuses `matchTransactions` per row |
-| **4. Bounded synchronous interpretation** | `interpretationAttempts`; slot parser; httpAction orchestration; stale-attempt guard | `convex/http.ts`, `convex/reasoning.ts`, `convex/statements.ts`, new `lib/domain/intake/slotParse.ts` | Built but dormant: no live provider (decision 9). Scripted mode works throughout |
+| **4. Bounded synchronous interpretation** | `interpretationAttempts`; slot parser; httpAction orchestration; stale-attempt guard | `convex/http.ts`, `convex/reasoning.ts`, `convex/statements.ts`, new `lib/domain/intake/slotParse.ts` | Active once the Bitdeer env vars are set (decision 9). Scripted mode works throughout |
 | **5. Rules and assessments** | Rule registry (from the CSV, human-reviewed); reimbursement and legal screens; replace `recommendation` in the UI | new `lib/domain/rules/registry.ts`, `lib/domain/assessments.ts`, `lib/domain/routing.ts`; `convex/assessments.ts`; dashboard | CLAUDE.md "no legal determinations / deadline calculations" needs updating (§I). Rule edits are human-only, like `regulatory.ts` |
 | **6. Disputes, correspondence, recoveries, tasks** | Tables plus state transitions (reviewer mutations); Nessie deposits retrieval (read-only, probe first); loss calculator | `convex/disputes.ts`, `lib/domain/recovery.ts`, `lib/domain/deadlines.ts`, `lib/providers/nessie.ts` | Deposits payload **[Confirm]** by a read-only probe |
 | **7. Documents and artifacts** | Convex file storage upload link; artifact generators (markdown first, then PDF); sandbox watermark | `convex/documents.ts`, `convex/artifacts.ts`, `lib/domain/artifacts/*` | Do not claim institution form compliance |
@@ -677,7 +677,7 @@ through `t.fetch`).
 | 6 | Recording | **Transcribe only; consent first** | Consent step in the agent instructions (`docs/integrations.md`). Check Cartesia's retention settings for audio |
 | 7 | AI disclosure | **Every call** | In the agent instructions |
 | 8 | Reference pack | Unknown to the user | Folder stays **untracked** and is not committed. The rule CSV remains a research input; the missing tabs are not expected |
-| 9 | Bitdeer | **Removed from the stack** | No live interpretation provider. Phase 4 (bounded wait) is built but dormant; narratives are read by the scripted extractor and short answers by the rule-based answer reader |
+| 9 | Bitdeer | **Bitdeer does the extraction** (initially removed, then reinstated the same day) | Live interpretation through Bitdeer once the key and model are set. Phase 4 (bounded wait) becomes active. The model receives the question being answered. `npm run live:reasoning` checks key, model and latency |
 | 10 | Nessie deposits | **Probe approved** | Done: endpoint returns 200 with `[]`. Payload shape still unverified (needs a seeded synthetic deposit, a write) |
 | 11 | FAQ wording | **Approved; edited** | `regulatory.ts` quotes now matched word for word against the live page |
 | 12 | Commit | **Commit on `foundation`; push after the live test** | — |

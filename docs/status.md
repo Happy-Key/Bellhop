@@ -30,7 +30,7 @@ Legend: [x] done and tested · [~] implemented, not yet verified live · [ ] not
 - [x] Sensitive values removed before storage; evidence history kept (superseded, not deleted)
 - [ ] Re-register the tool and paste the updated agent instructions (`docs/integrations.md`), then test live
 - [ ] Claim-intake redesign (`docs/claim-intake-design.md`): waiting on decisions
-- [~] Generic OpenAI-compatible live reasoning provider (mock-tested; no provider chosen; Bitdeer dropped 2026-10-24)
+- [~] Live extraction via Bitdeer (OpenAI-compatible provider mock-tested; question context added; `npm run live:reasoning` check script ready; key and model not yet set)
 
 ## Phase 4: CRS evidence
 - [x] Login once, reuse the token, lock on failure (`npx convex run crsData:unlockLogin` to clear)
