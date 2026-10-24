@@ -168,7 +168,7 @@ Response:
 | AI disclosure | The agent says it's automated at the start of every call |
 | Extraction | **Bitdeer** (OpenAI-compatible, `https://api-inference.bitdeer.ai/v1`). **Integration PAUSED by the user**: nothing configured, Convex runs the scripted extractor. Steps to resume: `docs/integrations.md` → "How to turn it on"; check script `npm run live:reasoning` |
 | Question repeats | Maximum 2 per call |
-| Automatic reimbursement | Approve-only, up to $100, SIMULATED Nessie deposit (policy AUTO-1). Denials always human. Case page section 5 shows the checks |
+| Automatic reimbursement | Approve-only, up to $100, SIMULATED Nessie deposit (policy AUTO-1 v2, 14 checks). Also requires evidence: a SYNTHETIC payment-origin record not pointing to the customer, no earlier payments to the merchant, no refund, a clean CRS identity check, and a Fraud Finder score of 30 or less. Denials always human |
 | Demo plan | A prepared bank record and script. The customer is framed as already logged in, so **no** automatic bank-record pull at call start |
 
 The full design (claim model, question bank, rule registry, phased plan, test plan) is in

@@ -190,3 +190,21 @@ Claude Code is the development assistant only. **The app does not use the Anthro
 - Billing guard: request bodies come only from the persona fixtures, and the SSN must match `6667010NN`.
 - Re-linking a different persona removes the earlier persona's CRS evidence.
 - Live results: P12 returned codes 2201, 2202 and 2101, matching CRS's documented "FAIL". P01 returned no messages, matching "PASS".
+
+### CRS Fraud Finder (implemented and verified live 2026-10-24)
+- Source: the CRS helper package's `dist/guides/fraud_finder.md` and `dist/test-data/personas.json` (package 1.1.2, read only, never run).
+- **What it is:** an email-centred risk check (AtData). It scores the claimant's **email**, and cross-checks name, phone, address and IP against it. It says **nothing about whether a payment was authorized**; it only helps judge whether the person filing looks genuine.
+- **Request:** `POST {base}/fraud-finder/fraud-finder` (config `fraud-finder`); `email` is required. **Only persona bodies are sent**: each persona's `fraud_finder` body is copied into `lib/fixtures/crsPersonas.ts` and checked byte-for-byte against the package file. Anything else goes to the real vendor.
+- **Response:** `risk.score` from 0 to 100 (higher is riskier) and `email_validation.status`. CRS's own bands: ≤30 low, ≤60 medium, else high. Stored as `providerEvidence` with product `crs-fraud-finder-atdata` and refs `X:crs:<persona>:<requestId>:ff-score` / `:ff-email`.
+- **Expected for our personas (CRS-documented):** P01 11, P19 9, P16 50, P12 85, P14 80.
+- **Live check (2026-10-24):** P01 returned `risk_score = 11` and `email_status = valid`, matching the documentation.
+- **Use in the app:** policy AUTO-1 v2 approves automatically only when the score is ≤ 30. A medium or high score adds a reviewer note and never denies.
+- **CRS identity products listed but not used:** OTP, KBA, device and document verification. The public page shows no endpoints for them, and our access to them is unconfirmed.
+- **Not used, deliberately:** credit reports, credit scores, criminal and eviction records. Judging fraud claims with them raises consumer-reporting (permissible purpose) and fairness issues.
+
+### Payment-origin records (SYNTHETIC, 2026-10-24)
+- A real bank would check each payment against its own authentication logs (device, two-factor, IP and location). **Nessie has no such data**, so the case page lets a reviewer attach a preset per transaction (`lib/fixtures/paymentOrigins.ts`), stored in `paymentOrigins` keyed by Nessie id:
+  - "Customer's own device, two-factor passed, near home": blocks automatic approval.
+  - "Chip and PIN near home": blocks it.
+  - "New device, no two-factor, out of state": supports the claim.
+- Always labelled SYNTHETIC. It must be replaced by the bank's real records before any real use.

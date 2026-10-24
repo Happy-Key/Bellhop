@@ -66,7 +66,9 @@ export function merchantMatches(term: string, merchantName: string | null, descr
   });
 }
 
-export function matchTransactions(facts: ClaimFacts, txns: TransactionEvidence[]): MatchResult {
+export function matchTransactions(facts: ClaimFacts, allTxns: TransactionEvidence[]): MatchResult {
+  // Deposits are money coming in (refunds, payouts), never the disputed payment.
+  const txns = allTxns.filter((t) => t.kind !== "deposit");
   const hasFacts = facts.amounts.length > 0 || facts.dates.length > 0 || facts.merchantTerms.length > 0;
   if (!hasFacts) return { outcome: "insufficient_facts", candidates: [], excluded: [], matchedRef: null };
   if (txns.length === 0) return { outcome: "no_transactions", candidates: [], excluded: [], matchedRef: null };

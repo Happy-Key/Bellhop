@@ -145,8 +145,12 @@ Rules that always hold:
    still succeed, so Bitdeer may refuse at any moment.** Keep live calls to a minimum; refusals show on the case.
    Voice wait is now 8 s by default (see the revision log). Next: re-test a call; paste the updated agent instructions.
    Measurements and switch-off command: `docs/integrations.md`.
-3. **Automatic reimbursement (built 2026-10-24, mock-tested).** Policy AUTO-1 approves claims of $100 or
-   less when all 10 checks pass, then makes a SIMULATED Nessie deposit that can't be paid twice. It never
+3. **Automatic reimbursement (built 2026-10-24, mock-tested).** Policy AUTO-1 v2 approves claims of $100 or
+   less when all 14 checks pass, including evidence checks: payment origin, merchant history, refunds,
+   identity check, and a Fraud Finder score of 30 or less. **Demo prep:** retrieve bank records, attach the
+   "new device, out of state" origin to the demo transaction, link persona P01 (or P19) and run the CRS
+   checks. The demo payment must be at a merchant the customer hasn't paid before (the two Corner Grocer
+   purchases now block each other). Approved claims get a SIMULATED Nessie deposit that can't be paid twice. It never
    denies. Case page section 5 shows each check. **The first live deposit hasn't happened yet:** the first
    qualifying claim on dev will make one, permanently, on the demo account. Still to build: approve and
    reverse buttons for a person; claims outside AUTO-1 have only the checklist.
@@ -215,6 +219,7 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | First live voice test passed (Playground → webhook tool → Convex → dashboard). Found `end_call` not enabled; usage recorded |
 | 2026-10-24 | Committed and pushed tool registration (`ed41f61`). Browser call client built: `components/VoiceCall.tsx` + `lib/voice/`, 9 new tests; not run live |
 | 2026-10-24 | Live browser call failed: `dynamic_variables_not_allowed` for browser tokens. Switched to binding by call ID (`bindVoiceCall`, tool sends `system__conversation_id`); 74 tests pass; tool needs re-registering |
+| 2026-10-24 | **Verification against evidence (AUTO-1 v2, user chose all four):** SYNTHETIC payment-origin records (case page presets); Nessie deposits retrieved (refund check; never matched as the disputed payment); merchant-history check; CRS identity check now *required*; **CRS Fraud Finder implemented and verified live** (P01 score 11, low). Persona bodies checked byte-for-byte against CRS's file. 121 tests pass. Signals only stop automatic approval, never deny |
 | 2026-10-24 | **Automatic reimbursement:** user approved approve-only automation, a $100 limit and a SIMULATED Nessie deposit. Added policy AUTO-1 (`lib/domain/autoApproval.ts`, 10 checks), the `reimbursementDecisions` table, `convex/payout.ts` (deposit made at most once via `depositOnce`) and `payoutData.ts` (record, retry), case page section 5, and CLAUDE.md rules. 115 tests pass. No live deposit made yet |
 | 2026-10-24 | Voice call with Bitdeer on: every turn was "anything more you'd like to add?" and no question was asked (Bitdeer took 4.7–7.0 s vs the 4.5 s wait, including for "No, I'm done."). Fixed: default wait 8 s; short or rule-read replies don't wait; at most one acknowledgement in a row. Model findings re-keyed `S<n>-M<i>`, fixing the duplicate React keys F1/F2 on the case page; the table key also includes the index for old analyses. Bitdeer ignores both thinking-off parameters tried. Agent instructions: vary acknowledgements |
 | 2026-10-24 | **Bitdeer integration resumed and enabled on dev.** Key works ($0.00 balance; credits pending, so requests may start failing). Compared 4 models; chose `zai-org/GLM-5.3-Flash` (4–8 s typical). Prompt fixes: extract only from the current statement, short labels, "bank" isn't a merchant, being asked isn't sharing. Over-long labels are shortened, not rejected. Provider errors keep their reason. A failed interpretation no longer stalls a voice call. Code pushed to dev (`convex dev --once`), `REASONING_*` env set, verified end to end. User declined auto-retrieval of bank records (demo plan) |

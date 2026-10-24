@@ -19,20 +19,37 @@ function mockFetch(routes: Record<string, () => Response | Promise<Response>>, c
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
 describe("Nessie client (mocked)", () => {
-  it("normalizes purchases using purchase_date and merchant names", async () => {
+  it("normalizes purchases using purchase_date and merchant names, and deposits as credits", async () => {
     const calls: string[] = [];
     const client = new NessieClient("test-key", undefined, mockFetch({
       [`/accounts/${ACCOUNT}`]: () => ok({ _id: ACCOUNT, type: "Checking" }),
       [`/accounts/${ACCOUNT}/purchases`]: () => ok([{ _id: "p-1", merchant_id: MERCHANT, medium: "balance", purchase_date: "2026-10-19", amount: 49, status: "executed", description: "Gift card", extra: "ignored" }]),
       [`/merchants/${MERCHANT}`]: () => ok({ _id: MERCHANT, name: "FCI Demo GiftCard Hub" }),
+      [`/accounts/${ACCOUNT}/deposits`]: () => ok([{ _id: "d-1", medium: "balance", transaction_date: "2026-10-21", status: "completed", amount: 49, description: "Refund" }]),
     }, calls));
     const { transactions, warnings } = await retrieveAccountTransactions(client, ACCOUNT);
     expect(warnings).toEqual([]);
-    expect(transactions).toEqual([{
-      ref: "T:p-1", provider: "nessie", externalId: "p-1", kind: "purchase", amount: 49, date: "2026-10-19",
-      description: "Gift card", merchantId: MERCHANT, merchantName: "FCI Demo GiftCard Hub", status: "executed", medium: "balance",
-    }]);
+    expect(transactions).toEqual([
+      {
+        ref: "T:p-1", provider: "nessie", externalId: "p-1", kind: "purchase", amount: 49, date: "2026-10-19",
+        description: "Gift card", merchantId: MERCHANT, merchantName: "FCI Demo GiftCard Hub", status: "executed", medium: "balance",
+      },
+      {
+        ref: "T:d-1", provider: "nessie", externalId: "d-1", kind: "deposit", amount: 49, date: "2026-10-21",
+        description: "Refund", merchantId: null, merchantName: null, status: "completed", medium: "balance",
+      },
+    ]);
     expect(calls.every((c) => c.includes("key=test-key"))).toBe(true);
+  });
+
+  it("reports a deposit lookup failure as a warning and still returns purchases", async () => {
+    const client = new NessieClient("test-key", undefined, mockFetch({
+      [`/accounts/${ACCOUNT}`]: () => ok({ _id: ACCOUNT }),
+      [`/accounts/${ACCOUNT}/purchases`]: () => ok([]),
+    }));
+    const { transactions, warnings } = await retrieveAccountTransactions(client, ACCOUNT);
+    expect(transactions).toEqual([]);
+    expect(warnings[0]).toMatch(/deposit lookup failed/);
   });
 
   it("reports merchant lookup failures as warnings, not silent gaps", async () => {

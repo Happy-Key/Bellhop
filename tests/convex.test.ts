@@ -259,8 +259,26 @@ describe("Convex case workflow", () => {
         warnings: [],
       });
       await t.mutation(api.cases.submitStatement, { caseId, text: "I did not make the $23 purchase at Corner Grocer. I never shared my card or codes.", clientEventId: "evt-00000001" });
-      await t.mutation(api.cases.submitStatement, { caseId, text: "That's all I have.", clientEventId: "evt-00000002" });
+      // The customer's word alone is not enough (policy version 2): no evidence yet, no approval.
       let view = (await t.query(api.cases.view, { caseId }))!;
+      expect(view.decisions).toEqual([]);
+      expect((view.case.autoApproval as { checks: { id: string; passed: boolean }[] }).checks.filter((c) => !c.passed).map((c) => c.id)).toEqual([
+        "payment_origin_supports_claim",
+        "identity_check_clear",
+        "fraud_risk_low",
+      ]);
+
+      // The evidence arrives: a payment-origin record that points away from the customer, a clean identity check, and a low risk score.
+      await t.mutation(api.paymentOrigins.setSynthetic, { caseId, txnRef: "T:g-1", preset: "new_device_far_away" });
+      await expect(t.mutation(api.paymentOrigins.setSynthetic, { caseId, txnRef: "T:not-on-case", preset: "new_device_far_away" })).rejects.toThrow(/not on this case/);
+      await t.mutation(api.crsData.linkPersona, { caseId, personaId: "P01" });
+      const crsRow = (suffix: string, product: string, field: string, value: string) => ({ ref: `X:crs:P01:k1:${suffix}`, provider: "crs", product, field, value, syntheticAssociation: true });
+      await t.mutation(internal.crsData.storeIdentityEvidence, { caseId, personaId: "P01", rows: [crsRow("result", "transunion-identity-manager-basic", "verification_messages", "none returned (identity elements verified)")] });
+      await t.mutation(internal.crsData.storeFraudEvidence, { caseId, personaId: "P01", rows: [crsRow("ff-score", "crs-fraud-finder-atdata", "risk_score", "11")] });
+      await t.mutation(api.cases.submitStatement, { caseId, text: "That's all I have.", clientEventId: "evt-00000002" });
+      view = (await t.query(api.cases.view, { caseId }))!;
+      // The identity check is kept when the Fraud Finder result arrives (each product supersedes only its own rows).
+      expect(view.providerEvidence.map((p) => p.product).sort()).toEqual(["crs-fraud-finder-atdata", "transunion-identity-manager-basic"]);
       expect(view.decisions).toHaveLength(1);
       expect(view.decisions[0]).toMatchObject({ txnRef: "T:g-1", amount: 23, outcome: "auto_approved", payout: { simulated: true, status: "pending" } });
       expect(view.activity.filter((a) => a.kind === "auto_approved")).toHaveLength(1);
@@ -290,7 +308,7 @@ describe("Convex case workflow", () => {
       expect(view.decisions).toEqual([]);
       const evaluation = view.case.autoApproval as { eligible: boolean; checks: { id: string; passed: boolean }[] };
       expect(evaluation.eligible).toBe(false);
-      expect(evaluation.checks.filter((c) => !c.passed).map((c) => c.id)).toEqual(["amount_within_limit"]);
+      expect(evaluation.checks.filter((c) => !c.passed).map((c) => c.id)).toContain("amount_within_limit");
     } finally {
       vi.useRealTimers();
     }

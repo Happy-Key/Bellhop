@@ -11,6 +11,7 @@ import { aggregateFacts, type ClaimFacts } from "./facts";
 import { partitionFindings, type EvidenceIndex, type RejectedFinding } from "./findings";
 import { matchTransactions, type MatchResult } from "./matching";
 import { assessConsiderations, REGULATORY_REFS, type Consideration } from "./regulatory";
+import { FRAUD_FINDER_PRODUCT, fraudRiskBand } from "./fraudSignals";
 import type {
   Finding,
   OpenQuestion,
@@ -259,6 +260,29 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
         `identity_review:${persona}`,
         `The identity check for linked test persona ${persona} returned ${msgs.length} issue(s). A reviewer should assess identity separately; this is not evidence that the claim is false.`,
         [result.ref, ...msgs.map((m) => m.ref)],
+        { blocking: false, audience: "reviewer" },
+      );
+    }
+  }
+
+  // CRS Fraud Finder scores the claimant's contact details (email, phone, address), not the payment.
+  for (const ff of input.providerEvidence.filter((p) => p.product === FRAUD_FINDER_PRODUCT && p.field === "risk_score")) {
+    const persona = ff.ref.split(":")[2] ?? "?";
+    const score = Number(ff.value);
+    const band = Number.isFinite(score) ? fraudRiskBand(score) : "unreadable";
+    f({
+      text: `CRS Fraud Finder (email and contact risk) on test persona ${persona}${ff.syntheticAssociation ? " (SYNTHETIC association with this case)" : ""}: risk score ${ff.value} (${band}).`,
+      category: "external_provider",
+      evidenceRefs: [ff.ref],
+      status: "established",
+      contradictions: [],
+    });
+    if (band !== "low") {
+      q(
+        "identity_review",
+        `fraud_risk:${persona}`,
+        `Fraud Finder rated the claimant's contact details ${band} risk (score ${ff.value}). A reviewer should check the contact details; this is not evidence that the claim is false.`,
+        [ff.ref],
         { blocking: false, audience: "reviewer" },
       );
     }

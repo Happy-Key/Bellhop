@@ -8,6 +8,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { CaseAnalysis } from "@/lib/domain/workflow";
 import { getSource } from "@/lib/domain/regulatory";
 import { AUTO_APPROVAL_POLICY, type AutoApprovalEvaluation } from "@/lib/domain/autoApproval";
+import { PAYMENT_ORIGIN_PRESETS } from "@/lib/fixtures/paymentOrigins";
 import { DEMO_STATEMENTS } from "@/lib/fixtures/demo";
 import { CRS_PERSONAS, getCrsPersona } from "@/lib/fixtures/crsPersonas";
 import { IntegrationStatus } from "./IntegrationStatus";
@@ -37,7 +38,7 @@ export function CaseDashboard({ caseId }: { caseId: string }) {
       </p>
       <div className="grid">
         <Statements caseId={id} statements={data.statements} />
-        <Evidence caseId={id} c={data.case} transactions={data.transactions} providerEvidence={data.providerEvidence} analysis={analysis} />
+        <Evidence caseId={id} c={data.case} transactions={data.transactions} providerEvidence={data.providerEvidence} paymentOrigins={data.paymentOrigins} analysis={analysis} />
       </div>
       {analysis && <FindingsAndQuestions analysis={analysis} />}
       {analysis && <Packet analysis={analysis} />}
@@ -138,14 +139,16 @@ function Interpretation({ s, onRetry, onScripted }: { s: Doc<"statements">; onRe
   );
 }
 
-function Evidence({ caseId, c, transactions, providerEvidence, analysis }: {
+function Evidence({ caseId, c, transactions, providerEvidence, paymentOrigins, analysis }: {
   caseId: Id<"cases">;
   c: Doc<"cases"> & { nessieAccountBound: boolean };
   transactions: Doc<"transactions">[];
   providerEvidence: Doc<"providerEvidence">[];
+  paymentOrigins: (Doc<"paymentOrigins"> & { txnRef: string })[];
   analysis: StoredAnalysis | null;
 }) {
   const retrieve = useAction(api.nessie.retrieveBankEvidence);
+  const setOrigin = useMutation(api.paymentOrigins.setSynthetic);
   const [busy, setBusy] = useState(false);
   const candidateRefs = new Set(analysis?.match.candidates.map((x) => x.txnRef) ?? []);
   const excluded = new Map(analysis?.match.excluded.map((x) => [x.txnRef, x.reason]) ?? []);
@@ -167,18 +170,30 @@ function Evidence({ caseId, c, transactions, providerEvidence, analysis }: {
       </div>
       {transactions.length > 0 && (
         <table>
-          <thead><tr><th>Ref</th><th>Date</th><th>Amount</th><th>Merchant</th><th>Status</th><th>Match</th></tr></thead>
+          <thead><tr><th>Ref</th><th>Kind</th><th>Date</th><th>Amount</th><th>Merchant</th><th>Status</th><th>Match</th><th>How it was made <span className="label synthetic">synthetic</span></th></tr></thead>
           <tbody>
-            {transactions.map((t) => (
-              <tr key={t._id} style={t.ref === matched ? { fontWeight: 600 } : undefined}>
-                <td className="ref">{t.ref}</td>
-                <td>{t.date ?? "?"}</td>
-                <td>{usd(t.amount)}</td>
-                <td>{t.merchantName ?? t.description ?? "?"}</td>
-                <td>{t.status ?? "?"}</td>
-                <td>{t.ref === matched ? "MATCH (rule-based)" : candidateRefs.has(t.ref) ? "candidate" : excluded.has(t.ref) ? `excluded: ${excluded.get(t.ref)}` : ""}</td>
-              </tr>
-            ))}
+            {transactions.map((t) => {
+              const origin = paymentOrigins.find((o) => o.txnRef === t.ref);
+              return (
+                <tr key={t._id} style={t.ref === matched ? { fontWeight: 600 } : undefined}>
+                  <td className="ref">{t.ref}</td>
+                  <td>{t.kind}</td>
+                  <td>{t.date ?? "?"}</td>
+                  <td>{usd(t.amount)}</td>
+                  <td>{t.merchantName ?? t.description ?? "?"}</td>
+                  <td>{t.status ?? "?"}</td>
+                  <td>{t.ref === matched ? "MATCH (rule-based)" : candidateRefs.has(t.ref) ? "candidate" : excluded.has(t.ref) ? `excluded: ${excluded.get(t.ref)}` : ""}</td>
+                  <td>
+                    {t.kind !== "deposit" && (
+                      <select value={origin?.preset ?? ""} onChange={(e) => e.target.value && setOrigin({ caseId, txnRef: t.ref, preset: e.target.value })}>
+                        <option value="">(no record)</option>
+                        {Object.entries(PAYMENT_ORIGIN_PRESETS).map(([key, p]) => <option key={key} value={key}>{p.label}</option>)}
+                      </select>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -195,14 +210,21 @@ function Evidence({ caseId, c, transactions, providerEvidence, analysis }: {
 
 function CrsEvidence({ caseId, personaId, evidence }: { caseId: Id<"cases">; personaId: string | null; evidence: Doc<"providerEvidence">[] }) {
   const link = useMutation(api.crsData.linkPersona);
-  const run = useAction(api.crs.retrieveIdentityEvidence);
+  const runIdentity = useAction(api.crs.retrieveIdentityEvidence);
+  const runFraud = useAction(api.crs.retrieveFraudRisk);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const persona = personaId ? getCrsPersona(personaId) : undefined;
+  const run = async () => {
+    // Both checks are needed for automatic approval; each reports its own failure.
+    const [identity, fraud] = [await runIdentity({ caseId }), await runFraud({ caseId })];
+    const errors = [identity.ok ? null : `identity: ${identity.error ?? "failed"}`, fraud.ok ? null : `Fraud Finder: ${fraud.error ?? "failed"}`].filter(Boolean);
+    return { ok: errors.length === 0, error: errors.join("; ") };
+  };
   return (
     <>
       <h3 style={{ fontSize: 14 }}>
-        External evidence — CRS identity check <span className="label live">live sandbox API</span><span className="label synthetic">synthetic association</span>
+        External evidence — CRS identity check and Fraud Finder <span className="label live">live sandbox API</span><span className="label synthetic">synthetic association</span>
       </h3>
       <p className="muted">CRS test personas are a separate dataset from Nessie customers. Linking one to this case is a synthetic demonstration association.</p>
       <div>
@@ -217,27 +239,34 @@ function CrsEvidence({ caseId, personaId, evidence }: { caseId: Id<"cases">; per
             setBusy(true);
             setError(null);
             try {
-              const r = await run({ caseId });
-              if (!r.ok) setError(r.error ?? "failed");
+              const r = await run();
+              if (!r.ok) setError(r.error);
             } finally {
               setBusy(false);
             }
           }}
         >
-          {busy ? "Checking…" : "Run identity check (live CRS sandbox)"}
+          {busy ? "Checking…" : "Run CRS checks: identity + Fraud Finder (live sandbox)"}
         </button>
       </div>
-      {persona && <div className="muted">CRS-documented expected result: {persona.expected}</div>}
+      {persona && (
+        <div className="muted">
+          CRS-documented expected results: identity {persona.expected}; Fraud Finder {persona.fraudFinderExpected}.
+        </div>
+      )}
       {error && <div className="error">CRS check failed: {error}. No fixture data substituted.</div>}
       {evidence.length > 0 && (
         <table>
-          <thead><tr><th>Ref</th><th>Field</th><th>Value (returned by provider)</th></tr></thead>
+          <thead><tr><th>Ref</th><th>Product</th><th>Field</th><th>Value (returned by provider)</th></tr></thead>
           <tbody>
-            {evidence.map((e) => <tr key={e._id}><td className="ref">{e.ref}</td><td>{e.field}</td><td>{e.value}</td></tr>)}
+            {evidence.map((e) => <tr key={e._id}><td className="ref">{e.ref}</td><td>{e.product}</td><td>{e.field}</td><td>{e.value}</td></tr>)}
           </tbody>
         </table>
       )}
-      <p className="muted">An identity mismatch is not evidence that the claim is false, and CRS does not verify who owns the receiving account.</p>
+      <p className="muted">
+        These checks are about the person filing (identity, and the risk of their email, phone and address), not the payment. A mismatch or high score is not evidence that the claim is
+        false, and CRS does not verify who owns the receiving account.
+      </p>
     </>
   );
 }

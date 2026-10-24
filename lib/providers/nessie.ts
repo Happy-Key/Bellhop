@@ -189,9 +189,26 @@ export function normalizePurchase(p: NessiePurchase, merchant: NessieMerchant | 
   };
 }
 
-/** Retrieve purchases and their merchants for one account. Merchant lookup failures are reported, not hidden. */
+/** Deposits are credits to the account (refunds, our SIMULATED payouts); never matched as disputed payments. */
+export function normalizeDeposit(d: NessieDeposit): TransactionEvidence {
+  return {
+    ref: `T:${d._id}`,
+    provider: "nessie",
+    externalId: d._id,
+    kind: "deposit",
+    amount: d.amount,
+    date: normalizeDate(d.transaction_date),
+    description: d.description ?? null,
+    merchantId: null,
+    merchantName: null,
+    status: d.status ?? null,
+    medium: d.medium ?? null,
+  };
+}
+
+/** Retrieve purchases (with merchants) and deposits for one account. Lookup failures are reported, not hidden. */
 export async function retrieveAccountTransactions(
-  client: BankingProvider,
+  client: BankingProvider & Partial<Pick<NessieClient, "listDeposits">>,
   accountId: string,
   maxMerchants = 25,
 ): Promise<{ transactions: TransactionEvidence[]; warnings: string[] }> {
@@ -207,8 +224,17 @@ export async function retrieveAccountTransactions(
       warnings.push(`merchant ${id} lookup failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+  // Deposits show refunds already received. Their read shape is unverified (the demo account had none on 2026-10-24).
+  let deposits: TransactionEvidence[] = [];
+  if (client.listDeposits) {
+    try {
+      deposits = (await client.listDeposits(accountId)).map(normalizeDeposit);
+    } catch (e) {
+      warnings.push(`deposit lookup failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   return {
-    transactions: purchases.map((p) => normalizePurchase(p, p.merchant_id ? merchants.get(p.merchant_id) ?? null : null)),
+    transactions: [...purchases.map((p) => normalizePurchase(p, p.merchant_id ? merchants.get(p.merchant_id) ?? null : null)), ...deposits],
     warnings,
   };
 }

@@ -9,7 +9,7 @@
 import { v } from "convex/values";
 import { action, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { crsLogin, identityEvidence, verifyIdentity, CRS_DEFAULT_BASE_URL } from "../lib/providers/crs";
+import { crsLogin, fraudFinderCheck, fraudFinderEvidence, identityEvidence, verifyIdentity, CRS_DEFAULT_BASE_URL } from "../lib/providers/crs";
 import { ProviderError, redact } from "../lib/providers/errors";
 import { getCrsPersona } from "../lib/fixtures/crsPersonas";
 
@@ -30,6 +30,47 @@ async function getToken(ctx: ActionCtx, base: string): Promise<string> {
     throw e;
   }
 }
+
+/** Runs `call` with a cached token, logging in again once if the token was rejected (401). */
+async function withToken<T>(ctx: ActionCtx, base: string, call: (token: string) => Promise<T>): Promise<T> {
+  const token = await getToken(ctx, base);
+  try {
+    return await call(token);
+  } catch (e) {
+    if (!(e instanceof ProviderError && e.httpStatus === 401)) throw e;
+    // Token may have expired: clear it and log in once more. A second 401 means the product is
+    // not enabled for this account, and is reported as an error.
+    await ctx.runMutation(internal.crsData.clearToken, {});
+    return call(await getToken(ctx, base));
+  }
+}
+
+/**
+ * Live CRS Fraud Finder (AtData email risk) for the case's linked TEST persona. Sends only the
+ * persona's published body. It scores the claimant's contact details, not the disputed payment.
+ */
+export const retrieveFraudRisk = action({
+  args: { caseId: v.id("cases") },
+  handler: async (ctx, { caseId }): Promise<{ ok: boolean; error?: string }> => {
+    const c = await ctx.runQuery(internal.crsData.getCaseForCrs, { caseId });
+    if (!c) throw new Error("case not found");
+    const fail = async (error: string) => {
+      await ctx.runMutation(internal.crsData.recordCrsError, { caseId, error: `Fraud Finder: ${error}` });
+      return { ok: false, error };
+    };
+    const persona = c.crsPersonaId ? getCrsPersona(c.crsPersonaId) : undefined;
+    if (!persona) return fail("no CRS test persona linked to this case");
+    const base = process.env.CRS_BASE_URL || CRS_DEFAULT_BASE_URL;
+    try {
+      const result = await withToken(ctx, base, (token) => fraudFinderCheck(base, token, persona));
+      const checkKey = (result.requestId ?? `${Date.now()}`).replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 40) || `${Date.now()}`;
+      await ctx.runMutation(internal.crsData.storeFraudEvidence, { caseId, personaId: persona.id, rows: fraudFinderEvidence(result, checkKey) });
+      return { ok: true };
+    } catch (e) {
+      return fail(redact(e instanceof Error ? e.message : String(e)));
+    }
+  },
+});
 
 export const retrieveIdentityEvidence = action({
   args: { caseId: v.id("cases") },

@@ -24,8 +24,13 @@ export const view = query({
       ctx.db.query("activity").withIndex("by_case", (q) => q.eq("caseId", caseId)).order("desc").take(200),
       ctx.db.query("reimbursementDecisions").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect(),
     ]);
+    // SYNTHETIC payment-origin records for this case's transactions (keyed by the Nessie id).
+    const paymentOrigins = (
+      await Promise.all(evidence.transactions.map((t) => ctx.db.query("paymentOrigins").withIndex("by_txn", (q) => q.eq("txnExternalId", t.externalId)).unique()))
+    ).flatMap((o, i) => (o ? [{ txnRef: evidence.transactions[i]!.ref, ...o }] : []));
     return {
       case: { ...c, nessieAccountBound: c.nessieAccountId !== null },
+      paymentOrigins,
       statements: statements.sort((a, b) => a.receivedAt - b.receivedAt),
       transactions: evidence.transactions.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")),
       providerEvidence: evidence.providerEvidence,
@@ -132,7 +137,7 @@ export const storeTransactions = internalMutation({
       await ctx.db.insert("transactions", { caseId, retrievedAt: now, ...t });
     }
     await ctx.db.patch(caseId, { bankFetch: { status: "ok", at: now, count: transactions.length } });
-    await logActivity(ctx, caseId, "nessie:live", "bank_records_retrieved", `LIVE Nessie retrieval: ${transactions.length} purchase record(s), ${added} new, ${changed} changed (earlier versions kept).`);
+    await logActivity(ctx, caseId, "nessie:live", "bank_records_retrieved", `LIVE Nessie retrieval: ${transactions.filter((t) => t.kind !== "deposit").length} purchase(s) and ${transactions.filter((t) => t.kind === "deposit").length} deposit(s), ${added} new, ${changed} changed (earlier versions kept).`);
     for (const w of warnings) await logActivity(ctx, caseId, "nessie:live", "warning", w);
     await recomputeAnalysis(ctx, caseId);
   },

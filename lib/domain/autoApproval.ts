@@ -10,11 +10,17 @@
  * Pure function. Policy changes need human review, like lib/domain/regulatory.ts.
  */
 import type { CaseAnalysis } from "./workflow";
-import type { Statement, TransactionEvidence } from "./schemas";
+import type { PaymentOrigin, ProviderEvidence, Statement, TransactionEvidence } from "./schemas";
+import { fraudScoreSignal, identitySignal, merchantHistorySignal, paymentOriginSignal, refundSignal } from "./fraudSignals";
 
+/**
+ * Version 2 (2026-10-24, user-approved) adds verification against evidence instead of the
+ * customer's word: payment origin, merchant history, refunds, a required identity check, and a low
+ * Fraud Finder score.
+ */
 export const AUTO_APPROVAL_POLICY = {
   id: "AUTO-1",
-  version: "2026-10-24",
+  version: "2026-10-24.2",
   /** Largest claim the app may approve on its own (demo money). */
   maxAmount: 100,
   /** Days from the transaction to the first report. Stricter than Reg E's 60 days from the statement, which comes later. */
@@ -37,14 +43,20 @@ export interface AutoApprovalEvaluation {
 
 export interface AutoApprovalInput {
   analysis: CaseAnalysis;
+  /** All current account records, including deposits (for refund and merchant-history checks). */
   transactions: TransactionEvidence[];
   statements: Statement[];
+  providerEvidence: ProviderEvidence[];
+  /** The bank's record of how the matched payment was made, if any. */
+  paymentOrigin: PaymentOrigin | null;
+  /** Customer's home state, from the bank's customer profile. */
+  homeState: string;
 }
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const DAY_MS = 86_400_000;
 
-export function evaluateAutoApproval({ analysis, transactions, statements }: AutoApprovalInput): AutoApprovalEvaluation {
+export function evaluateAutoApproval({ analysis, transactions, statements, providerEvidence, paymentOrigin, homeState }: AutoApprovalInput): AutoApprovalEvaluation {
   const { facts, match } = analysis;
   const p = AUTO_APPROVAL_POLICY;
   const txn = match.outcome === "clear" && match.matchedRef ? transactions.find((t) => t.ref === match.matchedRef) ?? null : null;
@@ -106,8 +118,15 @@ export function evaluateAutoApproval({ analysis, transactions, statements }: Aut
     !!txn && txn.kind === "purchase" && !wireMentioned,
     wireMentioned ? "A wire was mentioned: wires follow different rules." : txn ? `Bank record is a ${txn.kind} from the account.` : "No matched bank record.",
   );
-  const identityIssues = analysis.questions.some((q) => q.kind === "identity_review");
-  check("identity_check_clear", !identityIssues, identityIssues ? "Identity check returned issues for review." : "No identity issues on record.");
+
+  // ---- Verification against evidence (version 2) ----
+  const origin = paymentOrigin && txn && paymentOrigin.txnRef === txn.ref ? paymentOrigin : null;
+  const signal = (id: string, s: { ok: boolean; detail: string }) => check(id, s.ok, s.detail);
+  signal("payment_origin_supports_claim", paymentOriginSignal(origin, homeState));
+  signal("no_prior_payments_to_merchant", txn ? merchantHistorySignal(txn, transactions) : { ok: false, detail: "No matched bank record." });
+  signal("no_refund_received", txn ? refundSignal(txn, transactions) : { ok: false, detail: "No matched bank record." });
+  signal("identity_check_clear", identitySignal(providerEvidence));
+  signal("fraud_risk_low", fraudScoreSignal(providerEvidence));
 
   return {
     policy: `${p.id}@${p.version}`,

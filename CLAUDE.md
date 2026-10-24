@@ -31,6 +31,18 @@ passes. The approved amount is paid as a **SIMULATED** Nessie deposit (`convex/p
 most once. The app **never denies**: a claim that fails any check goes to a person. Facts that
 change after approval flag it for a person; nothing is reversed automatically.
 
+**Verification, not the customer's word (policy version 2, 2026-10-24).** Automatic approval
+also needs evidence:
+- a payment-origin record that doesn't point to the customer (SYNTHETIC in this prototype;
+  attached from a preset on the case page);
+- no earlier payments to the same merchant, and no deposit that looks like a refund;
+- a CRS identity check that ran clean;
+- a CRS Fraud Finder score of 30 or less.
+
+These signals only stop automatic approval. They never deny a claim (the bank bears the burden of
+proof and must investigate). Never use credit reports, credit scores or criminal records to judge
+a claim.
+
 **Non-goals:**
 - moving real money, denying reimbursements automatically, approving outside policy AUTO-1, or
   filing complaints

@@ -45,7 +45,7 @@ Legend: [x] done and tested · [~] implemented, not yet verified live · [ ] not
 - [ ] Verify the paraphrased excerpts word for word (1005.6, 1005.11, CFPB FAQ)
 
 ## Phase 6: Reviewed improvements and mock payout
-- [~] Automatic approval policy AUTO-1 (approve-only, ≤ $100, every check must pass) with a SIMULATED Nessie deposit that can be paid only once (2026-10-24; mock-tested; first live deposit not yet made)
+- [~] Automatic approval policy AUTO-1 v2 (approve-only, ≤ $100, 14 checks including payment origin, merchant history, refunds, a required CRS identity check and a Fraud Finder score of 30 or less; Fraud Finder verified live on P01) with a SIMULATED Nessie deposit that can be paid only once (2026-10-24; mock-tested; first live deposit not yet made)
 - [ ] Factory Droid task on recorded failures (worktree, `--auto low`, visible diff and tests, human merge)
 - [ ] Human approval and reversal of claims outside AUTO-1 (the panel shows failing checks; no approve or reverse button yet)
 

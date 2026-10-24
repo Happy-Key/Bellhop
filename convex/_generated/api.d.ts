@@ -14,6 +14,7 @@ import type * as crsData from "../crsData.js";
 import type * as http from "../http.js";
 import type * as model from "../model.js";
 import type * as nessie from "../nessie.js";
+import type * as paymentOrigins from "../paymentOrigins.js";
 import type * as payout from "../payout.js";
 import type * as payoutData from "../payoutData.js";
 import type * as reasoning from "../reasoning.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   model: typeof model;
   nessie: typeof nessie;
+  paymentOrigins: typeof paymentOrigins;
   payout: typeof payout;
   payoutData: typeof payoutData;
   reasoning: typeof reasoning;

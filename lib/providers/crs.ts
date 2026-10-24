@@ -17,7 +17,8 @@ import type { ProviderEvidence } from "../domain/schemas";
 import { ProviderError, redact, type FetchLike } from "./errors";
 
 export const CRS_DEFAULT_BASE_URL = "https://api-sandbox.stitchcredit.com:443/api";
-export const IDENTITY_PRODUCT = "transunion-identity-manager-basic";
+import { FRAUD_FINDER_PRODUCT, IDENTITY_PRODUCT } from "../domain/fraudSignals";
+export { IDENTITY_PRODUCT };
 /** Used when the login response's `expires` cannot be interpreted. */
 const FALLBACK_TOKEN_TTL_MS = 30 * 60 * 1000;
 
@@ -110,6 +111,65 @@ export async function verifyIdentity(baseUrl: string, token: string, persona: Cr
   if (!parsed.success) throw new ProviderError("crs", "malformed_response", "missing addOnProducts[0].idManagerVerification");
   const messages = (parsed.data.addOnProducts[0]!.idManagerVerification.messages ?? []).map((m) => ({ code: m.code, text: m.text ?? "" }));
   return { personaId: persona.id, requestId: res.headers.get("RequestID") ?? res.headers.get("requestid"), messages };
+}
+
+/**
+ * Fraud Finder (AtData email risk). Guide: package dist/guides/fraud_finder.md (re-read 2026-10-24).
+ *  - POST {base}/fraud-finder/fraud-finder (config "fraud-finder"); `email` required.
+ *  - risk.score 0-100, higher is riskier; CRS's PDF bands: <=30 low, <=60 medium, else high.
+ *  - It scores the claimant's contact details, not the disputed payment.
+ */
+export { FRAUD_FINDER_PRODUCT, FRAUD_RISK_BANDS, fraudRiskBand } from "../domain/fraudSignals";
+
+export const FraudFinderResponse = z
+  .object({
+    risk: z.object({ score: z.number().min(0).max(100), tumbling_risk: z.number().nullish() }).loose(),
+    email_validation: z.object({ status: z.string().nullish() }).loose().nullish(),
+  })
+  .loose();
+
+export interface FraudFinderResult {
+  personaId: string;
+  requestId: string | null;
+  score: number;
+  emailStatus: string | null;
+}
+
+export async function fraudFinderCheck(baseUrl: string, token: string, persona: CrsPersona, fetchImpl: FetchLike = fetch): Promise<FraudFinderResult> {
+  // Billing guard: only the persona's published body (sandbox addresses end in @example.com).
+  if (!CRS_PERSONA_SSN.test(persona.identityBody.ssn) || !persona.fraudFinderBody.email.endsWith("@example.com")) {
+    throw new ProviderError("crs", "rejected_output", "refusing to send a non-persona Fraud Finder request");
+  }
+  let res: Response;
+  try {
+    res = await fetchImpl(`${baseUrl.replace(/\/$/, "")}/fraud-finder/fraud-finder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(persona.fraudFinderBody),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (e) {
+    throw new ProviderError("crs", "network", redact(String(e)));
+  }
+  if (!res.ok) throw new ProviderError("crs", "http", `Fraud Finder HTTP ${res.status}: ${await errorDetail(res)}`, res.status);
+  const parsed = FraudFinderResponse.safeParse(await res.json().catch(() => null));
+  if (!parsed.success) throw new ProviderError("crs", "malformed_response", "missing risk.score");
+  return {
+    personaId: persona.id,
+    requestId: res.headers.get("RequestID") ?? res.headers.get("requestid"),
+    score: parsed.data.risk.score,
+    emailStatus: parsed.data.email_validation?.status ?? null,
+  };
+}
+
+/** Fraud Finder result as provider facts. Refs never end in ":result", which marks identity checks. */
+export function fraudFinderEvidence(result: FraudFinderResult, checkKey: string): ProviderEvidence[] {
+  const base = `X:crs:${result.personaId}:${checkKey}`;
+  const rows: ProviderEvidence[] = [
+    { ref: `${base}:ff-score`, provider: "crs", product: FRAUD_FINDER_PRODUCT, field: "risk_score", value: String(result.score), syntheticAssociation: true },
+  ];
+  if (result.emailStatus) rows.push({ ref: `${base}:ff-email`, provider: "crs", product: FRAUD_FINDER_PRODUCT, field: "email_status", value: result.emailStatus.slice(0, 40), syntheticAssociation: true });
+  return rows;
 }
 
 /** Normalizes an identity check into provider facts. Facts only: no conclusions about the claim. */

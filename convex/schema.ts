@@ -89,6 +89,22 @@ export default defineSchema({
   }).index("by_key", ["key"]),
 
   /**
+   * How a Nessie transaction was made (device, two-factor, location): the bank's authentication
+   * records. SYNTHETIC in this prototype (Nessie has none); attached from a preset for the demo.
+   */
+  paymentOrigins: defineTable({
+    txnExternalId: v.string(),
+    channel: v.union(v.literal("card_present_chip_pin"), v.literal("card_not_present_online"), v.literal("mobile_banking_app"), v.literal("online_banking")),
+    device: v.union(v.literal("customer_enrolled_device"), v.literal("new_device"), v.literal("not_applicable")),
+    twoFactor: v.union(v.literal("passed"), v.literal("not_used"), v.literal("failed")),
+    city: v.string(),
+    state: v.string(),
+    synthetic: v.literal(true),
+    preset: v.string(),
+    setAt: v.number(),
+  }).index("by_txn", ["txnExternalId"]),
+
+  /**
    * Automatic APPROVALS only (policy AUTO-1). Never a denial: claims that fail the policy have no
    * row and go to a person. The payout is a SIMULATED Nessie deposit, made at most once.
    */

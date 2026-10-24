@@ -4,8 +4,10 @@
  */
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { logActivity, recomputeAnalysis } from "./model";
 import { getCrsPersona } from "../lib/fixtures/crsPersonas";
+import { FRAUD_FINDER_PRODUCT, IDENTITY_PRODUCT, fraudRiskBand } from "../lib/domain/fraudSignals";
 
 /** Reviewer links a CRS test persona to a case. Only published personas are accepted. */
 export const linkPersona = mutation({
@@ -89,23 +91,36 @@ export const unlockLogin = internalMutation({
   handler: async (ctx) => upsertAuth(ctx, { loginLockedAt: undefined, loginLockReason: undefined }),
 });
 
-export const storeIdentityEvidence = internalMutation({
-  args: {
-    caseId: v.id("cases"),
-    personaId: v.string(),
-    rows: v.array(v.object({ ref: v.string(), provider: v.string(), product: v.string(), field: v.string(), value: v.string(), syntheticAssociation: v.boolean() })),
-  },
-  handler: async (ctx, { caseId, personaId, rows }) => {
-    const now = Date.now();
-    // Earlier results for the same persona are superseded (kept as history) so one check is current at a time.
-    const existing = await ctx.db.query("providerEvidence").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect();
-    for (const e of existing) {
-      if (e.provider === "crs" && e.supersededAt === undefined && e.ref.startsWith(`X:crs:${personaId}:`)) {
-        await ctx.db.patch(e._id, { supersededAt: now, supersededReason: "replaced by a newer identity check" });
-      }
+const evidenceRows = v.array(v.object({ ref: v.string(), provider: v.string(), product: v.string(), field: v.string(), value: v.string(), syntheticAssociation: v.boolean() }));
+
+/** Supersedes (keeps as history) the current rows of one CRS product for one persona, then stores the new ones. */
+async function replaceProductEvidence(ctx: MutationCtx, caseId: Id<"cases">, personaId: string, product: string, rows: { ref: string; provider: string; product: string; field: string; value: string; syntheticAssociation: boolean }[], reason: string) {
+  const now = Date.now();
+  const existing = await ctx.db.query("providerEvidence").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect();
+  for (const e of existing) {
+    if (e.provider === "crs" && e.product === product && e.supersededAt === undefined && e.ref.startsWith(`X:crs:${personaId}:`)) {
+      await ctx.db.patch(e._id, { supersededAt: now, supersededReason: reason });
     }
-    for (const r of rows) await ctx.db.insert("providerEvidence", { caseId, retrievedAt: now, ...r });
+  }
+  for (const r of rows) await ctx.db.insert("providerEvidence", { caseId, retrievedAt: now, ...r });
+}
+
+export const storeIdentityEvidence = internalMutation({
+  args: { caseId: v.id("cases"), personaId: v.string(), rows: evidenceRows },
+  handler: async (ctx, { caseId, personaId, rows }) => {
+    // Earlier identity results for the same persona are superseded so one check is current at a time.
+    await replaceProductEvidence(ctx, caseId, personaId, IDENTITY_PRODUCT, rows, "replaced by a newer identity check");
     await logActivity(ctx, caseId, "crs:live", "identity_evidence_retrieved", `LIVE CRS sandbox identity check for test persona ${personaId}: ${rows[0]?.value ?? "no result"}.`);
+    await recomputeAnalysis(ctx, caseId);
+  },
+});
+
+export const storeFraudEvidence = internalMutation({
+  args: { caseId: v.id("cases"), personaId: v.string(), rows: evidenceRows },
+  handler: async (ctx, { caseId, personaId, rows }) => {
+    await replaceProductEvidence(ctx, caseId, personaId, FRAUD_FINDER_PRODUCT, rows, "replaced by a newer Fraud Finder check");
+    const score = rows.find((r) => r.field === "risk_score")?.value ?? "?";
+    await logActivity(ctx, caseId, "crs:live", "fraud_risk_retrieved", `LIVE CRS sandbox Fraud Finder for test persona ${personaId}: risk score ${score} (${Number.isFinite(Number(score)) ? fraudRiskBand(Number(score)) : "unreadable"}).`);
     await recomputeAnalysis(ctx, caseId);
   },
 });
@@ -113,6 +128,6 @@ export const storeIdentityEvidence = internalMutation({
 export const recordCrsError = internalMutation({
   args: { caseId: v.id("cases"), error: v.string() },
   handler: async (ctx, { caseId, error }) => {
-    await logActivity(ctx, caseId, "crs:live", "integration_error", `CRS identity check FAILED: ${error}. No fixture data substituted.`);
+    await logActivity(ctx, caseId, "crs:live", "integration_error", `CRS check FAILED: ${error}. No fixture data substituted.`);
   },
 });

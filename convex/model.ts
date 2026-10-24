@@ -10,6 +10,7 @@ import { interpretStatementScripted, looksLikeCorrection } from "../lib/domain/i
 import { interpretAnswer, relatedRefFromKey } from "../lib/domain/answers";
 import { redactSensitive } from "../lib/domain/redact";
 import { evaluateAutoApproval, type AutoApprovalEvaluation } from "../lib/domain/autoApproval";
+import { DEMO_CUSTOMER } from "../lib/fixtures/demo";
 import type { AskedQuestion, Statement, StatementInterpretation, TransactionEvidence, ProviderEvidence } from "../lib/domain/schemas";
 
 export const MAX_STATEMENT_CHARS = 4000;
@@ -69,15 +70,17 @@ export function toDomainTransaction(t: Doc<"transactions">): TransactionEvidence
   };
 }
 
+export function toDomainProviderEvidence(p: Doc<"providerEvidence">): ProviderEvidence {
+  return { ref: p.ref, provider: p.provider, product: p.product, field: p.field, value: p.value, syntheticAssociation: p.syntheticAssociation };
+}
+
 /** Recompute the derived analysis from stored evidence. Called after every evidence change. */
 export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
   const { c, statements, transactions, providerEvidence } = await loadCaseInput(ctx, caseId);
   const analysis = analyzeCase({
     statements: statements.map(toDomainStatement),
     transactions: transactions.map(toDomainTransaction),
-    providerEvidence: providerEvidence.map(
-      (p): ProviderEvidence => ({ ref: p.ref, provider: p.provider, product: p.product, field: p.field, value: p.value, syntheticAssociation: p.syntheticAssociation }),
-    ),
+    providerEvidence: providerEvidence.map(toDomainProviderEvidence),
     bankFetch: c.bankFetch as EvidenceFetchState,
     // Models number their findings F1, F2… for every statement, colliding with each other and with
     // rule-based findings (duplicate React keys seen live). Re-key them by statement: S2-M1, S2-M2…
@@ -90,7 +93,19 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
     ...analysis,
     rejectedFindings: analysis.rejectedFindings.map((r) => ({ finding: JSON.stringify(r.finding).slice(0, 600), reasons: r.reasons })),
   };
-  const evaluation = evaluateAutoApproval({ analysis, transactions: transactions.map(toDomainTransaction), statements: statements.map(toDomainStatement) });
+  const matched = analysis.match.matchedRef ? transactions.find((t) => t.ref === analysis.match.matchedRef) : undefined;
+  const originRow = matched ? await ctx.db.query("paymentOrigins").withIndex("by_txn", (q) => q.eq("txnExternalId", matched.externalId)).unique() : null;
+  const evaluation = evaluateAutoApproval({
+    analysis,
+    transactions: transactions.map(toDomainTransaction),
+    statements: statements.map(toDomainStatement),
+    providerEvidence: providerEvidence.map(toDomainProviderEvidence),
+    paymentOrigin: matched && originRow
+      ? { txnRef: matched.ref, channel: originRow.channel, device: originRow.device, twoFactor: originRow.twoFactor, city: originRow.city, state: originRow.state, synthetic: true }
+      : null,
+    // The bank's customer profile; every case is the synthetic demo customer for now.
+    homeState: DEMO_CUSTOMER.address.state,
+  });
   await ctx.db.patch(caseId, { analysis: JSON.parse(JSON.stringify(stored)), analysisVersion: c.analysisVersion + 1, autoApproval: evaluation });
   if (analysis.rejectedFindings.length > 0) {
     await logActivity(ctx, caseId, "validator", "findings_rejected", `${analysis.rejectedFindings.length} proposed finding(s) rejected: ${analysis.rejectedFindings.map((r) => r.reasons.join("; ")).join(" | ")}`);

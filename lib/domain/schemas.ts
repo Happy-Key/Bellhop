@@ -136,7 +136,22 @@ export const ProviderEvidence = z.object({
 });
 export type ProviderEvidence = z.infer<typeof ProviderEvidence>;
 
-export const FindingStatus = z.enum(["established", "supported", "tentative", "disputed", "unverified"]);
+/**
+ * How a payment was made, from the bank's own authentication records. In this prototype these are
+ * SYNTHETIC records attached for the demo (Nessie has no device, login or location data).
+ */
+export const PaymentOrigin = z.object({
+  txnRef: z.string().regex(TRANSACTION_REF),
+  channel: z.enum(["card_present_chip_pin", "card_not_present_online", "mobile_banking_app", "online_banking"]),
+  device: z.enum(["customer_enrolled_device", "new_device", "not_applicable"]),
+  twoFactor: z.enum(["passed", "not_used", "failed"]),
+  city: z.string().min(1).max(80),
+  state: z.string().regex(/^[A-Z]{2}$/),
+  synthetic: z.literal(true),
+});
+export type PaymentOrigin = z.infer<typeof PaymentOrigin>;
+
+export const FindingStatus =z.enum(["established", "supported", "tentative", "disputed", "unverified"]);
 export type FindingStatus = z.infer<typeof FindingStatus>;
 
 /** Machine-checkable assertion a finding makes about a referenced record. */
