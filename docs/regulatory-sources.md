@@ -35,6 +35,18 @@ cited (refs `R:<id>`). A finding that cites any other `R:` reference is rejected
 - **No deadlines are calculated.** The 1005.6 and 1005.11 timing rules depend on notice dates,
   account age and transaction type, none of which the prototype verifies.
 
+## Reference rule registry (`legislative-reference/`)
+
+Separate from the curated sources above. The pack's 35-rule registry (Reg E, Reg Z, UCC 4A, checks,
+Nacha, P2P networks; triggers, required facts, obligations, exceptions, deadlines, human-review
+triggers) is product research, not re-verified word for word. `lib/domain/ruleRegistry.ts` sends the
+reasoning model a one-line index of every case rule plus detail for the claim type the case leans
+towards (wire, check and brokerage rules stay index-only; intake-compliance rules are left out). The
+model uses it to plan what to ask and investigate, and lists the rules it used in
+`investigation.rulesConsulted` (unknown IDs are dropped). It never cites the registry as evidence;
+legal readings still cite only the curated sources. Fact IDs `F01`–`F42` refer to the pack's caller
+fact checklist, which is not in the repo.
+
 ## Synthetic demo policy
 
 DP-1 (synthetic, for this prototype only): payments the customer initiated after being

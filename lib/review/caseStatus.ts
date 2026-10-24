@@ -8,7 +8,7 @@
  * mixed and the fallback is always labelled.
  */
 import type { CaseProposal, ProposedDecision } from "../domain/caseDecision";
-import { orderWorkItems, ruleBasedInvestigation, type Investigation, type WorkItem } from "../domain/investigation";
+import { EMPTY_INVESTIGATION, orderWorkItems, ruleBasedInvestigation, type Investigation, type WorkItem } from "../domain/investigation";
 import { triageCase, type StoredAnalysis } from "../domain/triage";
 import type { EvidenceFetchState } from "../domain/workflow";
 
@@ -102,7 +102,7 @@ export function caseStatus(i: CaseStatusInput): CaseStatus {
   const triage = triageCase({ analysis: i.analysis, bankFetch: i.bankFetch, statementCount: i.statementCount });
   const a = i.assessment;
   const source: CaseStatus["source"] = a ? "model" : "rules";
-  const investigation = a?.proposal.investigation ?? (i.analysis ? ruleBasedInvestigation(i.analysis, i.statementCount) : { findings: [], hypotheses: [], uncertainties: [], workItems: [], changes: [] });
+  const investigation = a?.proposal.investigation ?? (i.analysis ? ruleBasedInvestigation(i.analysis, i.statementCount) : EMPTY_INVESTIGATION);
   const sourceLabel = a
     ? `Reasoning model · ${a.provider?.split(":")[0] ?? "live"}${a.current ? "" : " · case changed since"}`
     : i.modelEnabled

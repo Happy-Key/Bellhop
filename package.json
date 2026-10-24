@@ -20,7 +20,8 @@
     "live:nessie": "tsx scripts/live-check-nessie.ts",
     "live:reasoning": "tsx scripts/live-check-reasoning.ts",
     "seed:nessie": "tsx scripts/seed-nessie.ts",
-    "seed:personas": "tsx scripts/seed-personas.ts"
+    "seed:personas": "tsx scripts/seed-personas.ts",
+    "build:rules": "tsx scripts/build-rule-registry.ts"
   },
   "dependencies": {
     "convex": "1.48.0",

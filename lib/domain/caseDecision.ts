@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { AutoApprovalEvaluation } from "./autoApproval";
 import { InvestigationOutput, validateInvestigation, type Investigation } from "./investigation";
 import { REGULATORY_SOURCES } from "./regulatory";
+import { referenceRulesFor, type ClaimLean } from "./ruleRegistry";
 import { evidenceKindOf, type ProviderEvidence, type Statement, type TransactionEvidence } from "./schemas";
 import type { CaseAnalysis } from "./workflow";
 
@@ -87,6 +88,8 @@ export interface CaseReasoningInput {
   autoApproval: { policy: string; eligible: boolean; failedChecks: { id: string; detail: string }[] } | null;
   legalSources: { ref: string; kind: string; citation: string; excerpt: string; applicability: string }[];
   citableRefs: string[];
+  /** Research reference (legislative-reference/ rule registry) for deciding what information is needed. Not citable as evidence. */
+  referenceRules: ReturnType<typeof referenceRulesFor>;
   /** The previous assessment, so the model revises it rather than starting over. Not part of the signature. */
   previous: { decision: string; investigation: Investigation } | null;
 }
@@ -119,8 +122,17 @@ export function buildCaseReasoningInput(a: {
       : null,
     legalSources: REGULATORY_SOURCES.map((s) => ({ ref: s.ref, kind: s.kind, citation: s.citation, excerpt: s.excerpt, applicability: s.applicability })),
     citableRefs: refs,
+    referenceRules: referenceRulesFor(claimLean(analysis)),
     previous: a.previous ?? null,
   };
+}
+
+/** Which claim type the customer's account points to so far, to pick the reference rules to send in detail. */
+export function claimLean(analysis: Pick<CaseAnalysis, "facts">): ClaimLean {
+  const a = analysis.facts.authorization?.value;
+  if (a === "denies_authorization") return "unauthorized";
+  if (a === "authorized" || a === "authorized_induced") return "scam_induced";
+  return "unknown";
 }
 
 export type ValidatedProposal = { ok: true; proposal: CaseProposal; problems: string[] } | { ok: false; problems: string[] };
@@ -166,7 +178,7 @@ export function validateProposal(p: CaseProposal, input: CaseReasoningInput): Va
   }
   if (p.decision === "request_information" && !p.nextQuestion) fatal.push("request_information needs a nextQuestion");
   if (fatal.length) return { ok: false, problems: [...fatal, ...problems] };
-  const inv = validateInvestigation(p.investigation, input.citableRefs);
+  const inv = validateInvestigation(p.investigation, input.citableRefs, input.referenceRules.index.map((r) => r.id));
   return { ok: true, proposal: { ...p, rationale, legalBasis, investigation: inv.investigation }, problems: [...problems, ...inv.problems] };
 }
 

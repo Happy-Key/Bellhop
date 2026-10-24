@@ -130,6 +130,10 @@ export const PITCH_PROPOSAL: CaseProposal = {
       w("card_exposure", "Checking whether the card details were exposed", "Card exposure checked", "Decides whether the balance may still be recoverable.", "done", "Card number and PIN given to the caller.", ["S3"]),
       w("handling", "Choosing the handling route", "Handling route chosen", "Matching the facts to the bank's rules and policies.", "done", "Scam specialist review under policy DP-1.", ["R:policy.demo-scam-review"]),
     ],
+    rulesConsulted: [
+      { ruleId: "R-E01", why: "Ruled out: the customer, not someone else, entered and sent the payment." },
+      { ruleId: "R-E03", why: "Customer-initiated payment induced by deception: no federal reimbursement rule, so specialist and bank policy." },
+    ],
     changes: [{ text: "The customer made the payment themselves after a call from someone posing as the bank, so the unauthorized-payment route was ruled out and scam review applies.", refs: ["S2"] }],
   },
   nextQuestion: null,

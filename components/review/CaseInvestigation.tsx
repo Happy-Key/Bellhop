@@ -202,21 +202,32 @@ export function DecisionRecord({ parts }: { parts: RecordPart[] }) {
   );
 }
 
-/** The model's reading of the curated rules, with source versions. */
+/** The model's reading of the curated rules, with source versions, and the reference rules it planned against. */
 export function RulesConsidered({ proposal }: { proposal: CaseProposal | null }) {
-  if (!proposal || proposal.legalBasis.length === 0) return <p className="ws-small ws-muted">The reasoning model hasn&apos;t assessed the rules for this case. The rule-based trace is below.</p>;
+  const consulted = proposal?.investigation.rulesConsulted ?? [];
+  if (!proposal || (proposal.legalBasis.length === 0 && consulted.length === 0)) return <p className="ws-small ws-muted">The reasoning model hasn&apos;t assessed the rules for this case. The rule-based trace is below.</p>;
   return (
-    <ul className="ws-trace-list">
-      {proposal.legalBasis.map((l, i) => {
-        const s = getSource(l.sourceRef);
-        return (
-          <li key={`${i}-${l.sourceRef}`}>
-            <span className={`ws-reading ws-reading-${l.reading}`}>{READING_LABEL[l.reading]}</span> <strong>{s?.citation ?? l.sourceRef}</strong> — {l.note}
-            {s && <div className="ws-small ws-muted">Source reviewed {s.reviewedOn}{s.verbatimVerified ? "" : " · excerpt paraphrased"} · {s.kind.replace(/_/g, " ")}</div>}
-          </li>
-        );
-      })}
-    </ul>
+    <>
+      {consulted.length > 0 && (
+        <>
+          <p className="ws-small"><strong>Reference rules used to decide what to investigate</strong> <span className="ws-muted">· research registry in <code>legislative-reference/</code>, not legal advice</span></p>
+          <ul className="ws-trace-list ws-small">
+            {consulted.map((r, i) => <li key={`${i}-${r.ruleId}`}><code>{r.ruleId}</code> — {r.why}</li>)}
+          </ul>
+        </>
+      )}
+      <ul className="ws-trace-list">
+        {proposal.legalBasis.map((l, i) => {
+          const s = getSource(l.sourceRef);
+          return (
+            <li key={`${i}-${l.sourceRef}`}>
+              <span className={`ws-reading ws-reading-${l.reading}`}>{READING_LABEL[l.reading]}</span> <strong>{s?.citation ?? l.sourceRef}</strong> — {l.note}
+              {s && <div className="ws-small ws-muted">Source reviewed {s.reviewedOn}{s.verbatimVerified ? "" : " · excerpt paraphrased"} · {s.kind.replace(/_/g, " ")}</div>}
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }
 

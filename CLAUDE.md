@@ -80,6 +80,9 @@ record (evidence, rules, history, documents, activity) is collapsed and opens on
 - `lib/providers/`: typed external clients behind interfaces, with injectable fetch.
 - `lib/voice/`: browser-safe voice-call helpers (PCM conversion, agent WebSocket protocol).
 - `lib/fixtures/`: synthetic demo data.
+- `legislative-reference/`: research pack (Overview and a 35-rule registry CSV). The CSV is generated into
+  `lib/domain/ruleRegistryData.ts` (`npm run build:rules`) and sent to Bitdeer as reference for what a case
+  still needs. Reference only: not evidence, not a legal determination, not citable as `R:`.
 - `convex/`: schema, functions, actions, and the HTTP router. `model.ts` holds shared helpers;
   `_generated/` is committed.
 - `scripts/`: explicit live and seed scripts.

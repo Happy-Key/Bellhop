@@ -49,18 +49,20 @@ export const InvestigationOutput = z.object({
     .max(6),
   /** Why the assessment changed since the previous version, if it did. */
   changes: z.array(z.object({ text: text(300).pipe(z.string().min(1)), refs })).max(5),
+  /** Reference-registry rules (legislative-reference/) the model used to decide what is needed. Research reference only. */
+  rulesConsulted: z.array(z.object({ ruleId: z.string(), why: text(240) })).max(8).default([]),
 });
 export type Investigation = z.infer<typeof InvestigationOutput>;
 export type WorkItem = Investigation["workItems"][number];
 
-export const EMPTY_INVESTIGATION: Investigation = { findings: [], hypotheses: [], uncertainties: [], workItems: [], changes: [] };
+export const EMPTY_INVESTIGATION: Investigation = { findings: [], hypotheses: [], uncertainties: [], workItems: [], changes: [], rulesConsulted: [] };
 
 /**
  * Checks an investigation against the evidence the model was allowed to cite. Items citing
  * unknown evidence are dropped; a "corroborated" finding with no bank record or provider fact is
  * downgraded to "reported". Every adjustment is listed, never applied silently.
  */
-export function validateInvestigation(inv: Investigation, citableRefs: readonly string[]): { investigation: Investigation; problems: string[] } {
+export function validateInvestigation(inv: Investigation, citableRefs: readonly string[], registryRuleIds: readonly string[] = []): { investigation: Investigation; problems: string[] } {
   const known = new Set(citableRefs);
   const problems: string[] = [];
   const keep = <T extends { refs: string[] }>(items: T[], what: string, label: (x: T) => string): T[] =>
@@ -100,7 +102,13 @@ export function validateInvestigation(inv: Investigation, citableRefs: readonly 
     return true;
   });
   const changes = keep(inv.changes, "change note", (c) => c.text);
-  return { investigation: { findings: findings.filter((f) => f !== null), hypotheses, uncertainties: inv.uncertainties, workItems, changes }, problems };
+  const ruleIds = new Set(registryRuleIds);
+  const rulesConsulted = (inv.rulesConsulted ?? []).filter((r) => {
+    if (ruleIds.has(r.ruleId)) return true;
+    problems.push(`dropped reference rule ${r.ruleId}: not in the registry the model was given`);
+    return false;
+  });
+  return { investigation: { findings: findings.filter((f) => f !== null), hypotheses, uncertainties: inv.uncertainties, workItems, changes, rulesConsulted }, problems };
 }
 
 export interface RecordedChange {
@@ -234,5 +242,6 @@ export function ruleBasedInvestigation(analysis: Pick<CaseAnalysis, "facts" | "m
     uncertainties: analysis.questions.map((x) => ({ text: x.text, blocking: x.blocking })).slice(0, 6),
     workItems: work,
     changes: [],
+    rulesConsulted: [],
   };
 }
