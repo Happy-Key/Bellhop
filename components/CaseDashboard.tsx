@@ -318,11 +318,11 @@ function AutoApprovalPanel({ evaluation, decisions }: { evaluation: AutoApproval
       <h2>5. Automatic reimbursement <span className="label synthetic">SIMULATED money</span></h2>
       <p className="muted">
         Policy {evaluation?.policy ?? `${AUTO_APPROVAL_POLICY.id}@${AUTO_APPROVAL_POLICY.version}`}: the app may approve a claim of up to ${AUTO_APPROVAL_POLICY.maxAmount} when every check
-        passes. It never denies; anything else goes to a person.
+        passes. The reasoning model may propose other approvals and denials; a person confirms those in the claims workstation (/review).
       </p>
       {decisions.map((d) => (
         <div key={d._id} style={{ marginBottom: 8 }}>
-          <strong>Approved automatically: ${d.amount.toFixed(2)} for <span className="ref">{d.txnRef}</span></strong>{" "}
+          <strong>{d.outcome === "approved_by_person" ? "Approved by a person (model proposal)" : "Approved automatically"}: ${d.amount.toFixed(2)} for <span className="ref">{d.txnRef}</span></strong>{" "}
           <span className="muted">{new Date(d.decidedAt).toLocaleString()}</span>
           <div>
             Payout: <span className={`label ${d.payout.status === "failed" ? "error" : ""}`}>{d.payout.status}</span>

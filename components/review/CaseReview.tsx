@@ -23,6 +23,7 @@ import { GuidedIntake } from "./GuidedIntake";
 import { CaseBrief, DecisionTrace, FindingsPanel, PreparedOutputs } from "./Investigation";
 import { NextSteps } from "./NextSteps";
 import { LiveReviewNote } from "./ReviewControls";
+import { CaseDecisionPanel } from "./CaseDecision";
 import { Timeline } from "./Timeline";
 import { WorkspaceModeProvider, type WorkspaceMode } from "./WorkspaceMode";
 import { caseRef, exactTime, usd } from "./format";
@@ -42,7 +43,14 @@ export function CaseReview({ caseId }: { caseId: string }) {
         </div>
       </main>
     );
-  return <CaseWorkspace data={data} mode="live" review={<LiveReviewNote />} />;
+  return (
+    <CaseWorkspace
+      data={data}
+      mode="live"
+      review={<LiveReviewNote />}
+      decision={<CaseDecisionPanel caseId={data.case._id} analysis={data.case.analysis as StoredAnalysis | null} decisions={data.decisions} />}
+    />
+  );
 }
 
 export interface CaseWorkspaceProps {
@@ -55,9 +63,11 @@ export interface CaseWorkspaceProps {
   reviewEvents?: DemoReviewEvent[];
   /** Rendered above the case header (the demo's scenario controls). */
   banner?: ReactNode;
+  /** Live cases: the case decision panel (model proposal, approvals). Replaces the rule-route box. */
+  decision?: ReactNode;
 }
 
-export function CaseWorkspace({ data, mode, review, snapshots, reviewEvents, banner }: CaseWorkspaceProps) {
+export function CaseWorkspace({ data, mode, review, snapshots, reviewEvents, banner, decision }: CaseWorkspaceProps) {
   const [focusRef, setFocusRef] = useState<string | null>(null);
   const analysis = data.case.analysis as StoredAnalysis | null;
   const bankFetch = data.case.bankFetch as EvidenceFetchState;
@@ -139,7 +149,7 @@ export function CaseWorkspace({ data, mode, review, snapshots, reviewEvents, ban
               <Timeline data={data} recordSource={mode === "demo" ? "Fixture (demo)" : "Nessie (live)"} reviewEvents={reviewEvents} />
             </div>
 
-            <NextSteps caseId={data.case._id} triage={triage} analysis={analysis}>
+            <NextSteps caseId={data.case._id} triage={triage} analysis={analysis} decision={decision}>
               {typeof review === "function" ? review(triage) : review}
             </NextSteps>
           </div>

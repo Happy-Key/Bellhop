@@ -12,7 +12,7 @@ export const getDecision = internalQuery({
     const d = await ctx.db.get(decisionId);
     if (!d) return null;
     const c = await ctx.db.get(d.caseId);
-    return { _id: d._id, caseId: d.caseId, txnRef: d.txnRef, amount: d.amount, policy: d.policy, payoutStatus: d.payout.status, accountId: c?.nessieAccountId ?? null };
+    return { _id: d._id, caseId: d.caseId, txnRef: d.txnRef, amount: d.amount, policy: d.policy, outcome: d.outcome, payoutStatus: d.payout.status, accountId: c?.nessieAccountId ?? null };
   },
 });
 

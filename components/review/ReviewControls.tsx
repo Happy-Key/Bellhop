@@ -25,7 +25,7 @@ export function LiveReviewNote() {
     <section className="ws-stepgroup ws-review" aria-label="Review decisions">
       <h3 className="ws-stepgroup-head">Review decisions</h3>
       <p className="ws-small ws-muted">
-        Not available: the backend has no persisted review actions yet. <Link href="/review/demo">Preview the controls in the synthetic demo</Link>.
+        Approving or denying a model proposal is under Case decision above. Other actions (request information, return, escalate by hand, override) aren&apos;t persisted yet; <Link href="/review/demo">preview them in the synthetic demo</Link>.
       </p>
     </section>
   );

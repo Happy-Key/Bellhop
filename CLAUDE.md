@@ -43,6 +43,19 @@ These signals only stop automatic approval. They never deny a claim (the bank be
 proof and must investigate). Never use credit reports, credit scores or criminal records to judge
 a claim.
 
+**Case decisions by the reasoning model (decided 2026-10-24).** Bitdeer reads the whole case and
+proposes one decision: approve, deny, request_information or escalate, with a cited rationale, its
+reading of the curated legal sources, and draft documents (`lib/domain/caseDecision.ts`,
+`convex/proposals.ts`, `convex/caseReasoning.ts`). Not every decision needs a person:
+- request_information and escalate apply automatically (no money moves);
+- approve pays out automatically only when policy AUTO-1 also passes; otherwise a person approves;
+- deny is always a proposal that a person confirms (Reg E 1005.11 needs an investigation and a
+  written explanation).
+Proposals are validated before use: unknown refs, uncited decisions, approvals that don't cite the
+matched record, approve/deny while blocking questions are open, and denials that cite only customer
+statements are rejected. The rule-based route stays as the guardrail and fallback; a failed model
+call is shown, never silently replaced.
+
 **Non-goals:**
 - moving real money, denying reimbursements automatically, approving outside policy AUTO-1, or
   filing complaints
@@ -108,7 +121,8 @@ package.json).
 
 - Claude Code is the **development** assistant only. The app must not require the Anthropic
   API or SDK.
-- Reasoning sits behind `ReasoningProvider` (`lib/providers/reasoning.ts`). It is `scripted`
+- Reasoning sits behind `ReasoningProvider` (`lib/providers/reasoning.ts`). Bitdeer does both
+  statement extraction and whole-case decision proposals (`CASE_REASONING=off` disables the latter). It is `scripted`
   by default and always labelled. **Live extraction is done through Bitdeer** (decided
   2026-10-24), via its OpenAI-compatible API and the `REASONING_*` env vars. See
   `docs/integrations.md`.

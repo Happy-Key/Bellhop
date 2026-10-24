@@ -15,20 +15,20 @@ import { AudienceTag } from "./Tags";
 import { shortKey } from "./format";
 import { useWorkspaceMode } from "./WorkspaceMode";
 
-export function NextSteps({ caseId, triage, analysis, children }: { caseId: Id<"cases">; triage: Triage; analysis: StoredAnalysis | null; children?: ReactNode }) {
+export function NextSteps({ caseId, triage, analysis, decision, children }: { caseId: Id<"cases">; triage: Triage; analysis: StoredAnalysis | null; decision?: ReactNode; children?: ReactNode }) {
   const bank = triage.steps.filter((s) => s.audience === "reviewer");
   const customer = triage.steps.filter((s) => s.audience === "customer");
   return (
     <aside className="ws-next" aria-labelledby="next-h">
       <h2 id="next-h">Next steps</h2>
-      {analysis && (
+      {decision ?? (analysis && (
         <div className="ws-decision">
           <span className="ws-eyebrow">Draft recommendation · {STAGE_LABEL[analysis.stage]}</span>
           <strong>{RECOMMENDATION_LABEL[analysis.recommendation.action]}</strong>
           <p className="ws-small">{analysis.recommendation.rationale}</p>
-          <p className="ws-small ws-muted">A person decides. Nothing here approves, denies or pays a claim. <a href="#trace">Decision trace</a></p>
+          <p className="ws-small ws-muted">Rule-based route. <a href="#trace">Decision trace</a></p>
         </div>
-      )}
+      ))}
 
       <StepGroup title="For the bank" audience="reviewer" steps={bank} caseId={caseId} empty="Nothing for a reviewer right now." />
       <StepGroup

@@ -13,6 +13,7 @@
 import { v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation } from "./_generated/server";
 import { logActivity, recordStatement } from "./model";
+import { modelQuestionFor } from "./proposals";
 import { redact } from "../lib/providers/errors";
 import { CARTESIA_VERSION } from "../lib/providers/cartesia";
 import { voiceIdempotencyKey } from "../lib/domain/idempotency";
@@ -188,17 +189,25 @@ export const issueVoiceQuestion = internalMutation({
         await ctx.db.patch(sessionId, { handedOffKeys: [...handedOff, ...newlyHandedOff.map((q) => q.key)] });
         await logActivity(ctx, session.caseId, "voice", "question_handed_to_reviewer", `Asked ${MAX_ASKS_PER_CALL} times on this call without being settled, so not asked again: ${newlyHandedOff.map((q) => `"${q.text}"`).join("; ")}. Needs reviewer follow-up.`);
       }
-      if (choice.question) {
+      // When the rules have nothing to ask, the reasoning model's question (if it asked for
+      // information about the case as it stands now) is used, with the same per-call repeat limit.
+      let next: { key: string; kind: string; text: string } | null = choice.question;
+      if (!next) {
+        const mq = await modelQuestionFor(ctx, session.caseId);
+        const asked = mq ? (await ctx.db.query("intakeTurns").withIndex("by_session_key", (x) => x.eq("sessionId", sessionId).eq("questionKey", mq.key)).collect()).length : 0;
+        if (mq && asked < MAX_ASKS_PER_CALL) next = { key: mq.key, kind: "model_question", text: mq.text };
+      }
+      if (next) {
         const turnId = await ctx.db.insert("intakeTurns", {
           caseId: session.caseId,
           sessionId,
-          questionKey: choice.question.key,
-          kind: choice.question.kind,
-          text: choice.question.text,
+          questionKey: next.key,
+          kind: next.kind,
+          text: next.text,
           issuedAt: Date.now(),
           analysisVersion: c.analysisVersion,
         });
-        response = { recorded: ref, duplicate, question_id: turnId, question: choice.question.text, next_questions: [choice.question.text], awaiting_interpretation: false };
+        response = { recorded: ref, duplicate, question_id: turnId, question: next.text, next_questions: [next.text], awaiting_interpretation: false };
       } else {
         response = { recorded: ref, duplicate, question_id: null, question: null, next_questions: [], awaiting_interpretation: false };
       }

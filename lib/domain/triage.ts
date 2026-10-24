@@ -116,10 +116,10 @@ export function triageCase(input: { analysis: StoredAnalysis | null; bankFetch: 
     steps.push({
       key: `decision:${rec.action}`,
       audience: "reviewer",
-      title: analysis.stage === "human_review" ? `Review the draft packet: ${RECOMMENDATION_LABEL[rec.action].toLowerCase()}` : "Decide how to handle this claim type",
+      title: analysis.stage === "human_review" ? `Decide: ${RECOMMENDATION_LABEL[rec.action].toLowerCase()}` : "Decide how to handle this claim type",
       why:
         analysis.stage === "human_review"
-          ? "No blocking questions remain. A person assesses coverage and conditions; the draft is not an approval or a denial."
+          ? "No blocking questions remain. The case is ready for a decision: automatic under AUTO-1 or a model proposal; a person confirms denials and approvals outside AUTO-1."
           : rec.rationale,
       refs: analysis.packet.matchedTransactionRef ? [analysis.packet.matchedTransactionRef] : [],
       blocking: false,

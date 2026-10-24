@@ -26,7 +26,8 @@ accounts. **Consumers file claims, and the software is an extension of their ban
 Rules that always hold:
 - All data is synthetic, and the money is simulated.
 - **Approve-only automation.** Policy AUTO-1 (`lib/domain/autoApproval.ts`) may approve claims of $100 or
-  less. The app **never denies**; denials are always made by a person.
+  less. The reasoning model (Bitdeer) may also **propose** approvals and denials; a person confirms denials
+  and any approval AUTO-1 doesn't cover. The app never denies on its own.
 - No legal determinations. Credit and criminal data are never used to judge claims.
 
 ## Current state at a glance
@@ -39,6 +40,7 @@ Rules that always hold:
 | Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ⚠️ **Credits not approved ($0.00 balance); may be refused at any moment.** Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
 | Voice (Cartesia) | ✅ Live: one question per turn (`question_id`); waits up to 8 s for extraction; at most one "anything else?" in a row; a display error can't end a call |
 | CRS | ✅ Identity check and **Fraud Finder** live (persona bodies only; Fraud Finder verified on P01, score 11) |
+| Case decisions (Bitdeer) | 🟡 **Built, mock-tested, not run live** (committed on `foundation`): the model proposes approve / deny / request information / escalate with cited reasons, a legal reading and draft letters. Info requests and escalations are automatic; approvals pay out automatically only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Validated before use. Off switch: `CASE_REASONING=off`. The personal review deployment has no Bitdeer key (scripted) |
 | Automatic reimbursement | ✅ Built: AUTO-1 v2, 14 checks, SIMULATED deposit that can't be paid twice. ⚠️ **The first live deposit hasn't been made yet** |
 | Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown) |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
@@ -92,6 +94,16 @@ Rules that always hold:
   review controls labelled "demo, not saved". No AI, Convex or Nessie calls.
 - Not yet in the workstation: AUTO-1 checklist, payout state, payment-origin presets, Fraud Finder. Its wording
   still says "a person decides", which predates AUTO-1.
+
+## Case decisions by the reasoning model (user decision 2026-10-24)
+
+- Bitdeer is the reasoning model; no Claude API. Not every decision needs a person; the model may propose denials.
+- Files: `lib/domain/caseDecision.ts` (schema, input, validation, who acts), `convex/proposals.ts`, `convex/caseReasoning.ts`,
+  `components/review/CaseDecision.tsx` (panel at the top of the right column in `/review/<id>`).
+- The voice agent asks the model's question when the rules have nothing to ask (same 2-per-call limit).
+- Route wording in `workflow.ts` / `triage.ts` updated (no rule changes). Stored analyses keep the old text until their next recompute.
+- To try it live: on a deployment with the Bitdeer env vars (shared dev has them), finish a case to a decision point or press
+  "Ask the model now". Bitdeer credits were $0.00 and unapproved at last check.
 
 ## Known limitations
 
@@ -164,3 +176,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Workstation rebuilt as an evidence-linked investigation workspace plus the synthetic guided-intake demo `/review/demo` (branch `bank-dashboard`, commit `0a59fbd`; 15 new tests) |
 | 2026-10-24 | Merged `bank-dashboard` into `foundation` (only conflict: CONTEXT.md, resolved by keeping foundation's rewrite and adding the workstation section) |
 | 2026-10-24 | Switching the working copy to `foundation` means the running `npx convex dev` watcher pushes foundation's schema and functions (AUTO-1, payouts, payment origins) to the personal review deployment `friendly-grouse-183`. It has no Bitdeer key, so extraction there stays scripted |
+| 2026-10-24 | Bitdeer whole-case decision proposals (user decision: Bitdeer, no Claude API; model may propose denials; not every decision needs a person). New `caseProposals` table and `approved_by_person` outcome; voice uses the model's question as a fallback; decision panel in `/review/<id>`; `CLAUDE.md` updated. 11 new tests (155 total); verify passes. Not run live. Committed and pushed to `foundation`. The running `convex dev` watcher pushed the new functions to `friendly-grouse-183` (scripted there, so no model calls) |

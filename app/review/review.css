@@ -353,6 +353,24 @@ body:has(.ws) { max-width: none; margin: 0; padding: 0; background: var(--ws-bg)
 .ws-btn-sm { height: 30px; font-size: 13px; justify-content: flex-start; white-space: normal; text-align: left; }
 .ws-review-log { margin: 10px 0 0; padding-left: 18px; }
 
+/* ---------- Case decision (model proposal) ---------- */
+.ws-casedecision { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 8px; background: var(--ws-sunken); }
+.ws-casedecision .ws-eyebrow { margin: 0; }
+.ws-proposal { display: flex; flex-direction: column; gap: 6px; }
+.ws-proposal p { margin: 0; }
+.ws-proposal[data-stale] { opacity: 0.75; }
+.ws-proposal-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; }
+.ws-proposal-decision { font-size: 16px; }
+.ws-pd-deny { color: var(--ws-crit); }
+.ws-pd-approve { color: var(--ws-ok); }
+.ws-plan { padding: 6px 8px; border-left: 3px solid var(--ws-line-2); background: var(--ws-surface); border-radius: 0 6px 6px 0; }
+.ws-plan-needs_person_to_approve, .ws-plan-needs_person_to_confirm_denial { border-left-color: var(--ws-warn); }
+.ws-plan-auto_approved, .ws-plan-automatic { border-left-color: var(--ws-ok); }
+.ws-resolve-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ws-decided { padding: 8px 10px; border: 1px solid var(--ws-ok); border-radius: 6px; background: var(--ws-surface); }
+.ws-ruleroute { margin: 0; }
+.ws-prewrap { white-space: pre-wrap; margin: 4px 0 0; font-size: 13px; }
+
 /* ---------- Demo ---------- */
 .ws-demo-tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border: 1px dashed var(--ws-warn); border-radius: 999px; font-family: var(--ws-font); font-size: 12px; font-weight: 600; color: var(--ws-warn); vertical-align: middle; letter-spacing: 0; }
 .ws-demo-link { display: grid; gap: 2px; padding: 10px 14px; border: 1px dashed var(--ws-line-2); border-radius: 10px; background: var(--ws-surface); color: var(--ws-ink) !important; text-decoration: none; font-weight: 600; }

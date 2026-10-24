@@ -11,6 +11,7 @@ import { interpretAnswer, relatedRefFromKey } from "../lib/domain/answers";
 import { redactSensitive } from "../lib/domain/redact";
 import { evaluateAutoApproval, type AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 import { DEMO_CUSTOMER } from "../lib/fixtures/demo";
+import { maybeRequestProposal } from "./proposals";
 import type { AskedQuestion, Statement, StatementInterpretation, TransactionEvidence, ProviderEvidence } from "../lib/domain/schemas";
 
 export const MAX_STATEMENT_CHARS = 4000;
@@ -111,6 +112,8 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
     await logActivity(ctx, caseId, "validator", "findings_rejected", `${analysis.rejectedFindings.length} proposed finding(s) rejected: ${analysis.rejectedFindings.map((r) => r.reasons.join("; ")).join(" | ")}`);
   }
   await applyAutoApproval(ctx, caseId, evaluation);
+  // At a decision point, the reasoning model proposes the case decision (live mode only).
+  await maybeRequestProposal(ctx, caseId);
 }
 
 /**

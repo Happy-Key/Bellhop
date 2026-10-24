@@ -47,7 +47,7 @@ describe("reviewer triage", () => {
     expect(t.attention).toBe("reviewer");
     const decision = t.steps.find((s) => s.key.startsWith("decision:"));
     expect(decision).toMatchObject({ key: "decision:reimbursement_review", audience: "reviewer", blocking: false, refs: ["T:bbb222"] });
-    expect(decision?.title).toMatch(/draft packet/);
+    expect(decision?.title).toMatch(/^Decide: /);
     expect(JSON.stringify(t)).not.toMatch(/approved|denied/i);
   });
 

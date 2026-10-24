@@ -330,10 +330,10 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
       : { action: "request_clarification", rationale: "Open questions must be answered before the claim can be assessed.", blockingQuestionIds: blocking.map((x) => x.id) };
   } else if (customerSentAfterDeception) {
     stage = "human_review";
-    recommendation = { action: "escalate", rationale: "Customer-initiated payment after reported deception. Requires specialist scam review; not automatically reimbursable.", blockingQuestionIds: [] };
+    recommendation = { action: "escalate", rationale: "Customer-initiated payment after reported deception. Goes to specialist scam review; reimbursement is not automatic under the regulation, so the reasoning model proposes and a person confirms.", blockingQuestionIds: [] };
   } else if (facts.authorization?.value === "denies_authorization" && match.outcome === "clear") {
     stage = "human_review";
-    recommendation = { action: "reimbursement_review", rationale: "Disputed transaction identified and customer reports it was unauthorized. A human reviewer must assess coverage and conditions; this is not an approval.", blockingQuestionIds: [] };
+    recommendation = { action: "reimbursement_review", rationale: "Disputed transaction identified and customer reports it was unauthorized. Ready for a decision: policy AUTO-1 or the reasoning model decides; a person confirms any denial and any approval AUTO-1 does not cover.", blockingQuestionIds: [] };
   } else {
     stage = "assess_considerations";
     recommendation = { action: "further_investigation", rationale: "Facts are consistent but do not fit a supported claim scenario; manual review of the claim type is needed.", blockingQuestionIds: [] };

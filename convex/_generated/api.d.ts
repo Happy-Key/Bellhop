@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as caseReasoning from "../caseReasoning.js";
 import type * as cases from "../cases.js";
 import type * as crs from "../crs.js";
 import type * as crsData from "../crsData.js";
@@ -17,6 +18,7 @@ import type * as nessie from "../nessie.js";
 import type * as paymentOrigins from "../paymentOrigins.js";
 import type * as payout from "../payout.js";
 import type * as payoutData from "../payoutData.js";
+import type * as proposals from "../proposals.js";
 import type * as reasoning from "../reasoning.js";
 import type * as review from "../review.js";
 import type * as statements from "../statements.js";
@@ -32,6 +34,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  caseReasoning: typeof caseReasoning;
   cases: typeof cases;
   crs: typeof crs;
   crsData: typeof crsData;
@@ -41,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   paymentOrigins: typeof paymentOrigins;
   payout: typeof payout;
   payoutData: typeof payoutData;
+  proposals: typeof proposals;
   reasoning: typeof reasoning;
   review: typeof review;
   statements: typeof statements;

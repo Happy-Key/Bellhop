@@ -1,7 +1,7 @@
 "use node";
 /**
  * SIMULATED reimbursement payout: a Nessie deposit on the backend-bound demo account, for an
- * automatically approved claim (policy AUTO-1). Synthetic money only.
+ * approved claim (policy AUTO-1, or a person accepting a model-proposed approval). Synthetic money only.
  * - The account comes from the case (bound by the backend), never from client or model input.
  * - At most once per decision: `depositOnce` looks for an earlier deposit carrying the decision's
  *   marker before writing, and the decision must still be `pending`.
@@ -17,7 +17,7 @@ export const payDecision = internalAction({
   args: { decisionId: v.id("reimbursementDecisions") },
   // Explicit types break the circular inference between this action and the generated `internal` API.
   handler: async (ctx, { decisionId }): Promise<void> => {
-    const d: { amount: number; txnRef: string; policy: string; payoutStatus: string; accountId: string | null } | null = await ctx.runQuery(internal.payoutData.getDecision, { decisionId });
+    const d: { amount: number; txnRef: string; policy: string; outcome: string; payoutStatus: string; accountId: string | null } | null = await ctx.runQuery(internal.payoutData.getDecision, { decisionId });
     if (!d || d.payoutStatus !== "pending") return;
     const fail = async (error: string): Promise<void> => {
       await ctx.runMutation(internal.payoutData.recordPayout, { decisionId, result: { ok: false, error } });
@@ -31,7 +31,7 @@ export const payDecision = internalAction({
       const r = await depositOnce(new NessieClient(apiKey, process.env.NESSIE_BASE_URL || undefined), d.accountId, {
         amount: d.amount,
         date: new Date().toISOString().slice(0, 10),
-        description: `SIMULATED reimbursement for ${d.txnRef}, auto-approved under ${d.policy} ${marker}`,
+        description: `SIMULATED reimbursement for ${d.txnRef}, ${d.outcome === "approved_by_person" ? "approved by a person" : `auto-approved under ${d.policy}`} ${marker}`,
         marker,
       });
       await ctx.runMutation(internal.payoutData.recordPayout, { decisionId, result: { ok: true, ...r } });

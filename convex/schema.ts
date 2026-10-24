@@ -113,7 +113,8 @@ export default defineSchema({
     txnRef: v.string(),
     amount: v.number(),
     policy: v.string(),
-    outcome: v.literal("auto_approved"),
+    /** auto_approved: policy AUTO-1. approved_by_person: a reviewer accepted a model-proposed approval. */
+    outcome: v.union(v.literal("auto_approved"), v.literal("approved_by_person")),
     checks: v.array(v.object({ id: v.string(), passed: v.boolean(), detail: v.string() })),
     decidedAt: v.number(),
     payout: v.object({
@@ -126,6 +127,31 @@ export default defineSchema({
     }),
     /** Set when facts change after approval so the policy no longer passes: a person must look. */
     needsReview: v.optional(v.object({ at: v.number(), reason: v.string() })),
+  }).index("by_case", ["caseId"]),
+
+  /**
+   * Whole-case decisions proposed by the reasoning model (lib/domain/caseDecision.ts). One row per
+   * case state sent to the model (`signature`); only the newest row for a case is acted on.
+   */
+  caseProposals: defineTable({
+    caseId: v.id("cases"),
+    signature: v.string(),
+    status: v.union(v.literal("pending"), v.literal("done"), v.literal("rejected_by_validation"), v.literal("failed")),
+    /** "manual" when a reviewer asked for it; "auto" when the case reached a decision point. */
+    trigger: v.union(v.literal("auto"), v.literal("manual")),
+    provider: v.optional(v.string()),
+    /** Exactly what was sent to the model (CaseReasoningInput), kept for audit. */
+    input: v.any(),
+    requestedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    /** Validated CaseProposal (stored as data; shown, never executed as instructions). */
+    proposal: v.optional(v.any()),
+    /** Validation problems: fatal ones for rejected_by_validation, dropped details otherwise. */
+    problems: v.optional(v.array(v.string())),
+    error: v.optional(v.string()),
+    plan: v.optional(v.object({ kind: v.string(), note: v.string() })),
+    /** A person's answer to a proposal that needs one. */
+    resolution: v.optional(v.object({ accepted: v.boolean(), note: v.string(), at: v.number(), decisionId: v.optional(v.id("reimbursementDecisions")) })),
   }).index("by_case", ["caseId"]),
 
   /** Every question the backend put to the customer on a voice call, so it can avoid repeats. */

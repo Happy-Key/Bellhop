@@ -27,6 +27,10 @@ External: Nessie (read-only) · reasoning provider (OpenAI-compatible, optional)
 - **`convex/`** holds persistence, idempotency, the activity log, and external calls in
   actions. It recomputes `cases.analysis` after every evidence change, so the UI reacts
   automatically.
+- **Case decisions:** at a decision point the reasoning model proposes approve / deny / request
+  information / escalate (`lib/domain/caseDecision.ts` validates it and decides who acts;
+  `convex/proposals.ts` stores and applies it; `convex/caseReasoning.ts` calls Bitdeer). Only the
+  newest proposal for the current case state can be acted on.
 - **`lib/review/`** holds pure view models for the bank workstation (`/review`): guided-intake
   progression, the timeline, findings groups, the decision trace, prepared-output states, and the
   adapter that runs the synthetic guided-intake demo through the real rules. It only re-reads stored
