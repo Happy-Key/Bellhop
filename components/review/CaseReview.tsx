@@ -1,27 +1,35 @@
 "use client";
 
 /**
- * Case review workspace: case and payment navigation (left), the case narrative and evidence
- * (centre), and next steps (right). Everything shown comes from cases.view; the next steps are
- * the shared triage of the stored analysis (lib/domain/triage.ts).
+ * Case workspace: section and payment navigation (left), the investigation (centre), and next
+ * steps with review decisions (right). A live case comes from cases.view; the synthetic demo
+ * passes a case of the same shape with mode "demo", which disables every backend action.
  */
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { STAGE_LABEL, triageCase, type StoredAnalysis } from "@/lib/domain/triage";
+import { STAGE_LABEL, triageCase, type StoredAnalysis, type Triage } from "@/lib/domain/triage";
 import type { EvidenceFetchState } from "@/lib/domain/workflow";
+import type { DemoSnapshot } from "@/lib/review/demoCase";
+import { intakeProgress } from "@/lib/review/intake";
+import type { DemoReviewEvent } from "@/lib/review/types";
+import { RECONCILIATION_LABEL, reconciliation } from "@/lib/review/workspace";
 import { HighlightProvider } from "./EvidenceRef";
 import { EvidenceTrail } from "./EvidenceTrail";
-import { BankRecords, DraftPacket, IdentityEvidence, ReportSummary, Statements, Timeline } from "./CaseSections";
+import { BankRecords, IdentityEvidence, Statements } from "./CaseSections";
+import { GuidedIntake } from "./GuidedIntake";
+import { CaseBrief, DecisionTrace, FindingsPanel, PreparedOutputs } from "./Investigation";
 import { NextSteps } from "./NextSteps";
+import { LiveReviewNote } from "./ReviewControls";
+import { Timeline } from "./Timeline";
+import { WorkspaceModeProvider, type WorkspaceMode } from "./WorkspaceMode";
 import { caseRef, exactTime, usd } from "./format";
 import type { CaseView, Payment } from "./types";
 
 export function CaseReview({ caseId }: { caseId: string }) {
   const data = useQuery(api.cases.view, { caseId: caseId as Id<"cases"> });
-  const [focusRef, setFocusRef] = useState<string | null>(null);
 
   if (data === undefined) return <CaseSkeleton />;
   if (data === null)
@@ -34,82 +42,110 @@ export function CaseReview({ caseId }: { caseId: string }) {
         </div>
       </main>
     );
+  return <CaseWorkspace data={data} mode="live" review={<LiveReviewNote />} />;
+}
 
+export interface CaseWorkspaceProps {
+  data: CaseView;
+  mode: WorkspaceMode;
+  /** Review decisions panel (live note or demo controls), rendered under the next steps. */
+  review: ReactNode | ((triage: Triage) => ReactNode);
+  /** Demo only: the rules' state after each reply. */
+  snapshots?: DemoSnapshot[];
+  reviewEvents?: DemoReviewEvent[];
+  /** Rendered above the case header (the demo's scenario controls). */
+  banner?: ReactNode;
+}
+
+export function CaseWorkspace({ data, mode, review, snapshots, reviewEvents, banner }: CaseWorkspaceProps) {
+  const [focusRef, setFocusRef] = useState<string | null>(null);
   const analysis = data.case.analysis as StoredAnalysis | null;
   const bankFetch = data.case.bankFetch as EvidenceFetchState;
   const triage = triageCase({ analysis, bankFetch, statementCount: data.statements.length });
   const payments = paymentsOf(data, analysis);
   const focused = payments.find((p) => p.ref === focusRef) ?? payments[0] ?? null;
   const firstStatement = data.statements[0];
+  const progress = intakeProgress(data.statements, analysis);
 
   return (
-    <HighlightProvider>
-      <main className="ws-main ws-case">
-        <header className="ws-casehead">
-          <div>
-            <Link href={`/review?case=${data.case._id}`} className="ws-back">← Claims queue</Link>
-            <h1>
-              {caseRef(data.case._id)} <span className="ws-stage">{STAGE_LABEL[analysis?.stage ?? "intake"]}</span>
-            </h1>
-            <p className="ws-casemeta">
-              <span>
-                Report received{" "}
-                <strong>{firstStatement ? exactTime(firstStatement.receivedAt) : "— no statement yet"}</strong>
-              </span>
-              <span>Case opened {exactTime(data.case.createdAt)}</span>
-              <span>{data.case.customerLabel}</span>
-            </p>
+    <WorkspaceModeProvider value={mode}>
+      <HighlightProvider>
+        <main className="ws-main ws-case">
+          {banner}
+          <header className="ws-casehead">
+            <div>
+              <Link href={mode === "live" ? `/review?case=${data.case._id}` : "/review"} className="ws-back">← Claims queue</Link>
+              <h1>
+                {caseRef(data.case._id)} <span className="ws-stage">{STAGE_LABEL[analysis?.stage ?? "intake"]}</span>
+                {mode === "demo" && <span className="ws-demo-tag">Synthetic demo</span>}
+              </h1>
+              <p className="ws-casemeta">
+                <span>
+                  Report received <strong>{firstStatement ? exactTime(firstStatement.receivedAt) : "— no statement yet"}</strong>
+                </span>
+                <span>Case opened {exactTime(data.case.createdAt)}</span>
+                <span>{data.case.customerLabel}</span>
+              </p>
+            </div>
+          </header>
+
+          <div className="ws-case-grid">
+            <nav className="ws-rail" aria-label="Case sections and payments">
+              <h2 className="ws-eyebrow">Sections</h2>
+              <ul className="ws-toc">
+                <li><a href="#brief">Case brief</a></li>
+                <li><a href="#intake">Guided intake <span className="ws-count">{progress.turns.length}</span></a></li>
+                <li><a href="#trail">Payments and evidence</a></li>
+                <li><a href="#records">Bank records <span className="ws-count">{data.transactions.length}</span></a></li>
+                <li><a href="#findings">Findings</a></li>
+                <li><a href="#trace">Decision trace</a></li>
+                <li><a href="#outputs">Prepared outputs</a></li>
+                <li><a href="#statements">Customer account <span className="ws-count">{data.statements.length}</span></a></li>
+                <li><a href="#identity">Identity evidence <span className="ws-count">{data.providerEvidence.length}</span></a></li>
+                <li><a href="#timeline">Timeline</a></li>
+              </ul>
+
+              <h2 className="ws-eyebrow" id="payments-label">Payment under review</h2>
+              {payments.length === 0 ? (
+                <p className="ws-muted ws-small">{noPaymentReason(analysis, bankFetch)}</p>
+              ) : (
+                <div className="ws-payments" role="group" aria-labelledby="payments-label">
+                  {payments.map((p) => (
+                    <button key={p.ref} type="button" className="ws-payment" aria-pressed={focused?.ref === p.ref} onClick={() => setFocusRef(p.ref)}>
+                      <span className="ws-payment-amt">{usd(p.amount)}</span>
+                      <span className="ws-payment-merchant">{p.merchant ?? "Unknown merchant"}</span>
+                      <span className="ws-payment-meta">
+                        {p.date ?? "date unknown"} · {RECONCILIATION_LABEL[reconciliation(analysis, p.ref).state].toLowerCase()}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="ws-muted ws-small">
+                Candidates come from the rule-based matcher. This prototype tracks one disputed payment per case; there are no per-payment decisions.
+              </p>
+            </nav>
+
+            <div className="ws-center">
+              <CaseBrief data={data} analysis={analysis} triage={triage} payment={focused} />
+              <GuidedIntake progress={progress} snapshots={snapshots} />
+              <EvidenceTrail analysis={analysis} payment={focused} paymentCount={payments.length} />
+              <BankRecords data={data} analysis={analysis} focusedRef={focused?.ref ?? null} />
+              <FindingsPanel data={data} analysis={analysis} />
+              <DecisionTrace data={data} analysis={analysis} triage={triage} />
+              <PreparedOutputs analysis={analysis} />
+              <Statements data={data} analysis={analysis} />
+              <IdentityEvidence data={data} />
+              <Timeline data={data} recordSource={mode === "demo" ? "Fixture (demo)" : "Nessie (live)"} reviewEvents={reviewEvents} />
+            </div>
+
+            <NextSteps caseId={data.case._id} triage={triage} analysis={analysis}>
+              {typeof review === "function" ? review(triage) : review}
+            </NextSteps>
           </div>
-        </header>
-
-        <div className="ws-case-grid">
-          <nav className="ws-rail" aria-label="Case sections and payments">
-            <h2 className="ws-eyebrow">Sections</h2>
-            <ul className="ws-toc">
-              <li><a href="#summary">Customer report</a></li>
-              <li><a href="#trail">Evidence trail</a></li>
-              <li><a href="#statements">Statements <span className="ws-count">{data.statements.length}</span></a></li>
-              <li><a href="#records">Bank records <span className="ws-count">{data.transactions.length}</span></a></li>
-              <li><a href="#identity">Identity evidence <span className="ws-count">{data.providerEvidence.length}</span></a></li>
-              <li><a href="#packet">Draft packet</a></li>
-              <li><a href="#timeline">Timeline</a></li>
-            </ul>
-
-            <h2 className="ws-eyebrow" id="payments-label">Payment under review</h2>
-            {payments.length === 0 ? (
-              <p className="ws-muted ws-small">{noPaymentReason(analysis, bankFetch)}</p>
-            ) : (
-              <div className="ws-payments" role="group" aria-labelledby="payments-label">
-                {payments.map((p) => (
-                  <button key={p.ref} type="button" className="ws-payment" aria-pressed={focused?.ref === p.ref} onClick={() => setFocusRef(p.ref)}>
-                    <span className="ws-payment-amt">{usd(p.amount)}</span>
-                    <span className="ws-payment-merchant">{p.merchant ?? "Unknown merchant"}</span>
-                    <span className="ws-payment-meta">
-                      {p.date ?? "date unknown"} · {p.matched ? "matched" : "candidate"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <p className="ws-muted ws-small">
-              Candidates come from the rule-based matcher. This prototype tracks one disputed payment per case.
-            </p>
-          </nav>
-
-          <div className="ws-center">
-            <ReportSummary data={data} analysis={analysis} />
-            <EvidenceTrail analysis={analysis} payment={focused} paymentCount={payments.length} />
-            <Statements data={data} analysis={analysis} />
-            <BankRecords data={data} analysis={analysis} focusedRef={focused?.ref ?? null} />
-            <IdentityEvidence data={data} />
-            <DraftPacket analysis={analysis} />
-            <Timeline data={data} />
-          </div>
-
-          <NextSteps caseId={data.case._id} triage={triage} analysis={analysis} />
-        </div>
-      </main>
-    </HighlightProvider>
+        </main>
+      </HighlightProvider>
+    </WorkspaceModeProvider>
   );
 }
 

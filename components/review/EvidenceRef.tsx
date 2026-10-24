@@ -28,15 +28,18 @@ const KIND: [RegExp, string][] = [
   [/^R:/, "Regulatory source"],
 ];
 
+/** Scrolls to and focuses the source element for a ref, if it is on the page. */
+export function goToRef(refId: string) {
+  const el = document.getElementById(refAnchor(refId));
+  if (!el) return;
+  el.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  el.focus({ preventScroll: true });
+}
+
 export function RefChip({ refId, label }: { refId: string; label?: string }) {
   const { active, setActive } = useHighlight();
   const kind = KIND.find(([re]) => re.test(refId))?.[1] ?? "Evidence";
-  const go = () => {
-    const el = document.getElementById(refAnchor(refId));
-    if (!el) return;
-    el.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-    el.focus({ preventScroll: true });
-  };
+  const go = () => goToRef(refId);
   return (
     <button
       type="button"

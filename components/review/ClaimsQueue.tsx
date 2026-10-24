@@ -122,6 +122,10 @@ export function ClaimsQueue() {
             <span className="ws-muted">Live from Convex. Synthetic data.</span>
           </p>
         </div>
+        <Link href="/review/demo" className="ws-demo-link">
+          <span className="ws-demo-tag">Synthetic demo</span> Guided intake walkthrough →
+          <span className="ws-small ws-muted">Scripted scenario, separate from these cases</span>
+        </Link>
       </div>
 
       <div className="ws-toolbar" role="search">
@@ -208,6 +212,7 @@ function QueueRow({ c, now, selected, onSelect, onOpen }: { c: QueueCase; now: n
       <div className="ws-row-meta">
         {c.triage.reviewerOpen > 0 && <span>{c.triage.reviewerOpen} for bank</span>}
         {c.triage.customerOpen > 0 && <span>{c.triage.customerOpen} for customer</span>}
+        {c.triage.steps.some((s) => s.blocking) && <span className="ws-block"><span aria-hidden="true">■</span> blocked</span>}
         {c.conflictCount > 0 && <span className="ws-warn-text">⚠ {c.conflictCount} conflict{c.conflictCount === 1 ? "" : "s"}</span>}
         <span title={c.lastActivity ? exactTime(c.lastActivity.at) : undefined}>{relativeTime(lastTouched(c), now)}</span>
       </div>
@@ -228,6 +233,13 @@ function Preview({ c }: { c: QueueCase }) {
         <dd>{c.reportedAt ? exactTime(c.reportedAt) : <span className="ws-muted">No statement yet (case opened {exactTime(c.createdAt)})</span>}</dd>
         <dt>Payment</dt>
         <dd>{p.text}{p.note && <span className="ws-muted"> · {p.note}</span>}</dd>
+        <dt>Next action</dt>
+        <dd>{c.triage.headline}</dd>
+        <dt>Blocking issue</dt>
+        <dd>{(() => {
+          const b = c.triage.steps.find((s) => s.blocking);
+          return b ? <>{b.title} <span className="ws-muted">— {b.why}</span></> : <span className="ws-muted">None</span>;
+        })()}</dd>
         <dt>Channel</dt>
         <dd>{c.channels.length ? c.channels.join(", ") : "—"} · {c.statementCount} statement{c.statementCount === 1 ? "" : "s"}</dd>
         {c.recommendation && (
@@ -239,7 +251,7 @@ function Preview({ c }: { c: QueueCase }) {
         {c.lastActivity && (
           <>
             <dt>Last activity</dt>
-            <dd className="ws-clamp-2">{c.lastActivity.message}</dd>
+            <dd className="ws-clamp-2"><span className="ws-muted">{exactTime(c.lastActivity.at)} · </span>{c.lastActivity.message}</dd>
           </>
         )}
       </dl>

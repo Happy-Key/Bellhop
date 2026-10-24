@@ -56,6 +56,18 @@ row is kept as superseded history.
 Values are returned by the CRS sandbox for CRS-published test personas, unchanged. Linking a
 persona to a case is a **synthetic association** we create; CRS and Nessie are separate datasets.
 
+## Guided intake demo (`/review/demo`)
+
+**Entirely scripted. No provider data.** The customer replies and four bank records are fixtures in
+`lib/fixtures/guidedIntakeDemo.ts`. The records use the Nessie shape but were never in Nessie, and
+the payees are named "Demo …". The scenario clock is fixed (2026-10-21 15:02 UTC), so the times are
+not real.
+
+The questions, matches, findings, considerations and draft routes on that page are **derived**: the
+browser runs the fixtures through the app's own rules (`lib/review/demoCase.ts`). No model,
+Convex or Nessie call is made, and nothing is stored. Review actions taken on that page live only
+in browser memory and are labelled "demo, not saved".
+
 ## Display-only changes in the claims workstation (`/review`)
 
 These change how data looks, never what is stored:

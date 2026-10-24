@@ -1,8 +1,6 @@
-import type { FunctionReturnType } from "convex/server";
-import type { api } from "@/convex/_generated/api";
 import type { MatchCandidate } from "@/lib/domain/matching";
 
-export type CaseView = NonNullable<FunctionReturnType<typeof api.cases.view>>;
+export type { CaseView } from "@/lib/review/types";
 
 /** A bank record the matcher put forward for this case. */
 export interface Payment {

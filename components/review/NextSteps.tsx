@@ -5,7 +5,7 @@
  * retrieval). Customer questions are asked by the voice assistant on the customer's next call;
  * there is no outbound contact in this prototype, so none is offered.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -13,8 +13,9 @@ import { RECOMMENDATION_LABEL, STAGE_LABEL, type NextStep, type StoredAnalysis, 
 import { RefChip } from "./EvidenceRef";
 import { AudienceTag } from "./Tags";
 import { shortKey } from "./format";
+import { useWorkspaceMode } from "./WorkspaceMode";
 
-export function NextSteps({ caseId, triage, analysis }: { caseId: Id<"cases">; triage: Triage; analysis: StoredAnalysis | null }) {
+export function NextSteps({ caseId, triage, analysis, children }: { caseId: Id<"cases">; triage: Triage; analysis: StoredAnalysis | null; children?: ReactNode }) {
   const bank = triage.steps.filter((s) => s.audience === "reviewer");
   const customer = triage.steps.filter((s) => s.audience === "customer");
   return (
@@ -25,7 +26,7 @@ export function NextSteps({ caseId, triage, analysis }: { caseId: Id<"cases">; t
           <span className="ws-eyebrow">Draft recommendation · {STAGE_LABEL[analysis.stage]}</span>
           <strong>{RECOMMENDATION_LABEL[analysis.recommendation.action]}</strong>
           <p className="ws-small">{analysis.recommendation.rationale}</p>
-          <p className="ws-small ws-muted">A person decides. Nothing here approves, denies or pays a claim.</p>
+          <p className="ws-small ws-muted">A person decides. Nothing here approves, denies or pays a claim. <a href="#trace">Decision trace</a></p>
         </div>
       )}
 
@@ -38,6 +39,7 @@ export function NextSteps({ caseId, triage, analysis }: { caseId: Id<"cases">; t
         empty="No open questions for the customer."
         note="The voice assistant asks these on the customer's next call. This prototype has no outbound messages."
       />
+      {children}
     </aside>
   );
 }
@@ -59,7 +61,7 @@ function StepGroup({ title, audience, steps, caseId, empty, note }: { title: str
               <p className="ws-step-why">{s.why}</p>
               <div className="ws-step-foot">
                 {s.blocking ? <span className="ws-block"><span aria-hidden="true">■</span> Blocks review</span> : <span className="ws-muted">Non-blocking</span>}
-                {s.refs.length > 0 && <span className="ws-step-refs">{s.refs.map((r) => <RefChip key={r} refId={r} />)}</span>}
+                {s.refs.length > 0 && <span className="ws-step-refs"><span className="ws-muted">Evidence</span> {s.refs.map((r) => <RefChip key={r} refId={r} />)}</span>}
                 <code className="ws-key" title={`Stable question key: ${s.key}`}>{shortKey(s.key)}</code>
               </div>
               {s.action === "retrieve_bank_records" && <RetrieveButton caseId={caseId} again={s.key !== "retrieve_bank_records"} primary />}
@@ -72,7 +74,12 @@ function StepGroup({ title, audience, steps, caseId, empty, note }: { title: str
 }
 
 /** Live, read-only Nessie retrieval through Convex. Failures are recorded and shown, never replaced. */
-export function RetrieveButton({ caseId, again, primary }: { caseId: Id<"cases">; again: boolean; primary?: boolean }) {
+export function RetrieveButton(props: { caseId: Id<"cases">; again: boolean; primary?: boolean }) {
+  if (useWorkspaceMode() === "demo") return <span className="ws-action ws-small ws-muted">Retrieval isn&apos;t available in the demo; its records are fixtures.</span>;
+  return <LiveRetrieveButton {...props} />;
+}
+
+function LiveRetrieveButton({ caseId, again, primary }: { caseId: Id<"cases">; again: boolean; primary?: boolean }) {
   const retrieve = useAction(api.nessie.retrieveBankEvidence);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -35,8 +35,8 @@ Rules that always hold:
 | Regulatory considerations | ✅ Curated official sources (Reg E and CFPB), scenario-scoped, no deadline math. 3 excerpts need word-for-word verification |
 | Developer agent (Factory Droid) | ❌ Not started |
 | Simulated reimbursement | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, 107 unit tests, production build all pass (2026-10-24, branch `bank-dashboard`) |
-| Claims workstation (`/review`) | ✅ Built on branch `bank-dashboard` (pushed, not merged): queue + case review; browser-tested on the personal review deployment |
+| Checks | ✅ `npm run verify`: typecheck, lint, 122 unit tests, production build all pass (2026-10-24, branch `bank-dashboard`, uncommitted workspace changes) |
+| Claims workstation (`/review`) | ✅ Built on branch `bank-dashboard` (pushed, not merged): queue + investigation workspace; browser-tested on the personal review deployment. **Uncommitted:** workspace rebuild + synthetic guided-intake demo at `/review/demo` (scripted, labelled; no backend calls) |
 | Backend consistency fixes | ✅ Mock-tested 2026-10-24, **not yet pushed or run live** (see "What needs to be added" item 1) |
 
 ## What works today (end to end)
@@ -80,16 +80,35 @@ Rules that always hold:
     and "Call again" reuses it; bank staff review it on the dashboard (`/`). This uses the same `VoiceCall`
     component with `variant="customer"`. Not yet run live, and the queries are still unauthenticated.
 
-12. **Claims workstation** at `/review` (branch `bank-dashboard`, pushed; not merged into `foundation`). The bank-side view.
+12. **Claims workstation** at `/review` (branch `bank-dashboard`; not merged into `foundation`). The bank-side view.
     - **Queue** (`/review`, deep link `?case=<id>`): cases grouped by who acts (needs a reviewer / needs customer
-      information / no report yet), with search, a filter, and ↑ ↓ Enter keyboard selection. Backed by the
-      read-only `review:queue` query and the pure `lib/domain/triage.ts`.
-    - **Case review** (`/review/<id>`): sections and a payment switcher (matcher candidates only), an evidence
-      trail (reported fact → statement → bank record → the matcher's own reasons), statements with the question
-      each answered, bank records, identity evidence, the draft packet, a timeline, and next steps split into
-      bank and customer items keyed by stable question keys.
-    - The only action is **Retrieve bank records** (live Nessie). There's no assignment, SLA, deadline, outbound
-      contact, approval or sign-in.
+      information / no report yet), with search, a filter, ↑ ↓ Enter keyboard selection, a "blocked" marker, and a
+      preview with next action, blocking issue and last activity. Backed by the read-only `review:queue` query and
+      the pure `lib/domain/triage.ts`.
+    - **Case workspace** (`/review/<id>`), from `cases.view` plus the pure view models in `lib/review/`:
+      - case brief that keeps Reported / Observed / Inferred / Recommended apart, with the key blocker;
+      - **How the intake progressed**: each reply attached to the question it answered (stable keys), its answer
+        state (answered, didn't know, declined, didn't settle it, opening), and what the rules read from it. The
+        next customer question is shown, except while an interpretation is pending;
+      - payments and evidence (customer account | bank record | reconciliation: customer-confirmed, matched by
+        rules, tentative, candidate, excluded) and the bank records with superseded versions;
+      - findings grouped as supported / missing / conflicting, with superseded items on demand;
+      - decision trace: facts used, curated sources typed as regulation text, official interpretation, agency
+        guidance or (synthetic) institution policy, stated rule assumptions, unresolved conditions;
+      - prepared outputs with honest states (investigation summary from the draft packet; an information-request
+        *preview* built from open questions; acknowledgment "no approved template"; resolution and closure "not yet
+        applicable");
+      - a timeline with Reported / Observed / Inferred / Actions / Problems filters; bank records keep their
+        date only.
+    - The only live action is **Retrieve bank records** (Nessie). Review decisions are not available on live cases:
+      the backend has none yet.
+    - **Synthetic guided-intake demo** (`/review/demo`), labelled "Synthetic demo — scripted scenario". Six steps
+      with Back / Next / Reset and two branches: someone else sent the payment, or the customer sent it after
+      instructions. Fixed fixtures are run through the real rules in the browser (no AI, Convex or Nessie call). It
+      also shows demo-only review controls (accept, request information, return, escalate, override with a reason);
+      their actions are kept in memory and labelled "demo, not saved".
+    - Still missing: assignment, SLAs, deadlines, outbound contact, sign-in, persisted review actions, per-payment
+      decisions.
 
 ## Key design decisions
 
@@ -231,3 +250,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Merged `client-view` into `foundation` (no conflicts); `npm run verify` passes on the merge (100 tests) |
 | 2026-10-24 | Claims workstation `/review` built on branch `bank-dashboard` (new files plus `SiteBanner.tsx`; new read-only `review:queue`; 8 new tests; verify passes). `review:queue` was pushed to the personal review deployment by the user's running `npx convex dev`; 6 synthetic demo cases seeded there (with approval) and browser-tested in Chrome (desktop, 390 px, dark mode, keyboard, live retrieval). Committed and pushed to `origin/bank-dashboard` |
 | 2026-10-24 | `docs/data-provenance.md`: what is raw Nessie data, what we normalize, which statements were seeded (and from where), and what is display-only |
+| 2026-10-24 | Workstation rebuilt as an evidence-linked investigation workspace (case brief, guided intake, findings, decision trace, prepared outputs, filterable timeline) with pure view models in `lib/review/`, plus the synthetic guided-intake demo at `/review/demo` (scripted fixtures through the real rules; both branches tested). `triage.ts` now exports `QUESTION_WHY` and returns `lead` (no rule changes). 15 new tests; verify passes. Not committed |

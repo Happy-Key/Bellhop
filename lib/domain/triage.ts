@@ -31,6 +31,8 @@ export interface Triage {
   attention: Attention;
   /** One-line next action for the queue. */
   headline: string;
+  /** The step the headline describes: the first open step for whoever needs to act. */
+  lead: NextStep | null;
   steps: NextStep[];
   customerOpen: number;
   reviewerOpen: number;
@@ -54,7 +56,7 @@ export const RECOMMENDATION_LABEL: Record<RecommendedAction, string> = {
 };
 
 /** Operational reason for each question kind, phrased for a bank reviewer. */
-const WHY: Record<OpenQuestion["kind"], string> = {
+export const QUESTION_WHY: Record<OpenQuestion["kind"], string> = {
   narrative: "There is no account of what happened yet.",
   evidence_unavailable: "Bank records could not be retrieved, so no payment can be matched.",
   conflict: "The customer's statements disagree. The case stays blocked until this is settled.",
@@ -101,7 +103,7 @@ export function triageCase(input: { analysis: StoredAnalysis | null; bankFetch: 
       key: q.key,
       audience: q.audience,
       title: q.text,
-      why: WHY[q.kind],
+      why: QUESTION_WHY[q.kind],
       refs: q.relatedRefs,
       blocking: q.blocking,
       ...(q.kind === "evidence_unavailable" ? { action: "retrieve_bank_records" as const } : {}),
@@ -142,5 +144,5 @@ export function triageCase(input: { analysis: StoredAnalysis | null; bankFetch: 
       ? `Customer to answer: ${lead.title}`
       : lead.title;
 
-  return { attention, headline, steps, customerOpen: customer.length, reviewerOpen: reviewer.length };
+  return { attention, headline, lead: lead ?? null, steps, customerOpen: customer.length, reviewerOpen: reviewer.length };
 }

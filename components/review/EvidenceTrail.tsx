@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import type { StoredAnalysis } from "@/lib/domain/triage";
 import type { MatchCandidate } from "@/lib/domain/matching";
 import { RefChip } from "./EvidenceRef";
+import { RECONCILIATION_LABEL, reconciliation } from "@/lib/review/workspace";
 import { CREDENTIALS_LABEL, POSITION_LABEL, usd } from "./format";
 import type { Payment } from "./types";
 
@@ -53,7 +54,7 @@ export function EvidenceTrail({ analysis, payment, paymentCount }: { analysis: S
   if (!facts) {
     return (
       <section id="trail" className="ws-section" aria-labelledby="trail-h">
-        <h2 id="trail-h">Evidence trail</h2>
+        <h2 id="trail-h">Payments and evidence</h2>
         <p className="ws-muted">No analysis yet.</p>
       </section>
     );
@@ -61,7 +62,7 @@ export function EvidenceTrail({ analysis, payment, paymentCount }: { analysis: S
   const conflictFor = (f: string) => facts.conflicts.find((c) => c.field === f);
   const correctionsFor = (f: string) => facts.superseded.filter((s) => s.fields.includes(f)).map((s) => ({ ref: s.ref, by: s.by }));
   const cand = payment?.candidate ?? null;
-  const rec = !!payment;
+  const hasRecord = !!payment;
 
   const withConflict = (field: string, row: Row): Row => {
     const c = conflictFor(field);
@@ -75,21 +76,21 @@ export function EvidenceTrail({ analysis, payment, paymentCount }: { analysis: S
       field: "Amount",
       reported: facts.amounts.map((a) => ({ value: usd(a.value), ref: a.statementRef })),
       bank: payment ? usd(payment.amount) : null,
-      ...compare("amount", facts.amounts.length > 0, cand, rec),
+      ...compare("amount", facts.amounts.length > 0, cand, hasRecord),
       corrections: correctionsFor("amounts"),
     }),
     withConflict("date", {
       field: "Date",
       reported: facts.dates.map((d) => ({ value: d.value, ref: d.statementRef })),
       bank: payment ? payment.date ?? "unknown" : null,
-      ...compare("date", facts.dates.length > 0, cand, rec),
+      ...compare("date", facts.dates.length > 0, cand, hasRecord),
       corrections: correctionsFor("dates"),
     }),
     {
       field: "Payee",
       reported: facts.merchantTerms.map((m) => ({ value: m.value, ref: m.statementRef })),
       bank: payment ? payment.merchant ?? "unknown" : null,
-      ...compare("merchant", facts.merchantTerms.length > 0, cand, rec),
+      ...compare("merchant", facts.merchantTerms.length > 0, cand, hasRecord),
       corrections: correctionsFor("merchantTerms"),
     },
     withConflict("authorization", {
@@ -114,11 +115,12 @@ export function EvidenceTrail({ analysis, payment, paymentCount }: { analysis: S
     },
   ];
   const confirmation = cand?.reasons.find((r) => r.field === "customer_confirmation");
+  const rec = payment ? reconciliation(analysis, payment.ref).state : null;
 
   return (
     <section id="trail" className="ws-section" aria-labelledby="trail-h">
       <div className="ws-section-head">
-        <h2 id="trail-h">Evidence trail</h2>
+        <h2 id="trail-h">Payments and evidence {rec && <span className={`ws-tag ws-recon-${rec}`}>{RECONCILIATION_LABEL[rec]}</span>}</h2>
         <p className="ws-muted ws-small">
           What the customer reported, where they said it, and how it compares with{" "}
           {payment ? <>bank record <RefChip refId={payment.ref} /></> : "a bank record (none selected)"}
@@ -130,9 +132,9 @@ export function EvidenceTrail({ analysis, payment, paymentCount }: { analysis: S
           <thead>
             <tr>
               <th scope="col">Fact</th>
-              <th scope="col">Customer reported <span className="ws-muted">(unverified)</span></th>
-              <th scope="col">Bank record</th>
-              <th scope="col">Relation <span className="ws-muted">(rule-based)</span></th>
+              <th scope="col">Customer account <span className="ws-muted">(reported)</span></th>
+              <th scope="col">Bank record <span className="ws-muted">(observed)</span></th>
+              <th scope="col">Reconciliation <span className="ws-muted">(rule-based)</span></th>
             </tr>
           </thead>
           <tbody>
