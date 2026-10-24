@@ -5,41 +5,30 @@
  */
 import { expect, test } from "@playwright/test";
 
-test("demo: scroll tells the story, the clarification changes the assessment, the workspace takes a local decision", async ({ page }) => {
+test("demo: scroll tells the story, the clarification changes the assessment, the end opens the customer line", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/review/demo");
-  await expect(page.locator(".stage-title")).toHaveText("A customer calls.");
+  await expect(page.locator(".stage-title")).toHaveText("A Customer Calls.");
   await expect(page.getByText("Scripted replay · synthetic data")).toBeVisible();
   await page.locator(".story[data-ready]").waitFor();
   // Keys scroll by one beat; the stage is pinned.
   for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
-  await expect(page.locator(".stage-title")).toHaveText("Bitdeer investigates.");
+  await expect(page.locator(".stage-title")).toHaveText("Bitdeer Investigates.");
   await expect(page.locator(".d-interp strong")).toHaveText("Possible unauthorized payment");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
-  await expect(page.locator(".stage-title")).toHaveText("The assessment changes.");
+  await expect(page.locator(".stage-title")).toHaveText("The Assessment Changes.");
   await expect(page.locator(".d-interp s")).toHaveText("Possible unauthorized payment");
   await expect(page.locator(".d-interp strong")).toContainText("induced by a bank impersonator");
   await expect(page.locator(".d-ghost")).toContainText("Previous assessment");
   await expect(page.locator(".d-docs li[data-flagged]")).toHaveCount(2);
   await page.keyboard.press("ArrowUp");
-  await expect(page.locator(".stage-title")).toHaveText("The customer adds one thing.");
-  // The finale is the real workspace in demo mode.
-  await page.locator("#demo-finale").scrollIntoViewIfNeeded();
-  await expect(page.getByRole("heading", { name: "Escalate to a specialist" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
-  await page.getByRole("tab", { name: /Record/ }).click();
-  await expect(page.locator(".ins-record")).toContainText("Ask the customer");
-  // A reviewer decision is applied on the page only.
-  await page.getByRole("button", { name: "Decide differently" }).click();
-  const dlg = page.locator("dialog[open]");
-  await dlg.getByRole("combobox").selectOption("request_information");
-  await dlg.getByRole("textbox").first().fill("Has the gift card balance already been redeemed?");
-  await dlg.getByRole("textbox").last().fill("Recovery depends on whether the balance is still there.");
-  await dlg.getByRole("button", { name: "Record" }).click();
-  await expect(page.locator("dialog[open]")).toHaveCount(0);
-  await expect(page.locator(".dec")).toContainText("Ask the customer");
+  await expect(page.locator(".stage-title")).toHaveText("The Customer Adds One Thing.");
+  // Past the last beat the demo opens the customer line.
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowDown");
+  await expect(page).toHaveURL(/\/call$/);
+  await expect(page.getByRole("button", { name: "Start call" })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -47,7 +36,7 @@ test("claims queue renders live cases or an honest empty state", async ({ page }
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/review");
-  await expect(page.getByRole("heading", { name: "Claims queue" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Claims Queue" })).toBeVisible();
   await expect(page.locator("[role=option], .empty").first()).toBeVisible();
   expect(errors).toEqual([]);
 });

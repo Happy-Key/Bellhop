@@ -611,3 +611,23 @@ skin, circular). Source at the repo root; `public/bellhop.png` (512 px) and `app
 copies. It is the rail brand mark, the customer line brand, the figure inside the call rings (the drawn deer is gone) and the
 avatar on the demo call surface. Titles read "Bellhop", "Bellhop · Claims" and "Bellhop · Demo".
 
+## Hierarchy and contrast (later the same day)
+
+- **Logo.** The Bellhop PNG carries its own alpha (71 % of pixels transparent), so the white rectangle came from CSS
+  backgrounds on the rail mark, the call figure and the demo avatar. Those are now transparent; the figure sits
+  directly on the rings and the gradient.
+- **Text.** `--ink-3 #55505E` (7.8:1 on white), `--ink-4 #716C7B` (≥ 4.5:1), lines `#D2CFD9` / `#B0ABBB`.
+- **Type scale.** Page titles 24–26 px / 700; card and inspector headings 17 px / 700; column labels (Established,
+  Open, Proposed, Authorized) 11–12 px uppercase / 700; finding text 15 px / 500; body 14 px; notes 13 px.
+- **Controls.** Buttons 600 weight, hover fills (sunken, or a darker purple for primary); inputs show a 2 px purple
+  outline plus a 4 px lavender halo on focus; pills and tags on white with charcoal text; selected tabs carry a
+  purple underline; selected stat tiles an inner purple ring; queue group headers uppercase on the sunken surface.
+- **Checked.** Desktop (1440) and phone (400) screenshots of the queue, a case, its findings, a dialog, the call
+  canvas and demo beat 3; keyboard focus ring on the stat tiles; contrast ratios computed for every pairing.
+
+## Demo ending (later the same day)
+
+The finale workspace was removed at the user's request. After beat 7 ("Checked by Code.") a 45 vh exit runway follows the
+pinned stage; when 60 % of it is in view, or when the next beat is requested by key, the page routes to the customer line
+`/call`, where the live call starts. The hint on the last beat reads "Scroll to the customer line".
+

@@ -52,7 +52,7 @@ export default function CustomerCallPage() {
           <Image src="/bellhop.png" alt="" width={26} height={26} priority />
           Bellhop
         </span>
-        <h1 className="cl-title">Demo Bank fraud support</h1>
+        <h1 className="cl-title">Demo Bank Fraud Support</h1>
         <details className="cc-presenter" aria-label="Presenter controls">
           <summary>
             <span>

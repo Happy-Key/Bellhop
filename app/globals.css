@@ -17,10 +17,10 @@
   --sunken: #dedbe5;
   --ink: #1c1a21;
   --ink-2: #45414d;
-  --ink-3: #625e6b;
-  --ink-4: #8e8a98;
-  --line: #d6d3dd;
-  --line-2: #b9b5c4;
+  --ink-3: #55505e;
+  --ink-4: #716c7b;
+  --line: #d2cfd9;
+  --line-2: #b0abbb;
   --accent: #5a43a8;
   --accent-ink: #452f8f;
   --accent-weak: #e2dbf8;
@@ -37,6 +37,14 @@
   --crit: #c4262e;
   --crit-weak: #fadddc;
   --focus: #5a43a8;
+  /* Rail: dark grey with inverted text */
+  --rail-bg: #2b2930;
+  --rail-ink: #f3f1f6;
+  --rail-ink-2: #ebe8f0;
+  --rail-ink-3: #b3aec0;
+  --rail-hover: rgba(255, 255, 255, 0.08);
+  --rail-active: rgba(255, 255, 255, 0.14);
+  --rail-accent: #c3b5f2;
   /* Customer line canvas */
   --cl-bg: #eae9ee;
   --cl-ivory: #ffffff;
@@ -78,10 +86,10 @@
     --sunken: #262330;
     --ink: #ece9f1;
     --ink-2: #bdb8c7;
-    --ink-3: #948f9e;
-    --ink-4: #6b6675;
-    --line: #2e2b36;
-    --line-2: #443f4f;
+    --ink-3: #a39eac;
+    --ink-4: #78737f;
+    --line: #33303c;
+    --line-2: #4d4859;
     --accent: #b3a2e6;
     --accent-ink: #c8bcf0;
     --accent-weak: #2c2740;
@@ -97,6 +105,13 @@
     --crit: #f2928c;
     --crit-weak: #3d1e1e;
     --focus: #b9abee;
+    --rail-bg: #121117;
+    --rail-ink: #ece9f1;
+    --rail-ink-2: #e2dfe8;
+    --rail-ink-3: #a7a2b2;
+    --rail-hover: rgba(255, 255, 255, 0.07);
+    --rail-active: rgba(255, 255, 255, 0.12);
+    --rail-accent: #c8bcf0;
     --cl-bg: #15141a;
     --cl-ivory: #262330;
     --cl-peach: #e8a070;
@@ -140,13 +155,17 @@ h4 {
   text-wrap: balance;
 }
 h1 {
-  font-size: var(--fs-xl);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
 }
 h2 {
-  font-size: var(--fs-lg);
+  font-size: 17px;
+  font-weight: 700;
 }
 h3 {
   font-size: var(--fs-md);
+  font-weight: 600;
 }
 p {
   margin: 0;
@@ -215,8 +234,8 @@ th {
 .eyebrow {
   display: block;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -238,8 +257,8 @@ th {
 }
 .card > h2,
 .card-head h2 {
-  font-size: var(--fs-lg);
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
 }
 .card-head {
   display: flex;
@@ -262,13 +281,15 @@ th {
   background: var(--surface);
   color: var(--ink);
   font-size: var(--fs-md);
-  font-weight: 500;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: 0 1px 0 rgba(41, 39, 46, 0.04);
 }
 .btn:hover {
   border-color: var(--ink-3);
+  background: var(--sunken);
 }
 .btn:disabled {
   opacity: 0.5;
@@ -280,8 +301,8 @@ th {
   color: var(--on-accent);
 }
 .btn-primary:hover {
-  border-color: var(--accent);
-  filter: brightness(1.08);
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
 }
 .btn-danger {
   color: var(--crit);
@@ -347,6 +368,7 @@ th {
   outline: 2px solid var(--focus);
   outline-offset: 0;
   border-color: var(--focus);
+  box-shadow: 0 0 0 4px var(--accent-weak);
 }
 
 /* ---------- Pills, tags, marks ---------- */
@@ -358,10 +380,10 @@ th {
   padding: 0 8px;
   border-radius: 999px;
   border: 1px solid var(--line-2);
-  background: transparent;
+  background: var(--surface);
   font-size: 12px;
   font-weight: 600;
-  color: var(--ink-2);
+  color: var(--ink);
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -399,7 +421,7 @@ th {
   border-radius: 4px;
   font-size: 12px;
   line-height: 18px;
-  color: var(--ink-2);
+  color: var(--ink);
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -492,35 +514,27 @@ th {
   flex-direction: column;
   gap: var(--s5);
   padding: var(--s5) var(--s4);
-  background: var(--surface-nav);
+  background: var(--rail-bg);
+  color: var(--rail-ink);
 }
 .rail-brand {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 0 6px;
-  color: var(--ink);
+  color: var(--rail-ink);
   text-decoration: none;
-}
-.rail-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--surface);
-  flex: none;
-  box-shadow: 5px 5px 0 -1px var(--line-2);
-  flex: none;
-  margin-right: 4px;
 }
 .rail-title {
   display: block;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   line-height: 1.2;
 }
 .rail-org {
   display: block;
   font-size: var(--fs-xs);
-  color: var(--ink-3);
+  color: var(--rail-ink-3);
 }
 .rail-nav {
   display: flex;
@@ -533,25 +547,29 @@ th {
   gap: 10px;
   padding: 8px 10px;
   border-radius: var(--radius);
-  color: var(--ink-2);
+  color: var(--rail-ink-2);
   text-decoration: none;
   font-weight: 500;
 }
 .rail-nav a:hover {
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  color: var(--ink);
+  background: var(--rail-hover);
+  color: var(--rail-ink);
 }
 .rail-nav a[aria-current="page"] {
-  background: var(--surface);
-  color: var(--accent-ink);
-  box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 600;
+  background: var(--rail-active);
+  color: var(--rail-ink);
+  box-shadow: inset 3px 0 0 var(--rail-accent);
+}
+.rail-nav a:focus-visible {
+  outline-color: var(--rail-accent);
 }
 .rail-foot {
   margin-top: auto;
   padding: 0 10px;
   font-size: 11px;
   white-space: nowrap;
-  color: var(--ink-3);
+  color: var(--rail-ink-3);
 }
 .shell-main {
   min-width: 0;
@@ -559,18 +577,24 @@ th {
 .page {
   max-width: 1480px;
   margin: 0 auto;
-  padding: var(--s5) var(--s6) 56px;
+  padding: 0 var(--s6) 56px;
 }
+/* A tall page bar on the page colour, separated from the controls by a rule. */
 .page-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--s3) var(--s4);
-  margin-bottom: var(--s4);
+  min-height: 76px;
+  padding: var(--s4) 0;
+  margin: 0 0 var(--s5);
+  border-bottom: 1px solid var(--line-2);
 }
 .page-head h1 {
-  font-size: 22px;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 @media (max-width: 900px) {
@@ -599,7 +623,15 @@ th {
     display: none;
   }
   .page {
-    padding: var(--s4);
+    padding: 0 var(--s4) var(--s5);
+  }
+  .page-head {
+    min-height: 60px;
+    padding: var(--s3) 0;
+    margin-bottom: var(--s4);
+  }
+  .page-head h1 {
+    font-size: 26px;
   }
 }
 
@@ -634,9 +666,9 @@ th {
   letter-spacing: -0.01em;
 }
 .cl-title {
-  font-size: var(--fs-lg);
-  font-weight: 500;
-  letter-spacing: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   text-align: center;
   color: var(--ink);
 }
@@ -901,8 +933,7 @@ th {
   position: relative;
   z-index: 1;
   border-radius: 50%;
-  background: var(--cl-ivory);
-  box-shadow: 0 10px 30px rgba(41, 39, 46, 0.08);
+  background: transparent;
 }
 .cl-rings {
   position: absolute;
@@ -968,7 +999,8 @@ th {
   font-size: 13px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--ink-2);
+  font-weight: 600;
+  color: var(--ink);
 }
 .cl-note {
   min-height: 1.5em;

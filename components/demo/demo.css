@@ -74,7 +74,7 @@
   font-size: clamp(30px, 4.2vw, 52px);
   line-height: 1.05;
   letter-spacing: -0.025em;
-  font-weight: 600;
+  font-weight: 800;
   margin-bottom: 28px;
   min-height: 1.1em;
 }
@@ -156,7 +156,7 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--surface);
+  background: transparent;
 }
 .d-call-head {
   display: flex;
@@ -537,27 +537,14 @@
   color: var(--ink-3);
 }
 
-/* ---------- Finale ---------- */
-.story-finale {
-  position: relative;
-  background: var(--bg);
-}
-.story-finale-title {
-  padding: 64px 56px 8px;
-  max-width: 1480px;
-  margin: 0 auto;
-}
-.story-finale-title h2 {
-  font-size: clamp(30px, 4.2vw, 52px);
-  letter-spacing: -0.025em;
-  line-height: 1.05;
-}
-.story-finale .cw {
-  min-height: 0;
-}
-.story-finale .cw-side {
-  height: auto;
-  max-height: 100vh;
+/* ---------- Exit ---------- */
+.story-exit {
+  height: 45vh;
+  display: grid;
+  place-items: start center;
+  padding-top: 48px;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
 }
 
 /* ---------- Narrow ---------- */
@@ -581,8 +568,5 @@
   .stage-grid[data-beat="2"] .stage-right,
   .stage-grid[data-beat="7"] .stage-right {
     display: flex;
-  }
-  .story-finale-title {
-    padding: 48px 16px 8px;
   }
 }

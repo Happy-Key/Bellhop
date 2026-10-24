@@ -104,7 +104,7 @@ export function ClaimsQueue() {
   return (
     <main className="page">
       <div className="page-head">
-        <h1>Claims queue</h1>
+        <h1>Claims Queue</h1>
       </div>
 
       <div className="q-stats" role="group" aria-label="Filter by who needs to act">
@@ -292,7 +292,7 @@ function QueueSkeleton() {
   return (
     <main className="page" aria-busy="true">
       <div className="page-head">
-        <h1>Claims queue</h1>
+        <h1>Claims Queue</h1>
       </div>
       <div className="q-layout">
         <div className="q-list">

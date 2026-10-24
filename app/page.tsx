@@ -36,7 +36,7 @@ export default function Home() {
     <main className="page">
       <div className="page-head">
         <div>
-          <h1>Developer tools</h1>
+          <h1>Developer Tools</h1>
           <p className="muted">Synthetic cases and integration configuration. Reviewers work in the claims queue.</p>
         </div>
         <button

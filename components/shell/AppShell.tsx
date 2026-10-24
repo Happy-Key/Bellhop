@@ -4,7 +4,6 @@
  * Application chrome. Bank staff pages get the workstation rail; the customer line (/call) draws its
  * own canvas, because it stands in for the bank's consumer channel, not the back office.
  */
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -25,7 +24,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="shell">
       <aside className="rail" aria-label="Workstation">
         <Link href="/review" className="rail-brand">
-          <Image src="/bellhop.png" alt="" width={28} height={28} className="rail-mark" priority />
           <span>
             <span className="rail-title">Bellhop</span>
             <span className="rail-org">Demo Bank · claims</span>

@@ -1,24 +1,19 @@
 "use client";
 
 /**
- * The demo: one claim told as a scroll-driven story on a single pinned stage, then released into
- * the real case workspace in demo mode. Scroll is the only control (space and the arrow keys scroll
- * by a beat). The customer's lines and the model's outputs are the scripted fixture
- * (lib/fixtures/pitchDemo.ts); the match, validator, policy and guardrails run for real
- * (lib/review/pitchDemo.ts); the final scene is the workspace components with reviewer actions
- * kept in page state. Reduced motion cuts between beats instead of animating.
+ * The demo: one claim told as a scroll-driven story on a single pinned stage. Scrolling past the
+ * last beat (or pressing on from it) opens the customer line, where the real call begins. Scroll is
+ * the only control (space and the arrow keys scroll by a beat). The customer's lines and the model's
+ * outputs are the scripted fixture (lib/fixtures/pitchDemo.ts); the match, validator, policy and
+ * guardrails run for real (lib/review/pitchDemo.ts). Reduced motion cuts between beats.
  */
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, MotionConfig, motion, useMotionValueEvent, useReducedMotion, useScroll } from "motion/react";
-import type { Id } from "@/convex/_generated/dataModel";
 import { PITCH_MATCHED_REF, PITCH_PROPOSAL, PITCH_REASONING, PITCH_TRANSACTIONS, PITCH_TURNS } from "@/lib/fixtures/pitchDemo";
 import { REGULATORY_SOURCES } from "@/lib/domain/regulatory";
-import { buildPitchCase, pitchWorkspaceData } from "@/lib/review/pitchDemo";
-import { buildWorkspace, type ModelState } from "@/components/review/CaseReview";
-import { CaseWorkspace } from "@/components/review/CaseWorkspace";
-import type { DemoAction } from "@/components/review/WorkspaceContext";
-import type { CaseView } from "@/lib/review/types";
+import { buildPitchCase } from "@/lib/review/pitchDemo";
 import { CallSurface, DocChips, EASE, Fade, GhostAssessment, Guardrails, ModelPanel, ProposalCard, RecordCard, SourceList } from "./objects";
 import "./demo.css";
 
@@ -26,11 +21,18 @@ const BEATS = 8;
 const RUNWAY_VH = 110;
 type Scene = "call" | "evidence" | "model" | "code";
 const SCENE: Scene[] = ["call", "call", "evidence", "model", "model", "model", "model", "code"];
-const TITLE: Record<number, string> = { 0: "A customer calls.", 1: "The payment is found.", 2: "The evidence assembles.", 3: "Bitdeer investigates.", 4: "The customer adds one thing.", 5: "The assessment changes.", 6: "The investigation follows.", 7: "Checked by code." };
+const TITLE: Record<number, string> = { 0: "A Customer Calls.", 1: "The Payment Is Found.", 2: "The Evidence Assembles.", 3: "Bitdeer Investigates.", 4: "The Customer Adds One Thing.", 5: "The Assessment Changes.", 6: "The Investigation Follows.", 7: "Checked by Code." };
 
 export function DemoStory() {
-  const c = useMemo(() => buildPitchCase(), []);
+  const router = useRouter();
   const reduce = useReducedMotion();
+  // Leaving for the customer line happens once, whether by scroll or by key.
+  const leaving = useRef(false);
+  const leave = useCallback(() => {
+    if (leaving.current) return;
+    leaving.current = true;
+    router.push("/call");
+  }, [router]);
   const runwayRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -52,14 +54,14 @@ export function DemoStory() {
       if (!el) return;
       if (n >= BEATS) {
         target.current = null;
-        document.getElementById("demo-finale")?.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
+        leave();
         return;
       }
       target.current = Math.max(0, n);
       const step = (el.offsetHeight - window.innerHeight) / BEATS;
       window.scrollTo({ top: el.offsetTop + Math.max(0, n) * step + 2, behavior: reduce ? "auto" : "smooth" });
     },
-    [reduce],
+    [reduce, leave],
   );
 
   useEffect(() => {
@@ -78,34 +80,15 @@ export function DemoStory() {
     return () => window.removeEventListener("keydown", onKey);
   }, [beat, scrollToBeat]);
 
-  // ---- Finale: the real workspace in demo mode, with reviewer actions kept in page state. ----
-  const { data, proposalRow, previousRow } = useMemo(() => pitchWorkspaceData(c), [c]);
-  const [actions, setActions] = useState<CaseView["reviewActions"]>([]);
-  const onDemoAction = useCallback((a: DemoAction) => {
-    const at = Date.now();
-    setActions((prev) => [
-      {
-        _id: `demo_act_${prev.length + 1}` as Id<"reviewActions">,
-        _creationTime: at,
-        caseId: data.case._id,
-        proposalId: proposalRow._id,
-        kind: a.kind === "override" ? ("override" as const) : ("return" as const),
-        ...(a.kind === "override" ? { decision: a.decision, reason: a.reason, ...(a.question ? { question: a.question } : {}) } : { reason: a.request }),
-        at,
-      },
-      ...prev,
-    ]);
-  }, [data.case._id, proposalRow._id]);
-  const ws = useMemo(() => {
-    const rows = [proposalRow, previousRow];
-    const model = {
-      enabled: true,
-      proposal: proposalRow,
-      accepted: proposalRow,
-      history: rows.map((r) => ({ _id: r._id, status: "done", trigger: "auto", requestedAt: r.requestedAt, completedAt: r.completedAt, provider: r.provider, decision: r.proposal.decision, changeLog: r.changeLog, resolution: null, problems: r.problems, error: null, current: r.current })),
-    } as unknown as ModelState;
-    return buildWorkspace({ data: { ...data, reviewActions: actions }, model, mode: "demo" });
-  }, [data, proposalRow, previousRow, actions]);
+  // ---- Exit: a short runway past the last beat; reaching it opens the customer line. ----
+  const exitRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = exitRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => entries.some((e) => e.intersectionRatio >= 0.6) && leave(), { threshold: [0.6] });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [leave]);
 
   const scene = SCENE[beat]!;
   return (
@@ -121,12 +104,9 @@ export function DemoStory() {
             <Stage beat={beat} />
           </div>
         </div>
-        <section id="demo-finale" className="story-finale" aria-label="A person decides">
-          <div className="story-finale-title">
-            <h2>A person decides.</h2>
-          </div>
-          <CaseWorkspace ws={ws} onDemoAction={onDemoAction} />
-        </section>
+        <div ref={exitRef} className="story-exit" aria-hidden="true">
+          <span>Opening the customer line…</span>
+        </div>
       </div>
     </MotionConfig>
   );
@@ -223,7 +203,7 @@ function Stage({ beat }: { beat: number }) {
           </motion.div>
         </div>
         <p className="stage-hint" aria-hidden="true">
-          {beat < BEATS - 1 ? "Scroll" : "Scroll to the workspace"}
+          {beat < BEATS - 1 ? "Scroll" : "Scroll to the customer line"}
         </p>
       </div>
     </LayoutGroup>
