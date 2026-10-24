@@ -163,3 +163,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | End-of-session refresh before a context reset: status sections rewritten (approve-only automation, Bitdeer live, CRS Fraud Finder, AUTO-1 v2, demo run-through, next steps, known limitations); 122 tests. Revision log unchanged |
 | 2026-10-24 | Workstation rebuilt as an evidence-linked investigation workspace plus the synthetic guided-intake demo `/review/demo` (branch `bank-dashboard`, commit `0a59fbd`; 15 new tests) |
 | 2026-10-24 | Merged `bank-dashboard` into `foundation` (only conflict: CONTEXT.md, resolved by keeping foundation's rewrite and adding the workstation section) |
+| 2026-10-24 | Switching the working copy to `foundation` means the running `npx convex dev` watcher pushes foundation's schema and functions (AUTO-1, payouts, payment origins) to the personal review deployment `friendly-grouse-183`. It has no Bitdeer key, so extraction there stays scripted |
