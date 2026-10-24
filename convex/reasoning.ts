@@ -1,14 +1,17 @@
 "use node";
 /**
  * Live model interpretation (only when REASONING_PROVIDER=openai-compatible).
- * On failure the statement is marked failed and shown as such; there is no silent
+ * A transient failure (timeout, rate limit, server error) is retried once with the same live
+ * model. On failure the statement is marked failed and shown as such; there is no silent
  * fallback to scripted interpretation.
  */
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { OpenAICompatibleReasoningProvider } from "../lib/providers/reasoning";
-import { redact } from "../lib/providers/errors";
+import { OpenAICompatibleReasoningProvider, reasoningEffortFromEnv } from "../lib/providers/reasoning";
+import { isTransient, redact } from "../lib/providers/errors";
+
+const ATTEMPTS = 2;
 
 export const interpretLive = internalAction({
   // attemptId ties the result to the attempt that requested it; stale results are discarded on apply.
@@ -30,9 +33,17 @@ export const interpretLive = internalAction({
       apiKey: REASONING_API_KEY,
       model: REASONING_MODEL,
       providerLabel: process.env.REASONING_PROVIDER_LABEL ?? "openai-compatible",
+      reasoningEffort: reasoningEffortFromEnv(process.env.REASONING_EFFORT),
     });
     try {
-      const result = await provider.interpret(input);
+      let result: Awaited<ReturnType<typeof provider.interpret>> | undefined;
+      for (let attempt = 1; !result; attempt++) {
+        try {
+          result = await provider.interpret(input);
+        } catch (e) {
+          if (attempt >= ATTEMPTS || !isTransient(e)) throw e;
+        }
+      }
       await ctx.runMutation(internal.statements.applyInterpretation, {
         statementId,
         attemptId,

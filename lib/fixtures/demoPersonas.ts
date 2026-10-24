@@ -193,7 +193,7 @@ export const DEMO_PERSONAS: DemoPersona[] = [
     crsPersonaId: "P16",
     home: { streetNumber: "1200", streetName: "Brickell Bay Dr Apt 2203", city: "Miami", state: "FL", zip: "33131" },
     scenario: "Bank-impostor scam: a caller posing as the bank's fraud team talked him into buying a gift card himself.",
-    expectedOutcome: "Escalated to specialist scam review: he made the payment himself after being deceived, so it is not automatically reimbursable.",
+    expectedOutcome: "Escalated to specialist scam review: he made the payment himself after being deceived, so it is not automatically reimbursable. CRS also asks for step-up verification (fraud alert on file).",
     merchants: [
       { name: "FCI Demo Brickell Bistro", category: "food" },
       { name: "FCI Demo Bayside Fuel", category: "auto" },
@@ -207,7 +207,7 @@ export const DEMO_PERSONAS: DemoPersona[] = [
     disputedKey: "giftcard",
     expected: {
       route: "person",
-      failingChecks: ["ready_for_reimbursement_review", "someone_else_sent_it", "no_scam_contact_reported", "payment_origin_supports_claim", "fraud_risk_low"],
+      failingChecks: ["ready_for_reimbursement_review", "someone_else_sent_it", "no_scam_contact_reported", "payment_origin_supports_claim", "identity_check_clear", "fraud_risk_low"],
       reasonableDecisions: ["escalate"],
       reviewFocus: "He made the payment himself after an impostor call: a scam, so not an unauthorized transfer under Reg E and not automatically reimbursable. Specialist scam review.",
     },

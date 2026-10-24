@@ -13,6 +13,11 @@ export class ProviderError extends Error {
   }
 }
 
+/** A failure worth one more try: a timeout or dropped connection, rate limiting, or a server error. */
+export function isTransient(e: unknown): boolean {
+  return e instanceof ProviderError && (e.kind === "network" || (e.kind === "http" && (e.httpStatus === 429 || (e.httpStatus ?? 0) >= 500)));
+}
+
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 /** Removes `key=...` query values and bearer tokens from text before it is logged or displayed. */

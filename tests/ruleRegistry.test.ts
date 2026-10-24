@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildCaseReasoningInput, claimLean, validateProposal, type CaseProposal } from "../lib/domain/caseDecision";
-import { EMPTY_INVESTIGATION } from "../lib/domain/investigation";
+import { EMPTY_INVESTIGATION, InvestigationOutput } from "../lib/domain/investigation";
 import { interpretStatementScripted } from "../lib/domain/interpret";
 import { parseCsv, referenceRulesFor, rulesFromCsv } from "../lib/domain/ruleRegistry";
 import { RULE_REGISTRY } from "../lib/domain/ruleRegistryData";
@@ -58,5 +58,23 @@ describe("legislative reference rule registry", () => {
     const r = validateProposal(p, input);
     expect(r.ok && r.proposal.investigation.rulesConsulted.map((x) => x.ruleId)).toEqual(["R-E09"]);
     expect(r.problems).toContain("dropped reference rule R-X99: not in the registry the model was given");
+  });
+
+  it("normalizes a sloppy rulesConsulted instead of rejecting the whole assessment", () => {
+    const base = { findings: [], hypotheses: [], uncertainties: [], workItems: [], changes: [] };
+    const sloppy = ["R-E09", { rule_id: "R-E01", why: "pivot" }, { id: "R-E02" }, 7, null, ...Array.from({ length: 10 }, (_, i) => `R-E1${i}`)];
+    const r = InvestigationOutput.safeParse({ ...base, rulesConsulted: sloppy });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.rulesConsulted.slice(0, 3)).toEqual([
+      { ruleId: "R-E09", why: "" },
+      { ruleId: "R-E01", why: "pivot" },
+      { ruleId: "R-E02", why: "" },
+    ]);
+    expect(r.success && r.data.rulesConsulted).toHaveLength(8);
+    expect(InvestigationOutput.safeParse({ ...base, rulesConsulted: "R-E09" }).success).toBe(true);
+    expect(InvestigationOutput.safeParse(base).success).toBe(true);
+    // A work item missing its optional extras (seen live from Bitdeer) gets defaults, not a rejection.
+    const item = InvestigationOutput.safeParse({ ...base, workItems: [{ key: "who_initiated", title: "Establish who made the payment", status: "awaiting_customer" }] });
+    expect(item.success && item.data.workItems[0]).toEqual({ key: "who_initiated", title: "Establish who made the payment", doneTitle: null, detail: "", status: "awaiting_customer", outcome: null, refs: [] });
   });
 });

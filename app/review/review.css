@@ -628,7 +628,7 @@ body:has(.ws) { max-width: none; margin: 0; padding: 0; background: var(--ws-bg)
 .cs-v { display: inline-block; padding: 1px 8px; border: 1px solid var(--ws-line-2); border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--ws-ink-2); background: var(--ws-surface); }
 .cs-v-pass { border-color: var(--ws-ok); color: var(--ws-ok); }
 .cs-v-differs, .cs-v-error { border-color: var(--ws-crit); color: var(--ws-crit); }
-.cs-v-pending { border-color: var(--ws-warn); color: var(--ws-warn); }
+.cs-v-pending, .cs-v-incomplete { border-color: var(--ws-warn); color: var(--ws-warn); }
 .cs-table tbody th { font-weight: 400; min-width: 220px; max-width: 360px; }
 .cs-name { padding: 0; border: 0; background: none; color: var(--ws-accent); font-weight: 600; cursor: pointer; text-align: left; margin-right: 6px !important; }
 .cs-name:hover { text-decoration: underline; }

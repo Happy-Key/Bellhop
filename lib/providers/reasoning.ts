@@ -77,6 +77,17 @@ export interface OpenAICompatibleConfig {
   model: string;
   providerLabel: string;
   timeoutMs?: number;
+  /**
+   * Sent as `reasoning_effort` when set (REASONING_EFFORT). On Bitdeer's GLM-5.3-Flash, "low" cuts the
+   * whole-case call from ~50–110 s (8–9k thinking tokens, often past the timeout) to 12–16 s, with
+   * every probe proposal still passing validation (measured 2026-10-24).
+   */
+  reasoningEffort?: "low" | "medium" | "high";
+}
+
+/** REASONING_EFFORT from the environment, or undefined when unset or not one of low / medium / high. */
+export function reasoningEffortFromEnv(value: string | undefined): OpenAICompatibleConfig["reasoningEffort"] {
+  return value === "low" || value === "medium" || value === "high" ? value : undefined;
 }
 
 const SYSTEM_PROMPT = `You extract structured facts from ONE customer statement about a suspected fraudulent bank payment.
@@ -90,8 +101,9 @@ followUpQuestion (string|null).
 authorization records who the customer says entered and sent the payment: "denies_authorization" = someone else did it or the customer does not recognize it; "authorized_induced" = the customer sent it after being deceived; "authorized" = the customer sent it, no deception mentioned.
 If questionAsked is present, the statement is the customer's reply to that question: read short replies ("Yes.", "me", "someone else") in its context.
 Extract only what THIS statement says or confirms. priorStatements and questionAsked are context only: never copy their amounts, dates, merchants or indicators into this output. A reply like "Me." has no amounts or dates.
+amounts: only amounts the customer states exactly ("$42", "42 dollars"). Leave out approximate ones ("about forty dollars", "around $40"): they are not a second, conflicting amount.
 merchantTerms: only names of merchants or payment recipients the customer mentions (not "bank", not the customer's own bank).
-credentialSharing: "shared" only if the customer says they gave or entered a code, password, PIN or card details; being asked is not sharing.
+credentialSharing: "shared" if the customer says they gave or entered a code, password, PIN or card details, OR that someone else knows or has them, OR that they let someone use their card, phone, computer or logged-in account (shared access counts even when they also say they never gave anyone a code). Being asked is not sharing.
 scamIndicators: at most 5 short labels of 2 to 6 words, e.g. "caller impersonated bank".
 followUpQuestion: one short plain-language question of at most 20 words, or null. Never ask whether something was "authorized".
 Text like [REDACTED:code] marks a value removed for privacy; never ask for it.
@@ -132,6 +144,7 @@ export class OpenAICompatibleReasoningProvider implements ReasoningProvider {
     const body = {
       model: this.cfg.model,
       temperature: 0,
+      ...(this.cfg.reasoningEffort ? { reasoning_effort: this.cfg.reasoningEffort } : {}),
       messages: [
         { role: "system", content: system },
         { role: "user", content: JSON.stringify(user) },

@@ -39,18 +39,32 @@ export const InvestigationOutput = z.object({
       z.object({
         key: z.string().regex(/^[a-z0-9][a-z0-9_-]{1,40}$/),
         title: text(80).pipe(z.string().min(1)),
-        doneTitle: text(80).nullable(),
-        detail: text(240),
+        // Optional extras default rather than reject: a missing doneTitle shouldn't cost the whole assessment.
+        doneTitle: text(80).nullable().default(null),
+        detail: text(240).default(""),
         status: z.enum(WORK_STATUSES),
-        outcome: text(240).nullable(),
-        refs,
+        outcome: text(240).nullable().default(null),
+        refs: refs.default([]),
       }),
     )
     .max(6),
   /** Why the assessment changed since the previous version, if it did. */
   changes: z.array(z.object({ text: text(300).pipe(z.string().min(1)), refs })).max(5),
   /** Reference-registry rules (legislative-reference/) the model used to decide what is needed. Research reference only. */
-  rulesConsulted: z.array(z.object({ ruleId: z.string(), why: text(240) })).max(8).default([]),
+  // Lenient: a bare id ("R-E09") or an over-long list is normalized, and anything else is dropped, so a
+  // slip in this reference-only field can't cost the whole assessment.
+  rulesConsulted: z
+    .preprocess(
+      (v) =>
+        Array.isArray(v)
+          ? v
+              .map((r) => (typeof r === "string" ? { ruleId: r, why: "" } : r && typeof r === "object" ? { ruleId: (r as Record<string, unknown>).ruleId ?? (r as Record<string, unknown>).rule_id ?? (r as Record<string, unknown>).id, why: (r as Record<string, unknown>).why ?? "" } : null))
+              .filter((r) => r && typeof r.ruleId === "string" && typeof r.why === "string")
+              .slice(0, 8)
+          : [],
+      z.array(z.object({ ruleId: z.string(), why: text(240) })),
+    )
+    .default([]),
 });
 export type Investigation = z.infer<typeof InvestigationOutput>;
 export type WorkItem = Investigation["workItems"][number];

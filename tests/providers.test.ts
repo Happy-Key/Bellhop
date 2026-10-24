@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NessieClient, retrieveAccountTransactions } from "@/lib/providers/nessie";
-import { OpenAICompatibleReasoningProvider } from "@/lib/providers/reasoning";
-import { ProviderError, redact, type FetchLike } from "@/lib/providers/errors";
+import { OpenAICompatibleReasoningProvider, reasoningEffortFromEnv } from "@/lib/providers/reasoning";
+import { ProviderError, isTransient, redact, type FetchLike } from "@/lib/providers/errors";
 import { voiceIdempotencyKey, voiceUtteranceKey } from "@/lib/domain/idempotency";
 
 const ACCOUNT = "acc-0000-1111-2222";
@@ -142,6 +142,31 @@ describe("OpenAI-compatible reasoning provider (mocked)", () => {
     expect(sent!.url).toBe("https://api-inference.bitdeer.ai/v1/chat/completions");
     expect(sent!.auth).toBe("Bearer k");
     expect(JSON.parse(sent!.body.messages[1]!.content)).toMatchObject({ statement: "Me.", questionAsked: expect.stringContaining("personally enter and send") });
+    expect(sent!.body).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("sends reasoning_effort only when configured, and only a known value", async () => {
+    let body: Record<string, unknown> = {};
+    const out = { amounts: [], dates: [], merchantTerms: [], authorization: "unspecified", credentialSharing: "unspecified", scamIndicators: [], findings: [], followUpQuestion: null };
+    const p = new OpenAICompatibleReasoningProvider({ baseUrl: "https://x.invalid/v1", apiKey: "k", model: "m", providerLabel: "bitdeer", reasoningEffort: reasoningEffortFromEnv("low") }, async (_url, init) => {
+      body = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] }));
+    });
+    await p.interpret(ctx);
+    expect(body.reasoning_effort).toBe("low");
+    expect(reasoningEffortFromEnv("max")).toBeUndefined();
+    expect(reasoningEffortFromEnv(undefined)).toBeUndefined();
+  });
+});
+
+describe("transient provider failures (retried once)", () => {
+  it("covers timeouts, rate limits and server errors, not bad requests or bad output", () => {
+    expect(isTransient(new ProviderError("b", "network", "TimeoutError"))).toBe(true);
+    expect(isTransient(new ProviderError("b", "http", "x", 429))).toBe(true);
+    expect(isTransient(new ProviderError("b", "http", "x", 503))).toBe(true);
+    expect(isTransient(new ProviderError("b", "http", "x", 402))).toBe(false);
+    expect(isTransient(new ProviderError("b", "malformed_response", "x"))).toBe(false);
+    expect(isTransient(new Error("x"))).toBe(false);
   });
 });
 

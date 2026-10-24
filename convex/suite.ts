@@ -172,8 +172,9 @@ async function observe(
     matchedKey: matched && matched.kind === "purchase" ? personaPurchaseFor(persona, matched)?.key ?? `unknown record ${matched.ref}` : null,
     failingChecks: evaluation ? evaluation.checks.filter((x) => !x.passed).map((x) => x.id) : null,
     autoApproved: decisions.some((d) => d.outcome === "auto_approved"),
+    unreadStatements: statements.filter((s) => s.interpretationStatus === "failed").map((s) => ({ ref: s.ref, error: s.interpretationError ?? "failed" })),
     model: {
-      state: !modelEnabled ? "off" : !newest ? "none" : newest.status === "pending" ? "pending" : newest.status === "done" ? "done" : "failed",
+      state: !modelEnabled ? "off" : !newest ? "none" : newest.status === "pending" ? "pending" : newest.status === "done" ? "done" : newest.status === "rejected_by_validation" ? "rejected" : "failed",
       decision: (accepted?.proposal as { decision?: string } | undefined)?.decision ?? null,
       problem: newest && (newest.status === "failed" || newest.status === "rejected_by_validation") ? (newest.error ?? (newest.problems ?? []).join("; ")) || null : null,
     },

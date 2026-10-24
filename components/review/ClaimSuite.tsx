@@ -14,8 +14,8 @@ import { api } from "@/convex/_generated/api";
 type Row = NonNullable<ReturnType<typeof useQuery<typeof api.suite.results>>>[number];
 
 const ROUTE = { auto_approve: "Approved automatically", person: "A person decides" } as const;
-const VERDICT_LABEL = { pass: "As expected", differs: "Differs", pending: "Settling…" } as const;
-const MODEL_STATE = { off: "Model off", none: "No assessment yet", pending: "Reassessing…", failed: "Model call failed" } as const;
+const VERDICT_LABEL = { pass: "As expected", differs: "Differs", pending: "Settling…", incomplete: "Incomplete" } as const;
+const MODEL_STATE = { off: "Model off", none: "No assessment yet", pending: "Reassessing…", rejected: "Proposal rejected by the validator", failed: "Model call failed" } as const;
 const checkLabel = (id: string) => id.replace(/_/g, " ");
 
 export function ClaimSuite() {
@@ -40,7 +40,7 @@ export function ClaimSuite() {
 
   if (rows === undefined) return <main className="ws-main"><p className="ws-muted">Loading the suite…</p></main>;
 
-  const counts = { pass: 0, differs: 0, pending: 0, notRun: 0 };
+  const counts = { pass: 0, differs: 0, pending: 0, incomplete: 0, notRun: 0 };
   for (const r of rows) {
     if (!r.run) counts.notRun++;
     else if (r.run.status === "error") counts.differs++;
@@ -74,6 +74,7 @@ export function ClaimSuite() {
         <span className="cs-v cs-v-pass">{counts.pass} as expected</span>
         <span className="cs-v cs-v-differs">{counts.differs} differ</span>
         <span className="cs-v cs-v-pending">{counts.pending} settling</span>
+        <span className="cs-v cs-v-incomplete" title="A statement couldn't be read by the model, so the result reflects the outage">{counts.incomplete} incomplete</span>
         <span className="cs-v">{counts.notRun} not run</span>
       </p>
 
@@ -136,7 +137,12 @@ function SuiteRow({ row: r, busy, expanded, onToggle, onRun }: { row: Row; busy:
         ) : o ? (
           <>
             <strong>{o.autoApproved ? ROUTE.auto_approve : ROUTE.person}</strong>
-            {o.failingChecks ? <Checks ids={o.failingChecks} empty="every check passes" /> : <div className="ws-small ws-muted">AUTO-1 not evaluated</div>}
+            {o.failingChecks ? (
+              <Checks ids={o.failingChecks.filter((c) => !r.verdict?.alsoFailed.includes(c))} empty="every check passes" />
+            ) : (
+              <div className="ws-small ws-muted">AUTO-1 not evaluated</div>
+            )}
+            {r.verdict && r.verdict.alsoFailed.length > 0 && <div className="ws-small ws-muted">Also failed: {r.verdict.alsoFailed.map(checkLabel).join(", ")}</div>}
             <div className="ws-small ws-muted">Matched: {o.matchedKey ?? "no single record"}</div>
           </>
         ) : (
@@ -145,10 +151,13 @@ function SuiteRow({ row: r, busy, expanded, onToggle, onRun }: { row: Row; busy:
       </td>
       <td>
         {o ? (
-          o.model.state === "done" && o.model.decision ? (
+          o.model.decision ? (
             <>
               <strong>{o.model.decision.replace(/_/g, " ")}</strong>
               <div className="ws-small ws-muted">{r.verdict?.modelReasonable ? "a reasonable proposal" : `expected ${r.persona.expected.reasonableDecisions.map((d) => d.replace(/_/g, " ")).join(" or ")}`}</div>
+              {o.model.state === "pending" && <div className="ws-small ws-muted">reassessing…</div>}
+              {o.model.state === "rejected" && <div className="ws-small ws-muted" title={o.model.problem ?? undefined}>latest proposal rejected by the validator: {o.model.problem}</div>}
+              {o.model.state === "failed" && <div className="ws-small ws-muted" title={o.model.problem ?? undefined}>latest reassessment failed</div>}
             </>
           ) : (
             <span className="ws-muted" title={o.model.problem ?? undefined}>{o.model.state === "done" ? "No proposal" : MODEL_STATE[o.model.state]}</span>

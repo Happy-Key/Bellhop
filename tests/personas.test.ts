@@ -23,10 +23,13 @@ function crsEvidence(crsId: string): ProviderEvidence[] {
   const crs = getCrsPersona(crsId)!;
   const row = (product: string, field: string, value: string, suffix: string): ProviderEvidence => ({ ref: `X:crs:${crsId}:k1:${suffix}`, provider: "crs", product, field, value, syntheticAssociation: true });
   const score = /risk\.score (\d+)/.exec(crs.fraudFinderExpected)![1]!;
-  // "result FAIL. <issue>; <issue>" → one message row per issue. PASS and KBA_REQUIRED return none.
+  // "result FAIL. <issue>; <issue>" → one message row per issue. KBA_REQUIRED returns one step-up message
+  // (as the live sandbox does for P16: "IDENTITY VERIFIED - STEP-UP AUTHENTICATION RECOMMENDED"). PASS returns none.
   const issues = crs.expected.startsWith("result FAIL")
     ? crs.expected.replace(/^result FAIL\.\s*/, "").split(";").map((m, i) => row(IDENTITY_PRODUCT, `message_${i + 1}`, m.trim(), `msg${i + 1}`))
-    : [];
+    : crs.expected.startsWith("result KBA_REQUIRED")
+      ? [row(IDENTITY_PRODUCT, "message_2401", "IDENTITY VERIFIED - STEP-UP AUTHENTICATION RECOMMENDED (FRAUD ALERT ON FILE)", "msg1")]
+      : [];
   return [row(IDENTITY_PRODUCT, "verification_messages", issues.length ? "issues returned" : "none returned", "result"), ...issues, row(FRAUD_FINDER_PRODUCT, "risk_score", score, "ff-score")];
 }
 
