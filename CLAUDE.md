@@ -2,9 +2,11 @@
 
 Guidance for Claude Code and other developer agents working in this repository.
 
-> **Required on every revision:** update `CONTEXT.md`. Refresh the state sections that
-> changed (at-a-glance table, what works, what needs to be added, waiting on you) and add a
-> dated line to its revision log. Read `CONTEXT.md` first when starting work.
+> **Required on every prompt:** before ending any turn in which something changed, update
+> `CONTEXT.md`. Refresh the state sections that changed (at-a-glance table, what works, what
+> needs to be added, waiting on you) and add a dated line to its revision log. Read
+> `CONTEXT.md` first when starting work. A `UserPromptSubmit` hook in `.claude/settings.json`
+> repeats this reminder on every prompt.
 
 ## Product scope
 

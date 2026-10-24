@@ -1,6 +1,6 @@
 # CONTEXT.md: current project state
 
-> Living summary of where the project stands. **Update it with every revision**: change
+> Living summary of where the project stands. **Update it on every prompt that changes anything**: change
 > the sections below and add an entry to the revision log at the bottom.
 > Details live in `docs/status.md` (checklist), `docs/integrations.md` (verified provider
 > facts), `docs/architecture.md` (design), and `CLAUDE.md` (rules).
@@ -140,3 +140,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-23 | `VOICE_TOOL_SECRET` generated and set; voice endpoint now enforces auth |
 | 2026-10-23 | `CONTEXT.md` created |
 | 2026-10-23 | First commit of the foundation on branch `foundation` (secret scan clean; not pushed) |
+| 2026-10-23 | Status updates now required on every prompt: rule in `CLAUDE.md` plus a `UserPromptSubmit` reminder hook in `.claude/settings.json` |

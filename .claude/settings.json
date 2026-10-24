@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"Project rule (CLAUDE.md): before ending this turn, if anything in the repo, Convex deployment, or integration state changed, update CONTEXT.md: refresh the affected status sections (at-a-glance table, what works, what needs to be added, waiting on you), bump Last updated, and add a dated line to the revision log. Never write secrets into CONTEXT.md.\"}}'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
