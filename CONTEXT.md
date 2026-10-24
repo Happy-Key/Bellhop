@@ -91,8 +91,8 @@ Rules that always hold:
 1. **Cartesia voice**
    - Register the webhook tool with Cartesia and attach it to the agent (proposed: a backend
      action, so the secret never leaves the server).
-   - Pass the session token as a dynamic variable when a call starts (method still
-     unverified in Cartesia's docs).
+   - Pass the session token as a dynamic variable when a call starts: send it as
+     `session_create.dynamic_variables.session_token` (confirmed in the docs, not yet tested live).
    - Build the browser microphone and agent WebSocket client.
 2. **Live reasoning.** Decide on Bitdeer, claim its credits, set the `REASONING_*`
    variables, and run the first live test.
@@ -141,3 +141,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-23 | `CONTEXT.md` created |
 | 2026-10-23 | First commit of the foundation on branch `foundation` (secret scan clean; not pushed) |
 | 2026-10-23 | Status updates now required on every prompt: rule in `CLAUDE.md` plus a `UserPromptSubmit` reminder hook in `.claude/settings.json` |
+| 2026-10-23 | Cartesia docs checked: dynamic variables go in `session_create`; agent WebSocket protocol corrected in `docs/integrations.md` |

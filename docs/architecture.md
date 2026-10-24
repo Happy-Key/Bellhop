@@ -90,7 +90,7 @@ Rejected findings are shown in the UI and logged.
 - The tool response returns the backend's blocking questions, so the agent asks what the
   workflow needs rather than inventing its own.
 - Not built yet:
-  - The browser microphone/WebSocket client for `wss://api.cartesia.ai/agents/stream/{agent_id}`.
+  - The browser microphone/WebSocket client for `wss://api.cartesia.ai/v1/agents/websocket/{agent_id}`.
   - The agent and tool configuration in Cartesia.
   - A public Convex deployment (Cartesia can't reach 127.0.0.1).
 

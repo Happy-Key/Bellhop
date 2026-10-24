@@ -62,16 +62,17 @@ We do not yet know whether the chosen model honours JSON-only output. The provid
 - **The Line SDK (code-first agents) stops being hosted on Dec 1, 2026.** Use **Managed Agents** (https://docs.cartesia.ai/agents/introduction.md).
 - API version header: `Cartesia-Version: 2026-08-14`.
 - Browser auth: the server calls `POST https://api.cartesia.ai/access-token` with `{grants:{agent:true}, expires_in:60}` and gets back `token`. Implemented in `convex/voice.ts:createCartesiaAccessToken`, but **not yet run live**. The response schema beyond `token` is UNVERIFIED.
-- Agent WebSocket: `wss://api.cartesia.ai/agents/stream/{agent_id}`.
-  - Client sends `start` (`input_format` e.g. `pcm_16000`), `media_input` (base64 audio) and `custom`.
-  - Server sends `media_output`, `clear` and `transfer_call`.
-  - Client-tool framing on this socket is UNVERIFIED.
+- Agent WebSocket (verified in docs 2026-10-23: https://docs.cartesia.ai/line/integrations/websocket-api.md, https://docs.cartesia.ai/api-reference/agents/agent-websocket.md): `wss://api.cartesia.ai/v1/agents/websocket/{agent_id}?cartesia_version=2026-08-14&access_token=<token>`. The browser uses `access_token`; servers use the `X-API-Key` header. (Our earlier notes on `/agents/stream`, `start` and `media_input` were wrong.)
+  - First message, within 10 s: `session_create` with `audio.input_format` (`pcm_16000|pcm_24000|pcm_44100|mulaw_8000`, headerless mono), optional `output_delivery`, `continuous_input`, and `dynamic_variables` (up to 64; string, number or boolean values). Unknown fields are rejected.
+  - Wait for `session_ready` (`call_id`, `agent_version_id`), then send `audio_input` with base64 audio in 20–100 ms chunks, as JSON text frames only.
+  - Server sends `audio_output` (same format as the input), `audio_output_clear` (barge-in: stop playback), `client_tool_call`, `turn_started`, `turn_output_text_delta`, `turn_ended`, and `error` (`fatal` flag).
+  - The server closes the socket after 120 s with no client event. Close with code 1000 when done.
 - **Webhook tools** (https://docs.cartesia.ai/agents/webhook-tools.md): created with `POST /v1/agents/tools` (`type:"webhook"`), HTTPS only, auth via bearer `authentication`.
   - Parameters can come from the model, a `constant_value`, or a `dynamic_variable`.
   - The 2xx body goes back to the LLM (16 KiB maximum). The default timeout is 20 s.
 - Our endpoint: `POST https://<deployment>.convex.site/voice/tools/record-statement` with Bearer `VOICE_TOOL_SECRET`. The body is `{session_token, utterance, turn_id?}`.
   - `session_token` must be a **dynamic variable**, not a model parameter. The backend issues it per case through `voice:createVoiceSession`.
-  - **UNVERIFIED:** how to set a dynamic variable when starting a call over the agent WebSocket.
+  - **Resolved 2026-10-23:** the browser sends it as `session_create.dynamic_variables.session_token` (https://docs.cartesia.ai/agents/dynamic-variables.md). The tool's body property is `{"type":"string","dynamic_variable":"session_token"}`. If the value is missing, the agent gets a tool error and no request is sent. The guide says "from your server", but the reference does not restrict access-token sessions. Not yet tested live.
 - Webhooks (call events): the `x-webhook-secret` header, up to 3 retries, dedupe by `webhook_request_id`, and `call_turn` events with a transcript. Not implemented; the tool endpoint is the primary path.
 - STT streaming (only if we build our own STT path): `wss://api.cartesia.ai/stt/turns/websocket` emits `turn.end` as the definitive transcript. On `/stt/websocket`, use `is_final`.
 - Local development: Cartesia can only reach a **public HTTPS** URL. The local Convex backend (127.0.0.1) won't work for the tool, so voice testing needs a cloud Convex dev deployment.
@@ -110,7 +111,7 @@ We do not yet know whether the chosen model honours JSON-only output. The provid
 
 ## Unresolved questions
 
-1. Cartesia: event credit amount, and whether Managed Agent LLM tokens are covered. How do we pass a dynamic variable (`session_token`) when starting a web call?
+1. Cartesia: event credit amount, and whether Managed Agent LLM tokens are covered. (Dynamic-variable passing is resolved; see the Cartesia section.)
 2. Bitdeer: credit amount, which models support tool calling and JSON output, and the rate limits.
 3. Nessie: the purchase and transfer POST bodies (the seed script will reveal the purchase body).
 4. CRS: your account's rate limit, and whether non-persona requests cost anything. The OFAC and military endpoints mentioned on the event page aren't in the OpenAPI spec.
