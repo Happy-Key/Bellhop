@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Customer view: only the voice call. Each visit opens one synthetic case, created when the first
+ * Customer view: a voice call or, as the typed alternative, a text chat. Both go through the same
+ * backend turn (questions, answer linking, model reassessment); only the channel differs. Each visit opens one synthetic case, created when the first
  * call starts and reused for "Call again", so the bank sees the whole conversation on one case.
  * Apart from the demo case list below, nothing here reads case data; the bank dashboard is at "/".
  *
@@ -16,6 +17,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { VoiceCall } from "@/components/VoiceCall";
+import { TextChat } from "@/components/TextChat";
 import { DEMO_PERSONAS, getDemoPersona } from "@/lib/fixtures/demoPersonas";
 
 export default function CustomerCallPage() {
@@ -26,6 +28,7 @@ export default function CustomerCallPage() {
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [existingId, setExistingId] = useState<Id<"cases"> | null>(null);
   const [inCall, setInCall] = useState(false);
+  const [channel, setChannel] = useState<"voice" | "text">("voice");
   const caseId = useRef<Promise<Id<"cases">> | null>(null);
   const persona = getDemoPersona(personaId);
   // A case deleted from the developer tab drops out of the list, and out of the selection.
@@ -67,19 +70,31 @@ export default function CustomerCallPage() {
     <main style={{ maxWidth: 640, margin: "0 auto" }}>
       <h1 style={{ textAlign: "center" }}>Report a suspicious transaction</h1>
       <p className="muted" style={{ textAlign: "center" }}>
-        Talk to our assistant about a payment you don&apos;t recognize. It will ask a few questions and pass your report to our
-        fraud team for review. It cannot move money or approve refunds.
+        Talk or chat with our assistant about a payment you don&apos;t recognize. It will ask a few questions and pass your report to
+        our fraud team for review. It cannot move money or approve refunds.
       </p>
+      <div className="channel-switch" role="radiogroup" aria-label="How to reach us">
+        {(
+          [
+            ["voice", "Call"],
+            ["text", "Chat by text"],
+          ] as const
+        ).map(([c, label]) => (
+          <button key={c} type="button" role="radio" aria-checked={channel === c} className={channel === c ? "channel-selected" : undefined} disabled={inCall} onClick={() => setChannel(c)}>
+            {label}
+          </button>
+        ))}
+      </div>
 
       <section className="persona-picker" aria-label="Demo persona">
         <p className="persona-heading">
-          <span className="label synthetic">DEMO ONLY</span> This call is about{inCall ? " (locked during the call)" : ""}
+          <span className="label synthetic">DEMO ONLY</span> This {channel === "voice" ? "call" : "chat"} is about{inCall ? ` (locked during the ${channel === "voice" ? "call" : "chat"})` : ""}
         </p>
         <div className="persona-options persona-modes" role="radiogroup" aria-label="New report or existing case">
           {(
             [
               ["new", "A new report", "Opens a new case"],
-              ["existing", "An existing case", "Call back with more information"],
+              ["existing", "An existing case", "Add information or answer questions"],
             ] as const
           ).map(([m, title, sub]) => (
             <button key={m} type="button" role="radio" aria-checked={mode === m} className={`persona-option${mode === m ? " persona-selected" : ""}`} disabled={inCall} onClick={() => chooseMode(m)}>
@@ -108,12 +123,12 @@ export default function CustomerCallPage() {
                 anything new the customer says is added to the same case.
               </p>
             ) : (
-              <p className="muted">Pick the case the customer is calling back about. The newest cases are listed first.</p>
+              <p className="muted">Pick the case the customer is getting back to us about. The newest cases are listed first.</p>
             )}
           </div>
         ) : (
           <>
-            <p className="persona-heading">Call as a synthetic customer</p>
+            <p className="persona-heading">Report as a synthetic customer</p>
             <div className="persona-options" role="radiogroup" aria-label="Demo persona">
               {[null, ...DEMO_PERSONAS.map((p) => p.id)].map((id) => {
                 const p = getDemoPersona(id);
@@ -141,7 +156,7 @@ export default function CustomerCallPage() {
                   <strong>Expected:</strong> {persona.expectedOutcome}
                 </p>
                 <p className="muted">
-                  Starting the call opens a case that retrieves this persona&apos;s bank records, attaches their payment-origin records
+                  Starting the call or chat opens a case that retrieves this persona&apos;s bank records, attaches their payment-origin records
                   and runs the CRS checks on its own. Say the amount and merchant: purchase dates are fixed at the day the personas
                   were seeded.
                 </p>
@@ -173,9 +188,11 @@ export default function CustomerCallPage() {
       </section>
 
       {mode === "existing" && !existing ? (
-        <p className="muted" style={{ textAlign: "center" }}>Choose a case above to start the call.</p>
-      ) : (
+        <p className="muted" style={{ textAlign: "center" }}>Choose a case above to start the {channel === "voice" ? "call" : "chat"}.</p>
+      ) : channel === "voice" ? (
         <VoiceCall key={mode === "existing" ? existing!._id : "new"} caseId={resolveCase} variant="customer" onInCallChange={onInCallChange} />
+      ) : (
+        <TextChat key={mode === "existing" ? existing!._id : "new"} caseId={resolveCase} existingCaseId={mode === "existing" ? existing!._id : null} onInChatChange={onInCallChange} />
       )}
     </main>
   );

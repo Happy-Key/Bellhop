@@ -8,6 +8,7 @@ import type { EvidenceFetchState } from "../lib/domain/workflow";
 import type { CaseProposal } from "../lib/domain/caseDecision";
 import { caseStatus } from "../lib/review/caseStatus";
 import { caseReasoningEnabled } from "./proposals";
+import { openReviewerQuestions } from "./reviewerQuestions";
 
 /** Most recent cases shown in the queue. */
 export const QUEUE_LIMIT = 100;
@@ -53,6 +54,7 @@ export const queue = query({
           modelEnabled: caseReasoningEnabled(),
           outcomes: decisions.map((d) => ({ outcome: d.outcome, amount: d.amount, txnRef: d.txnRef, policy: d.policy, decidedAt: d.decidedAt, payoutStatus: d.payout.status, needsReview: d.needsReview ?? null })),
           matchedAmount: matched?.amount ?? null,
+          reviewerQuestions: (await openReviewerQuestions(ctx, c._id)).map((q) => q.text),
         });
         const firstStatement = statements.reduce<(typeof statements)[number] | null>((a, s) => (!a || s.receivedAt < a.receivedAt ? s : a), null);
         return {

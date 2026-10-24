@@ -33,6 +33,7 @@ import type { CaseView, Payment } from "./types";
 export function CaseReview({ caseId }: { caseId: string }) {
   const data = useQuery(api.cases.view, { caseId: caseId as Id<"cases"> });
   const model = useQuery(api.proposals.latest, { caseId: caseId as Id<"cases"> });
+  const asked = useQuery(api.reviewerQuestions.forCase, { caseId: caseId as Id<"cases"> });
 
   if (data === undefined) return <CaseSkeleton />;
   if (data === null)
@@ -45,12 +46,14 @@ export function CaseReview({ caseId }: { caseId: string }) {
         </div>
       </main>
     );
-  return <CaseWorkspace data={data} model={model ?? null} />;
+  return <CaseWorkspace data={data} model={model ?? null} asked={asked ?? []} />;
 }
 
 type ModelState = NonNullable<ReturnType<typeof useQuery<typeof api.proposals.latest>>>;
 
-export function CaseWorkspace({ data, model }: { data: CaseView; model: ModelState | null }) {
+type AskedRow = NonNullable<ReturnType<typeof useQuery<typeof api.reviewerQuestions.forCase>>>[number];
+
+export function CaseWorkspace({ data, model, asked }: { data: CaseView; model: ModelState | null; asked: AskedRow[] }) {
   const [focusRef, setFocusRef] = useState<string | null>(null);
   const analysis = data.case.analysis as StoredAnalysis | null;
   const bankFetch = data.case.bankFetch as EvidenceFetchState;
@@ -75,6 +78,7 @@ export function CaseWorkspace({ data, model }: { data: CaseView; model: ModelSta
     modelEnabled: model?.enabled ?? false,
     outcomes: data.decisions.map((d) => ({ outcome: d.outcome, amount: d.amount, txnRef: d.txnRef, policy: d.policy, decidedAt: d.decidedAt, payoutStatus: d.payout.status, needsReview: d.needsReview ?? null })),
     matchedAmount: matched?.amount ?? null,
+    reviewerQuestions: asked.filter((q) => !q.answeredByRef && !q.withdrawnAt).sort((a, b) => a.askedAt - b.askedAt).map((q) => q.text),
   });
   const auto = data.case.autoApproval as { policy: string; eligible: boolean; checks: { id: string; passed: boolean; detail: string }[] } | null | undefined;
 
@@ -175,6 +179,7 @@ export function CaseWorkspace({ data, model }: { data: CaseView; model: ModelSta
               bankNever={bankFetch.status === "never"}
               modelEnabled={model?.enabled ?? false}
               reassessing={reassessing}
+              asked={asked}
             />
           </div>
         </main>

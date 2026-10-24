@@ -613,3 +613,6 @@ body:has(.ws) { max-width: none; margin: 0; padding: 0; background: var(--ws-bg)
 .pd-work-out { display: block; font-size: 12.5px; color: var(--ws-ink-3); }
 .pd-work-mark { width: 10px; height: 10px; margin-top: 5px; border: 2px solid var(--ws-warn); border-style: dashed; border-radius: 50%; box-sizing: border-box; }
 .pd-work li[data-status="done"] .pd-work-mark { border: 2px solid var(--ws-ok); background: var(--ws-ok); }
+.ws-ask form { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.ws-ask .ws-field { width: 100%; margin: 0; }
+.ws-asked { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }

@@ -76,4 +76,9 @@ describe("case status (investigation first)", () => {
     expect(s.blockers).toEqual(["Bank records haven't been retrieved.", "Was the card lost?"]);
     expect(s.headline).toBe("Retrieve bank records");
   });
+
+  it("an open reviewer question puts the case with the customer", () => {
+    const s = caseStatus(base({ assessment: row(proposal("escalate"), { kind: "automatic", note: "" }), reviewerQuestions: ["Do you still have the card?"] }));
+    expect(s).toMatchObject({ attention: "customer", headline: "Customer to answer (asked by a reviewer): Do you still have the card?" });
+  });
 });

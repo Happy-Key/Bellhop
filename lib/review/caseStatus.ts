@@ -49,6 +49,8 @@ export interface CaseStatusInput {
   outcomes: OutcomeRow[];
   /** Amount of the matched bank record, for a proposed approval (computed, never from the model). */
   matchedAmount: number | null;
+  /** Unanswered questions a reviewer put to the customer (asked first on the next call or chat). */
+  reviewerQuestions?: string[];
 }
 
 export interface Disposition {
@@ -154,6 +156,9 @@ export function caseStatus(i: CaseStatusInput): CaseStatus {
   } else if (disposition?.resolution) {
     attention = "decided";
     headline = disposition.resolution.accepted ? (disposition.decision === "deny" ? "Denial confirmed by a person" : "Approved by a person") : `Proposal rejected by a person: ${disposition.resolution.note}`;
+  } else if (i.reviewerQuestions?.length) {
+    attention = "customer";
+    headline = `Customer to answer (asked by a reviewer): ${i.reviewerQuestions[0]}`;
   } else if (disposition?.decision === "escalate") {
     attention = "reviewer";
     headline = "Specialist review";

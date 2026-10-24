@@ -46,3 +46,26 @@ button.danger:disabled { opacity: 0.6; cursor: progress; }
 .persona-modes { margin-bottom: 8px; }
 .callback-picker select { max-width: 100%; font: inherit; padding: 4px; }
 .callback-picker p { margin: 6px 0 0; }
+
+/* Customer channel switch and text chat (/call) */
+.channel-switch { display: flex; justify-content: center; gap: 0; margin: 12px auto 16px; width: max-content; border: 1px solid #8886; border-radius: 999px; overflow: hidden; }
+.channel-switch button { margin: 0; padding: 8px 18px; border: 0; border-radius: 0; background: transparent; color: inherit; font-weight: 600; cursor: pointer; }
+.channel-switch button.channel-selected { background: #0a7d32; color: #fff; }
+.channel-switch button:disabled { cursor: not-allowed; opacity: 0.7; }
+.tc { display: flex; flex-direction: column; gap: 12px; }
+.tc-waiting { padding: 12px 14px; border: 1px solid #b26a0066; border-radius: 10px; background: #b26a000f; font-size: 14px; text-align: left; }
+.tc-waiting ul { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+.tc-source { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid #8886; border-radius: 999px; font-size: 11px; opacity: 0.8; }
+.tc-start { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.tc-start-button { padding: 12px 28px; border: none; border-radius: 999px; background: #0a7d32; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+.tc-transcript { max-height: 55vh; }
+.tc-typing { opacity: 0.7; font-style: italic; }
+.tc-failed { font-size: 12px; }
+.tc-retry { margin: 0; padding: 0 6px; font-size: 12px; }
+.tc-compose { display: flex; flex-direction: column; gap: 6px; }
+.tc-compose textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #8886; border-radius: 10px; font: inherit; font-size: 15px; resize: vertical; background: transparent; color: inherit; }
+.tc-actions { display: flex; justify-content: space-between; gap: 8px; }
+.tc-actions button { margin: 0; }
+.tc-end { background: transparent; border: 1px solid #c62828; color: #c62828; }
+.tc-error { margin: 0; }
+.tc-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

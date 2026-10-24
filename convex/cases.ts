@@ -29,7 +29,7 @@ export const list = query({
 });
 
 /** Every table that holds rows for one case. Payment-origin records are keyed by the Nessie transaction, not the case, and are kept. */
-const CASE_TABLES = ["statements", "transactions", "providerEvidence", "activity", "processedEvents", "reimbursementDecisions", "caseProposals", "intakeTurns", "voiceSessions"] as const;
+const CASE_TABLES = ["statements", "transactions", "providerEvidence", "activity", "processedEvents", "reimbursementDecisions", "caseProposals", "intakeTurns", "voiceSessions", "reviewerQuestions"] as const;
 /** Rows deleted per table per mutation; a bigger case continues in a scheduled follow-up. */
 const PURGE_BATCH = 500;
 

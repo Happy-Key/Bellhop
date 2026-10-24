@@ -36,9 +36,11 @@ export interface DispositionPanelProps {
   bankNever: boolean;
   modelEnabled: boolean;
   reassessing: boolean;
+  /** Questions reviewers put to the customer, newest first. */
+  asked: Doc<"reviewerQuestions">[];
 }
 
-export function DispositionPanel({ caseId, status, analysis, decisions, accepted, matchedRef, bankOk, bankNever, modelEnabled, reassessing }: DispositionPanelProps) {
+export function DispositionPanel({ caseId, status, analysis, decisions, accepted, matchedRef, bankOk, bankNever, modelEnabled, reassessing, asked }: DispositionPanelProps) {
   const ask = useMutation(api.proposals.requestProposal);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,6 +102,8 @@ export function DispositionPanel({ caseId, status, analysis, decisions, accepted
         {status.nextQuestion && <p className="ws-small ws-muted">Chosen by the reasoning model. The voice assistant asks it on the customer&apos;s next call; this prototype sends no outbound messages.</p>}
         {!bankOk && <RetrieveButton caseId={caseId} again={!bankNever} primary />}
       </div>
+
+      <AskCustomer caseId={caseId} asked={asked} />
 
       <div className="ws-modelstate">
         {modelEnabled ? (
@@ -164,6 +168,63 @@ function ResolveControls({ proposalId, kind }: { proposalId: Id<"caseProposals">
         <button type="button" className="ws-btn" disabled={busy} onClick={() => act(false)}>Reject proposal</button>
       </div>
       {error && <p className="ws-small ws-error-text" role="status">{error}</p>}
+    </div>
+  );
+}
+
+/** A reviewer's question for the customer: asked first on their next call or text chat. */
+function AskCustomer({ caseId, asked }: { caseId: Id<"cases">; asked: Doc<"reviewerQuestions">[] }) {
+  const ask = useMutation(api.reviewerQuestions.ask);
+  const withdraw = useMutation(api.reviewerQuestions.withdraw);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (f: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await f();
+    } catch (e) {
+      setError(e instanceof Error ? e.message.replace(/^.*Uncaught Error: /s, "").split("\n")[0]! : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="ws-ask">
+      <span className="ws-eyebrow">Ask the customer</span>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (text.trim()) void run(async () => { await ask({ caseId, text }); setText(""); });
+        }}
+      >
+        <label className="ws-field">
+          <span className="ws-visually-hidden">Question for the customer</span>
+          <textarea rows={2} value={text} maxLength={300} placeholder="e.g. Do you still have the card?" onChange={(e) => setText(e.target.value)} />
+        </label>
+        <button type="submit" className="ws-btn ws-btn-sm" disabled={busy || !text.trim()}>Ask on the next call or chat</button>
+      </form>
+      {error && <p className="ws-small ws-error-text" role="status">{error}</p>}
+      {asked.length > 0 && (
+        <ul className="ws-asked">
+          {asked.map((q) => (
+            <li key={q._id} className="ws-small">
+              “{q.text}”{" "}
+              {q.answeredByRef ? (
+                <span className="ws-muted">answered in <RefChip refId={q.answeredByRef} /></span>
+              ) : q.withdrawnAt ? (
+                <span className="ws-muted">withdrawn</span>
+              ) : (
+                <>
+                  <span className="ws-warn-text">waiting</span>{" "}
+                  <button type="button" className="ws-link" disabled={busy} onClick={() => void run(() => withdraw({ questionId: q._id }))}>Withdraw</button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

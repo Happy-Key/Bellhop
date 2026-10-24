@@ -16,6 +16,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { buildCaseReasoningInput, executionPlan, inputSignature, readyForAssessment, validateProposal, CaseProposalOutput, type CaseProposal, type CaseReasoningInput } from "../lib/domain/caseDecision";
 import { diffInvestigations } from "../lib/domain/investigation";
+import { openReviewerQuestions } from "./reviewerQuestions";
 import type { AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 import type { CaseAnalysis } from "../lib/domain/workflow";
 import { loadCaseInput, logActivity, reasoningConfig, toDomainProviderEvidence, toDomainStatement, toDomainTransaction } from "./model";
@@ -35,6 +36,7 @@ async function currentInput(ctx: QueryCtx, caseId: Id<"cases">): Promise<{ input
   if (!analysis) return null;
   const prev = (await lastAccepted(ctx, caseId))?.proposal as CaseProposal | undefined;
   const input = buildCaseReasoningInput({
+    reviewerQuestions: (await openReviewerQuestions(ctx, caseId)).map((q) => q.text),
     previous: prev?.investigation ? { decision: prev.decision, investigation: prev.investigation } : null,
     analysis,
     statements: statements.map(toDomainStatement),
