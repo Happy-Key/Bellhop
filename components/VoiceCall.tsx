@@ -295,7 +295,10 @@ function CustomerCallView(props: { status: Status; detail: string | null; turns:
   const { status, detail, turns, elapsed, agentSpeaking, onStart, onHangUp } = props;
   const inCall = status === "connecting" || status === "live";
   const transcriptEnd = useRef<HTMLDivElement>(null);
-  useEffect(() => transcriptEnd.current?.scrollIntoView({ block: "nearest" }), [turns.length]);
+  // Braces matter: an effect may only return a cleanup function, and some browsers' scrollIntoView returns a Promise.
+  useEffect(() => {
+    transcriptEnd.current?.scrollIntoView({ block: "nearest" });
+  }, [turns.length]);
   const message = status === "live" ? (agentSpeaking ? "Assistant is speaking…" : "Listening — go ahead and speak.") : CUSTOMER_STATUS[status];
   return (
     <div className="cc-call">

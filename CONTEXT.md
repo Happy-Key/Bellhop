@@ -209,6 +209,7 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | First live voice test passed (Playground → webhook tool → Convex → dashboard). Found `end_call` not enabled; usage recorded |
 | 2026-10-24 | Committed and pushed tool registration (`ed41f61`). Browser call client built: `components/VoiceCall.tsx` + `lib/voice/`, 9 new tests; not run live |
 | 2026-10-24 | Live browser call failed: `dynamic_variables_not_allowed` for browser tokens. Switched to binding by call ID (`bindVoiceCall`, tool sends `system__conversation_id`); 74 tests pass; tool needs re-registering |
+| 2026-10-24 | Live test after Convex push: browser errors on the customer call view ("useEffect must not return anything…", then "destroy is not a function" ×2). Cause: the transcript auto-scroll effect in `components/VoiceCall.tsx` returned `scrollIntoView()`'s value (a Promise in current browsers). Fixed with a block body; verify passes |
 | 2026-10-24 | Pulled merged `foundation` (`ff904d8`, includes `client-view`); handoff commit rebased on top. `npm run verify` passes on the merged tree (100 tests; build includes `/call`). Local `.env.local` targets `dev:dynamic-chihuahua-120` |
 | 2026-10-24 | `docs/agent-handoff.md` added: briefing for other LLMs/agents (rules, branch state, API changes, decisions, pending actions). Dry-run merge of `origin/client-view` into `foundation`: no conflicts |
 | 2026-10-24 | Bitdeer integration paused by the user (nothing configured; scripted mode). `foundation` pushed so another agent's frontend changes can merge |
