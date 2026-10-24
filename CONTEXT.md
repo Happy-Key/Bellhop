@@ -74,6 +74,10 @@ Rules that always hold:
       `system__conversation_id`, to `<deployment>.convex.site/voice/tools/record-statement`
       (bearer `VOICE_TOOL_SECRET`). It feeds the same workflow as text and ignores retries.
     - Calls are hard-capped at 3 minutes.
+11. **Customer call view** at `/call` (branch `client-view`). Customers see only the call button, status
+    and their transcript: no cases, costs or call internals. The first call creates a synthetic case,
+    and "Call again" reuses it; bank staff review it on the dashboard (`/`). This uses the same `VoiceCall`
+    component with `variant="customer"`. Not yet run live, and the queries are still unauthenticated.
 
 ## Key design decisions
 
@@ -209,3 +213,5 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Backend consistency fixes: question keys, audience and priority; answers linked to questions; `question_id` voice flow; no-repeat; stale-attempt guard; bounded interpretation wait; redaction on ingest; append-only evidence; correction targeting; spoken amounts; action-based initiation question. 99 tests pass; not pushed or run live |
 | 2026-10-24 | Design proposal `docs/claim-intake-design.md`: fact model, adaptive voice intake, reimbursement and legal-review screens, rule registry, phased plan. No code changed; Reg E 1005.6(b), 1005.11 and CFPB EFT FAQs re-checked live. Awaiting decisions in its section I |
 | 2026-10-24 | **Live browser voice call worked** (call-ID binding confirmed: `system__conversation_id` = `session_ready.call_id`); End call works; $0.05. Logged issues: spoken amounts and cents missed, answers lack the agent's question, agent repeats itself, voice corrections unlinked |
+| 2026-10-24 | Branch `client-view` (off `foundation` `f9bb26a`): customer-only call page `/call`, route-aware banner (`components/SiteBanner.tsx`), `VoiceCall` gains `variant` + lazy case resolver. Committed and pushed to `origin/client-view`; `npm run verify` passes (74 tests, build includes `/call`) |
+| 2026-10-24 | Separate personal Convex dev deployment for `client-view` review (user-created; own keys). `VOICE_TOOL_SECRET` generated and set there; `record_statement` tool registered live on a new, separate Cartesia agent |
