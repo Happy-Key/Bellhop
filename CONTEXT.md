@@ -4,195 +4,105 @@
 > the sections below and add an entry to the revision log at the bottom.
 > New agent? Start with `docs/agent-handoff.md` (self-contained briefing).
 > Details live in `docs/status.md` (checklist), `docs/integrations.md` (verified provider
-> facts), `docs/architecture.md` (design), and `CLAUDE.md` (rules).
+> facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
+> decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24_
+_Last updated: 2026-10-24 (end of session; status sections rewritten for a context reset)_
 
 ## What this is
 
-A hackathon prototype of a **fraud claims investigator** for U.S. consumer bank accounts.
+A hackathon prototype of a **voice-assisted fraud-claim intake system** for U.S. consumer bank
+accounts. **Consumers file claims, and the software is an extension of their bank.**
 
-A customer describes a suspected fraudulent payment, by text now and by voice later. The app:
-- matches the description against live (mock) bank records,
-- pulls identity evidence from CRS,
-- asks follow-up questions when facts are missing, ambiguous or conflicting,
-- prepares an evidence-linked **draft** claim packet with potentially relevant
-  regulatory considerations, for **human review**.
+1. A customer reports a suspicious payment, by voice (Cartesia agent, `/call` page or case page)
+   or by text.
+2. Bitdeer extracts the facts, and the backend asks one question at a time.
+3. The claim is matched against live (mock) Nessie bank records.
+4. It is checked against evidence: payment origin, merchant history, refunds, a CRS identity
+   check and CRS Fraud Finder.
+5. A small claim that passes every check is **approved automatically and paid as a SIMULATED
+   Nessie deposit**. Everything else goes to a person.
 
 Rules that always hold:
-- All data is synthetic.
-- The app only recommends. It never moves money or approves anything.
+- All data is synthetic, and the money is simulated.
+- **Approve-only automation.** Policy AUTO-1 (`lib/domain/autoApproval.ts`) may approve claims of $100 or
+  less. The app **never denies**; denials are always made by a person.
+- No legal determinations. Credit and criminal data are never used to judge claims.
 
 ## Current state at a glance
 
 | Area | State |
 |---|---|
-| Web app (Next.js 16 + TypeScript) | ✅ Working: plain dashboard at `npm run dev` |
-| Backend (Convex) | ✅ Cloud dev deployment linked (team `maximo-zhang`, project `calhacks`) |
-| Bank records (Capital One Nessie) | ✅ **Live**: synthetic demo account seeded (5 purchases); retrieval verified |
-| Identity evidence (CRS sandbox) | ✅ **Live**: TransUnion identity check on test personas; verified with P12 (3 issues) and P01 (clean) |
-| Reasoning | ✅ **Live: Bitdeer `zai-org/GLM-5.3-Flash`** on the dev deployment (2026-10-24). ⚠️ Credits not approved ($0.00); may be refused at any time. Rule-based answer reader runs alongside |
-| Voice (Cartesia) | ✅ **Live**: browser call from the case page works end to end (2026-10-24). The call is linked to the case by call ID; statements are recorded through the `record_statement` webhook tool; End call works. Quality issues are open (see below). Agent balance about $0.86 |
-| Regulatory considerations | ✅ Curated official sources (Reg E and CFPB), scenario-scoped, no deadline math. 3 excerpts need word-for-word verification |
-| Developer agent (Factory Droid) | ❌ Not started |
-| Simulated reimbursement | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, 99 unit tests, production build all pass (2026-10-24) |
-| Backend consistency fixes | ✅ Mock-tested 2026-10-24, **not yet pushed or run live** (see "What needs to be added" item 1) |
+| Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call` |
+| Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. **Latest code is deployed** (pushed with `npx convex dev --once`) |
+| Bank records (Nessie) | ✅ Live: purchases **and deposits** (deposits drive the refund check; never matched as the disputed payment) |
+| Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ⚠️ **Credits not approved ($0.00 balance); may be refused at any moment.** Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
+| Voice (Cartesia) | ✅ Live: one question per turn (`question_id`); waits up to 8 s for extraction; at most one "anything else?" in a row; a display error can't end a call |
+| CRS | ✅ Identity check and **Fraud Finder** live (persona bodies only; Fraud Finder verified on P01, score 11) |
+| Automatic reimbursement | ✅ Built: AUTO-1 v2, 14 checks, SIMULATED deposit that can't be paid twice. ⚠️ **The first live deposit hasn't been made yet** |
+| Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown) |
+| Login / access control | ❌ None: every Convex function is public (synthetic data only) |
+| Factory Droid | ❌ Not started |
+| Checks | ✅ `npm run verify`: typecheck, lint, **122 tests**, build pass |
 
-## What works today (end to end)
+## Branch and git
 
-1. **Create a synthetic claim.** It is stored in Convex and bound to the Nessie demo account
-   by the backend.
-2. **Record a customer statement** (text). Each statement gets a stable ID (`S1`, `S2`, …)
-   and is interpreted by the scripted extractor (amounts, dates, merchant, authorization,
-   credential sharing, scam indicators).
-3. **Retrieve bank records.** This is a live Nessie call. Failures are shown and never
-   replaced with sample data.
-4. **Match deterministically.**
-   - A match is *clear* only when exactly one transaction fits.
-   - Several fits make it *ambiguous*, and the app asks which one.
-   - A reported merchant or date narrows the candidates.
-5. **Follow-ups and corrections.** "Actually, it was the gift card one…" links to the
-   original statement, which is preserved. Conflicting statements block the case until
-   they're resolved.
-6. **Run a CRS identity check.**
-   - A reviewer links a CRS test persona; the link is labelled synthetic.
-   - Results are stored as provider facts. Identity issues add a non-blocking reviewer
-     note and never change the recommendation.
-7. **Findings and questions.** Every finding cites evidence IDs. Findings that cite unknown
-   evidence or make unsupported claims are rejected and shown.
-8. **Draft packet and recommendation.** The recommendation is one of:
-   - request clarification
-   - further investigation
-   - escalate (e.g. a customer-initiated scam payment)
-   - reimbursement **review**
-9. **Activity log and integration status** are on every case page.
-10. **Voice calls.** The case page has a **Start voice call** button (`components/VoiceCall.tsx`).
-    - Convex mints a 60 s Cartesia access token; the browser opens the agent WebSocket.
-    - On `session_ready`, the browser binds `call_id` to a backend-issued voice session
-      (`voice:bindVoiceCall`), then starts the microphone.
-    - The agent's `record_statement` webhook tool POSTs each statement, with `call_id` filled from
-      `system__conversation_id`, to `<deployment>.convex.site/voice/tools/record-statement`
-      (bearer `VOICE_TOOL_SECRET`). It feeds the same workflow as text and ignores retries.
-    - Calls are hard-capped at 3 minutes.
-11. **Customer call view** at `/call` (merged from `client-view`). Customers see only the call button, status
-    and their transcript: no cases, costs or call internals. The first call creates a synthetic case,
-    and "Call again" reuses it; bank staff review it on the dashboard (`/`). This uses the same `VoiceCall`
-    component with `variant="customer"`. Not yet run live, and the queries are still unauthenticated.
+- Branch `foundation`. **Local commits are not pushed** (see `git log origin/foundation..foundation`). Push only when the user asks.
+- `legislative-reference/` is untracked and must stay uncommitted (the user didn't recognise it).
+- Commit as `maximozhang <145702814+maximozhang@users.noreply.github.com>`.
 
-## Key design decisions
+## Demo plan (user decisions)
 
-- **Convex is the single source of truth.** All external calls are Convex actions, and keys
-  live only in the Convex environment. No backend logic in Next.js.
-- **Evidence categories stay separate:** customer statement, transaction record, external
-  provider, rule-based inference, model inference. Unresolved questions are their own list.
-- **The backend decides account access.** Neither the client nor the model can choose a
-  Nessie account or CRS identity.
-- **Reasoning provider.**
-  - The Cartesia agent's LLM only runs the voice conversation.
-  - Case reasoning sits behind one swappable interface in Convex.
-  - Live extraction is done through **Bitdeer** (decided 2026-10-24); not configured yet.
-  - There's never a silent fallback to scripted mode.
-- **CRS safety.**
-  - Only CRS-published persona request bodies are sent, so no request is billable.
-  - Logins are reused, and any failed login locks further attempts.
+- A **prepared bank record and script**. The customer is framed as already logged in to their bank, so
+  **no automatic bank-record pull** when a call starts.
+- **Run-through for an automatic approval:**
+  1. Open the case page and click **Retrieve bank records**.
+  2. Set the demo payment's "How it was made" to **New device, no two-factor, out of state**.
+  3. Link persona **P01** (or P19) and click **Run CRS checks**.
+  4. Make the claim.
+  - Section 5 should show 14 passes and an automatic approval, followed by a SIMULATED deposit.
+- **The demo payment must be under $100**, at a merchant with **no other payments** on the account (the two
+  Corner Grocer purchases block each other). The script must state the **exact amount** and the merchant or date.
+- Payment-origin records belong to the Nessie transaction, not the case: set once, and later cases reuse it.
+- For a "false claim" demo, choose **Customer's own device, two-factor passed**: the claim goes to a person.
 
-## What needs to be added (priority order)
+## What needs to be done next (priority order)
 
-1. **Live-test the consistency fixes (2026-10-24).** Mock-tested only. They address every item in the
-   voice-quality list below:
-   - Spoken amounts ("24 dollars and 99 cents", "a bill for 19.99"); "not X" drops the corrected amount.
-   - Answers linked to the question asked (`inResponseTo`). Short replies are read against it (rule-based).
-   - One question per turn, with `question_id`. "Yes." to different questions is no longer deduplicated.
-   - No question is asked more than twice per call; after that it goes to a reviewer.
-   - The legal "did you authorize?" question is replaced by "Did you personally enter and send this
-     payment, or did someone else do that?"
-   - Corrections link to the statement that gave the value.
-   - Live interpretation: stale-attempt guard, plus a bounded 4.5 s wait in the webhook.
-   - Card numbers and codes are removed before storage. Evidence is superseded, never deleted.
-   - `recommended_action` is no longer sent to the agent.
-   - Steps: push with `npx convex dev`, re-register the tool, paste the new agent instructions
-     (`docs/integrations.md`), then make one live call.
+1. **A full demo rehearsal on dev**, including the **first live SIMULATED deposit**. The code follows
+   Nessie's spec (`medium: "balance"`, `status: "completed"`, integer amount), but nothing has run live
+   yet. A rejection shows on the case, with Retry payout.
+2. **A voice re-test with Bitdeer on.** Check the pacing with the 8 s wait, and that varied acknowledgements
+   follow the updated agent instructions (paste them from `docs/integrations.md` into the Cartesia Playground).
+3. **Buttons for a person:** approve or reverse claims outside AUTO-1. Today only the checklist is shown.
+4. **Login and access control** before any non-synthetic use (Convex Auth now, bank SSO later; decided).
+5. **The redesign phases** in `docs/claim-intake-design.md`: per-payment fact model, screening results,
+   disputes and recovery events, deadline estimates, documents.
+6. **Regulatory:** verify the 1005.6 and 1005.11 excerpts word for word (the CFPB FAQ excerpt is done).
+7. **Factory Droid loop.**
 
-   **Original voice-quality notes** (from the live browser test, 2026-10-24; case `jx72bbhya9tfz6ctaw67rt28sh8gxa6n`, S1–S7):
-   - **Spoken amounts are missed.** `extractAmounts` (`lib/domain/interpret.ts:32`) only matches `$19.99`
-     or "19.99 dollars".
-     - "a bill for 19.99" gave `[]` (S3).
-     - "24 dollars and 99 cents … not 19 dollars and 99 cents" gave `[24, 19]` (S5).
-     - Fix: accept bare decimals in a money context, "N dollars and M cents", and probably spelled-out
-       numbers. Add tests first.
-   - **Answers lack context.** The customer's replies become "Yes." / "Yes. that one." (S6, S7), and the
-     agent's question isn't stored. Proposed (deterministic, no model input): when the tool returns
-     `next_questions`, store the question the agent was told to ask, and attach it to the next voice
-     statement as `inResponseTo`. Show it in the dashboard. Optional extras: show agent turns in the
-     activity log, or fetch the Cartesia transcript after the call (`GET /agents/calls/{call_id}`).
-   - **The agent repeats itself.** It confirmed the $24.99 dispute twice, then asked for the amount again.
-     Likely causes:
-     - the backend keeps returning the same blocking question, because "yes" never resolves it
-       (see the two items above);
-     - the Playground prompt;
-     - the scripted interpreter can't resolve ambiguity from short answers.
-     - Fixing amounts and context should reduce it. Then tune the prompt.
-   - **Voice corrections aren't linked.** S5 was a correction, but voice statements never set
-     `correctsRef`. Consider detecting "actually / not X like I said" in the scripted interpreter.
-   - **Smaller issues:** the merchant extractor over-captures ("Volt Electronics. I" in a text statement).
-     Identical words said twice in one call are deduplicated (there is no turn ID).
-   - **Still to do:** the welcome message and the rest of the Playground instructions. Lower the
-     inactivity timeout. Add a login or rate limit before sharing the app URL (starting a call is
-     public and billed).
-2. **Live extraction through Bitdeer: ON for the dev deployment (2026-10-24).** Model `zai-org/GLM-5.3-Flash`;
-   verified end to end with a text statement. **Credits are not approved yet ($0.00 balance) but requests
-   still succeed, so Bitdeer may refuse at any moment.** Keep live calls to a minimum; refusals show on the case.
-   Voice wait is now 8 s by default (see the revision log). Next: re-test a call; paste the updated agent instructions.
-   Measurements and switch-off command: `docs/integrations.md`.
-3. **Automatic reimbursement (built 2026-10-24, mock-tested).** Policy AUTO-1 v2 approves claims of $100 or
-   less when all 14 checks pass, including evidence checks: payment origin, merchant history, refunds,
-   identity check, and a Fraud Finder score of 30 or less. **Demo prep:** retrieve bank records, attach the
-   "new device, out of state" origin to the demo transaction, link persona P01 (or P19) and run the CRS
-   checks. The demo payment must be at a merchant the customer hasn't paid before (the two Corner Grocer
-   purchases now block each other). Approved claims get a SIMULATED Nessie deposit that can't be paid twice. It never
-   denies. Case page section 5 shows each check. **The first live deposit hasn't happened yet:** the first
-   qualifying claim on dev will make one, permanently, on the demo account. Still to build: approve and
-   reverse buttons for a person; claims outside AUTO-1 have only the checklist.
-4. **Factory Droid loop.**
-   - A recorded failure triggers a proposed regression test or patch, made in an isolated
-     worktree.
-   - The plan, diff and test results show in the dashboard.
-   - A human merges.
-5. **Regulatory.** Verify the paraphrased excerpts (1005.6, 1005.11, CFPB FAQ) word for word.
-6. **Optional:** CRS Fraud Finder risk score; user auth before any non-synthetic use.
+## Known limitations
 
-## Waiting on you
+- Extraction takes 4–8 s, longer than ideal for voice. Bitdeer ignores both thinking-off parameters tried.
+- Payment-origin data is SYNTHETIC: Nessie has no device or login records.
+- CRS checks the *person* (identity, contact-detail risk), not whether a payment was authorized.
+- Spoken digits ("four eight two…") aren't redacted; only digit strings next to a keyword are.
+- The 3-minute call cap stays (decided), so intake may need a second call or text.
 
-- **Claim-intake redesign:** decisions recorded 2026-10-24 (`docs/claim-intake-design.md` section I).
-  - Consumers file claims; the software is an extension of the bank.
-  - Cases can hold several payments; labelled deadline estimates and both screens are allowed.
-  - Credit cards get full support. Demo login now, bank SSO later. Keep the 3-minute cap.
-  - Calls are transcribed only, with consent and an AI notice on every call. Extraction uses Bitdeer.
-- **Bitdeer credits:** waiting on manual approval of the CalHacks credits.
-- **Demo plan (decided 2026-10-24):** a prepared bank record plus a matching script. The customer is framed
-  as already logged in to their bank, which is why we already hold their records. So **don't** pull bank
-  records automatically when a call starts.
-- **Cartesia:** check the retention settings so audio isn't kept.
-- **Voice fixes go-live:** run `npx convex dev` (pushes the new schema and functions to cloud dev),
-  then `npx convex run voiceSetup:registerVoiceTool`, then paste the updated agent instructions from
-  `docs/integrations.md` into the Playground.
-  - Do the same on the separate review deployment and agent (used to test `/call`) if you keep using them.
+## Waiting on the user
 
-- **Cartesia:** tune the Playground prompt (repetition) and lower the inactivity timeout. The balance
-  is about $0.86 until the promo code is applied; the last call cost $0.05. Re-run
-  `voiceSetup:registerVoiceTool` whenever the tool definition changes.
-- **Factory:** API key and `droid` CLI install, when we reach that step.
-- **Housekeeping:**
-  - Rotate the CRS password at some point; it was pasted in chat.
-  - Review and merge the `foundation` branch when ready (pushed to `origin/foundation`; open a PR at https://github.com/Happy-Key/CalHacks/pull/new/foundation).
+- **Bitdeer credits:** manual CalHacks approval pending.
+- **Cartesia:** paste the updated agent instructions; check the retention settings so audio isn't kept;
+  lower the inactivity timeout. Balance about $0.86 before the promo code.
+- **Housekeeping:** rotate the CRS password (it was pasted in chat once). Push `foundation` when ready.
+- **Factory:** API key and `droid` CLI, when we reach that step.
 
 ## How to run
 
 ```
-npx convex dev    # terminal 1: backend (cloud dev deployment)
-npm run dev       # terminal 2: http://localhost:3000
-npm run verify    # all checks
+npx convex dev             # backend (cloud dev deployment)
+npm run dev                # http://localhost:3000
+npm run verify             # all checks
+npm run live:reasoning     # Bitdeer check (spends credits; keep rare)
 ```
 
 Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
@@ -237,3 +147,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Branch `client-view` (off `foundation` `f9bb26a`): customer-only call page `/call`, route-aware banner (`components/SiteBanner.tsx`), `VoiceCall` gains `variant` + lazy case resolver. Committed and pushed to `origin/client-view`; `npm run verify` passes (74 tests, build includes `/call`) |
 | 2026-10-24 | Separate personal Convex dev deployment for `client-view` review (user-created; own keys). `VOICE_TOOL_SECRET` generated and set there; `record_statement` tool registered live on a new, separate Cartesia agent |
 | 2026-10-24 | Merged `client-view` into `foundation` (no conflicts); `npm run verify` passes on the merge (100 tests) |
+| 2026-10-24 | End-of-session refresh before a context reset: status sections rewritten (approve-only automation, Bitdeer live, CRS Fraud Finder, AUTO-1 v2, demo run-through, next steps, known limitations); 122 tests. Revision log unchanged |
