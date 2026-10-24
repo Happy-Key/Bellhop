@@ -1,9 +1,11 @@
 /**
- * Claim suite runner (DEMO / TEST AID, synthetic data only). Plays a demo persona's script
+ * Claim suite runner (DEMO / TEST AID, synthetic data only). Plays a demo persona
  * (lib/fixtures/demoPersonas.ts) as a customer text chat on a new persona case, through exactly the
  * same path as the /call text chat (chat.ts → recordVoiceUtterance → takeTurn), with live Nessie,
- * CRS and, when configured, Bitdeer. `results` then compares each case with the persona's expected
- * outcome (lib/review/suite.ts). Shown on /review/suite.
+ * CRS and Bitdeer. The customer opens with the persona's opening line, then a SIMULATED customer
+ * (lib/providers/customerSimulator.ts) answers whatever the assistant actually asked, from the
+ * persona's sheet. `results` then compares each case with the persona's expected outcome
+ * (lib/review/suite.ts). Shown on /review/suite.
  *
  * Runs are staggered so a whole-suite run doesn't hit the providers all at once. Each run is a new
  * case; earlier runs' cases stay until deleted or the deployment is reset (npm run reset:convex).
@@ -16,6 +18,9 @@ import { createPersonaCase } from "./personas";
 import { sendChatMessage } from "./chat";
 import { caseReasoningEnabled } from "./proposals";
 import { DEMO_PERSONAS, getDemoPersona, personaPurchaseFor } from "../lib/fixtures/demoPersonas";
+import { customerBrief } from "../lib/fixtures/customerSim";
+import { simulateCustomerReply, type SimulatorTurn } from "../lib/providers/customerSimulator";
+import { reasoningEffortFromEnv } from "../lib/providers/reasoning";
 import { suiteVerdict, type SuiteObservation } from "../lib/review/suite";
 import type { AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 
@@ -24,6 +29,9 @@ const STAGGER_MS = 12_000;
 /** How long a run waits for the persona's setup (bank records, CRS checks) before the customer speaks. */
 const SETUP_WAIT_MS = 45_000;
 const SETUP_KINDS = new Set(["persona_setup_done", "integration_error"]);
+/** Most customer replies after the opening, so a conversation that never closes still ends. */
+const MAX_REPLIES = 8;
+const ASKED_BY: Record<string, string> = { model_question: "model", reviewer_question: "reviewer", wrap_up: "wrap-up" };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -50,16 +58,30 @@ export const start = mutation({
 export const runOne = internalAction({
   args: { runId: v.id("suiteRuns") },
   handler: async (ctx, { runId }) => {
-    const say = (role: "customer" | "assistant", text: string) => ctx.runMutation(internal.suite.appendTranscript, { runId, role, text });
+    const say = (role: "customer" | "assistant", text: string, via?: string) => ctx.runMutation(internal.suite.appendTranscript, { runId, role, text, ...(via ? { via } : {}) });
     try {
-      const { caseId, script } = await ctx.runMutation(internal.suite.beginRun, { runId });
+      const { REASONING_BASE_URL, REASONING_API_KEY, REASONING_MODEL } = process.env;
+      if (!REASONING_BASE_URL || !REASONING_API_KEY || !REASONING_MODEL) throw new Error("the simulated customer needs the REASONING_* settings (Bitdeer)");
+      const simulator = {
+        baseUrl: REASONING_BASE_URL,
+        apiKey: REASONING_API_KEY,
+        model: REASONING_MODEL,
+        providerLabel: process.env.REASONING_PROVIDER_LABEL ?? "openai-compatible",
+        reasoningEffort: reasoningEffortFromEnv(process.env.REASONING_EFFORT),
+      };
+      const { caseId, personaId } = await ctx.runMutation(internal.suite.beginRun, { runId });
+      const persona = getDemoPersona(personaId)!;
+      const brief = customerBrief(persona);
       // Like a caller who greets the agent first: give the persona's setup a head start.
       const deadline = Date.now() + SETUP_WAIT_MS;
       while (Date.now() < deadline && !(await ctx.runQuery(internal.suite.setupFinished, { caseId }))) await sleep(1500);
       const chat = await ctx.runMutation(api.chat.startChat, { caseId });
+      const conversation: SimulatorTurn[] = [];
       let questionId: string | null = null;
-      for (const [i, line] of script.entries()) {
-        await say("customer", line);
+      let line = persona.customer.opening;
+      for (let i = 0; i <= MAX_REPLIES; i++) {
+        await say("customer", line, i === 0 ? "opening" : "simulated");
+        conversation.push({ role: "customer", text: line });
         const r = await sendChatMessage(ctx, {
           sessionToken: chat.token,
           text: line,
@@ -67,8 +89,12 @@ export const runOne = internalAction({
           ...(questionId ? { questionId } : {}),
         });
         questionId = r.question_id;
-        if (r.question) await say("assistant", r.question);
+        if (!r.question) break;
+        const kind = r.question_id ? await ctx.runQuery(internal.suite.questionKind, { turnId: r.question_id }) : null;
+        await say("assistant", r.question, r.end_call ? "closing" : kind ? (ASKED_BY[kind] ?? `rules: ${kind}`) : undefined);
+        conversation.push({ role: "assistant", text: r.question });
         if (r.end_call) break;
+        line = await simulateCustomerReply(simulator, { brief, conversation: conversation.slice(0, -1), latest: r.question });
       }
       await ctx.runMutation(internal.suite.finishRun, { runId });
     } catch (e) {
@@ -79,22 +105,31 @@ export const runOne = internalAction({
 
 export const beginRun = internalMutation({
   args: { runId: v.id("suiteRuns") },
-  handler: async (ctx, { runId }): Promise<{ caseId: Id<"cases">; script: string[] }> => {
+  handler: async (ctx, { runId }): Promise<{ caseId: Id<"cases">; personaId: string }> => {
     const run = await ctx.db.get(runId);
     if (!run) throw new Error("suite run not found");
     const persona = getDemoPersona(run.personaId);
     if (!persona) throw new Error(`unknown demo persona ${run.personaId}`);
     const caseId = await createPersonaCase(ctx, persona.id);
     await ctx.db.patch(runId, { status: "running", startedAt: Date.now(), caseId });
-    return { caseId, script: persona.script };
+    return { caseId, personaId: persona.id };
   },
 });
 
 export const appendTranscript = internalMutation({
-  args: { runId: v.id("suiteRuns"), role: v.union(v.literal("customer"), v.literal("assistant")), text: v.string() },
-  handler: async (ctx, { runId, role, text }) => {
+  args: { runId: v.id("suiteRuns"), role: v.union(v.literal("customer"), v.literal("assistant")), text: v.string(), via: v.optional(v.string()) },
+  handler: async (ctx, { runId, role, text, via }) => {
     const run = await ctx.db.get(runId);
-    if (run) await ctx.db.patch(runId, { transcript: [...run.transcript, { role, text, at: Date.now() }] });
+    if (run) await ctx.db.patch(runId, { transcript: [...run.transcript, { role, text, at: Date.now(), ...(via ? { via } : {}) }] });
+  },
+});
+
+/** The kind of question an issued turn was (model_question, reviewer_question, wrap_up, or a rule question kind). */
+export const questionKind = internalQuery({
+  args: { turnId: v.string() },
+  handler: async (ctx, { turnId }) => {
+    const id = ctx.db.normalizeId("intakeTurns", turnId);
+    return id ? ((await ctx.db.get(id))?.kind ?? null) : null;
   },
 });
 

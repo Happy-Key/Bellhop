@@ -67,7 +67,7 @@ export async function sendChatMessage(
   });
   if (!result.ok) throw new Error("This chat has expired. Start a new one.");
   if (result.storedResponse) return { ...result.storedResponse, duplicate: true };
-  return await takeTurn(ctx, result);
+  return await takeTurn(ctx, result, "text");
 }
 
 export type WaitingQuestion = { key: string; text: string; source: "reviewer" | "model" | "rules"; askedAt: number | null };

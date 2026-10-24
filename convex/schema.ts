@@ -131,7 +131,9 @@ export default defineSchema({
     }),
     /** Set when facts change after approval so the policy no longer passes: a person must look. */
     needsReview: v.optional(v.object({ at: v.number(), reason: v.string() })),
-  }).index("by_case", ["caseId"]),
+  })
+    .index("by_case", ["caseId"])
+    .index("by_txn", ["txnRef"]),
 
   /**
    * The reasoning model's assessments of a case: its investigation and proposed next step or
@@ -216,7 +218,8 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),
     caseId: v.optional(v.id("cases")),
-    transcript: v.array(v.object({ role: v.union(v.literal("customer"), v.literal("assistant")), text: v.string(), at: v.number() })),
+    /** `via`: for the customer, "opening" or "simulated"; for the assistant, who chose the question (model, rules: <kind>, reviewer, wrap-up, closing). */
+    transcript: v.array(v.object({ role: v.union(v.literal("customer"), v.literal("assistant")), text: v.string(), at: v.number(), via: v.optional(v.string()) })),
     error: v.optional(v.string()),
   }).index("by_persona", ["personaId"]),
 

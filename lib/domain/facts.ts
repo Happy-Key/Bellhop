@@ -62,13 +62,14 @@ export function aggregateFacts(statements: Statement[]): ClaimFacts {
   // A reply to a question that asks the customer to settle a field, and that gives a value for it,
   // supersedes earlier statements' values for that field (originals preserved):
   //  - "conflict:<field>" and the read-back "confirm:<field>";
-  //  - questions about which payment it was ("tentative:<ref>", "multiple_amounts:<ref>", "no_match"),
+  //  - questions about which payment it was ("tentative:<ref>", "multiple_amounts", "no_match"),
   //    whose replies often restate the amount or date ("yes, the $389 one").
   const CONFLICT_FIELD: Record<string, Field> = { amount: "amounts", date: "dates", authorization: "authorization", credentialSharing: "credentialSharing" };
   const settles = (key: string): Field[] => {
     const m = key.match(/^(?:conflict|confirm):(.+)$/);
     if (m) return CONFLICT_FIELD[m[1]!] ? [CONFLICT_FIELD[m[1]!]!] : [];
-    return /^(?:tentative:|multiple_amounts:|no_match$)/.test(key) ? ["amounts", "dates"] : [];
+    // "multiple_amounts:<ref>" is the older form of the key, kept for stored statements.
+    return /^(?:tentative:|multiple_amounts(?::|$)|no_match$)/.test(key) ? ["amounts", "dates"] : [];
   };
   const provides = (s: Statement, field: Field): boolean => {
     const i = s.interpretation;

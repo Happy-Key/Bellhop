@@ -22,6 +22,11 @@ export function fraudRiskBand(score: number): "low" | "medium" | "high" {
 /** Marker our own SIMULATED payouts carry (convex/payout.ts); they are not refunds. */
 export const PAYOUT_MARKER = "[claim ";
 
+/** A deposit this app made: a SIMULATED payout (convex/payout.ts writes exactly this shape). */
+export function isAppPayout(description: string | null | undefined): boolean {
+  return !!description && description.startsWith("SIMULATED reimbursement for ") && description.includes(PAYOUT_MARKER);
+}
+
 export interface Signal {
   ok: boolean;
   detail: string;
@@ -67,6 +72,30 @@ export function refundSignal(txn: TransactionEvidence, all: TransactionEvidence[
   });
   if (refunds.length === 0) return { ok: true, detail: "No deposit on record that looks like a refund." };
   return { ok: false, detail: `Possible refund already received: ${refunds.map((d) => `${d.date ?? "?"} $${d.amount.toFixed(2)} "${d.description ?? ""}"`).join("; ")}.` };
+}
+
+/** A reimbursement this app already made for a payment, on any case. */
+export interface PriorReimbursement {
+  caseId: string;
+  txnRef: string;
+  amount: number;
+  outcome: string;
+}
+
+/**
+ * Has this payment already been reimbursed, under this or another claim? Two sources: decisions on
+ * record for the same bank transaction (including payouts still pending), and the bank's own
+ * deposits that carry our SIMULATED payout marker for it (which outlive a database reset).
+ */
+export function priorReimbursementSignal(txn: TransactionEvidence, all: TransactionEvidence[], prior: PriorReimbursement[]): Signal {
+  const decisions = prior.filter((p) => p.txnRef === txn.ref);
+  const deposits = all.filter((d) => d.kind === "deposit" && (d.description ?? "").includes(PAYOUT_MARKER) && (d.description ?? "").includes(`reimbursement for ${txn.ref},`));
+  if (decisions.length === 0 && deposits.length === 0) return { ok: true, detail: "No earlier reimbursement of this payment on record." };
+  const parts = [
+    ...decisions.map((d) => `$${d.amount.toFixed(2)} ${d.outcome.replace(/_/g, " ")} on case ${d.caseId}`),
+    ...deposits.map((d) => `SIMULATED deposit of $${d.amount.toFixed(2)} on ${d.date ?? "?"}`),
+  ];
+  return { ok: false, detail: `This payment was already reimbursed: ${parts.join("; ")}. Paying again would pay twice; a person checks.` };
 }
 
 /** Has a CRS identity check run on the claimant, and did it come back clear? */

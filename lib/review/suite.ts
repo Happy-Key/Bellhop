@@ -52,5 +52,11 @@ export function suiteVerdict(expected: PersonaExpectation, disputedKey: string, 
     differences.unshift(`Not comparable: ${o.unreadStatements.map((s) => s.ref).join(", ")} couldn't be read by the model (${o.unreadStatements[0]!.error}).`);
     return { verdict: "incomplete", differences, alsoFailed, modelReasonable };
   }
+  // The scenarios assume a fresh account. An earlier run's payout makes the double-payment guard
+  // (rightly) stop this one, which says nothing about the scenario.
+  if (alsoFailed.includes("not_already_reimbursed")) {
+    differences.unshift("Not comparable: an earlier run already reimbursed this payment, so the double-payment guard stopped it. Reset first: npm run reset:convex -- --confirm.");
+    return { verdict: "incomplete", differences, alsoFailed, modelReasonable };
+  }
   return { verdict: differences.length ? "differs" : "pass", differences, alsoFailed, modelReasonable };
 }

@@ -41,6 +41,13 @@ describe("claim suite verdicts", () => {
     expect(v.differences[0]).toMatch(/S2 couldn't be read/);
   });
 
+  it("marks a rerun on an already-reimbursed account incomplete, pointing to the reset", () => {
+    const margaret = getDemoPersona("margaret")!;
+    const v = suiteVerdict(margaret.expected, margaret.disputedKey, settled({ matchedKey: "games", failingChecks: ["not_already_reimbursed"] }));
+    expect(v.verdict).toBe("incomplete");
+    expect(v.differences[0]).toMatch(/reset:convex/);
+  });
+
   it("expects no single match for a several-payment report, waits while pending, and treats the model as advisory", () => {
     expect(suiteVerdict(elena.expected, elena.disputedKey, settled({ matchedKey: null, failingChecks: [...elena.expected.failingChecks] })).verdict).toBe("pass");
     expect(suiteVerdict(daniel.expected, daniel.disputedKey, settled({ pending: "A statement is still being interpreted." })).verdict).toBe("pending");

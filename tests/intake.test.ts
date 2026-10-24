@@ -62,6 +62,14 @@ describe("answers read against the question asked", () => {
     expect(interpretAnswer("Yes.", initiation)?.state).toBe("unparsed");
   });
 
+  it("a reply that opens with the customer doing it stays theirs, even when it mentions the caller (live 2026-10-24)", () => {
+    const confirm = { key: "confirm:authorization", kind: "initiation", text: "Did you make the $95.00 payment yourself? If someone else made it, please say so." };
+    expect(interpretAnswer("Yes, I did it myself. I bought the gift card because the caller told me to.", confirm)?.derived?.authorization).toBe("authorized");
+    expect(interpretAnswer("I made it myself. The caller told me to.", initiation)?.derived?.authorization).toBe("authorized");
+    expect(interpretAnswer("I made it? No, someone else did.", initiation)?.derived?.authorization).toBe("denies_authorization");
+    expect(interpretAnswer("The caller did it, not me.", initiation)?.derived?.authorization).toBe("denies_authorization");
+  });
+
   it("reads yes/no to a candidate transaction", () => {
     const q = { key: "tentative:T:ccc333", kind: "tentative_match", text: "Is this the payment you mean?" };
     expect(interpretAnswer("Yes, that one", q, "T:ccc333")?.derived).toEqual({ confirmsTxnRef: "T:ccc333" });

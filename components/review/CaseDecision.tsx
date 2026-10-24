@@ -99,7 +99,11 @@ export function DispositionPanel({ caseId, status, analysis, decisions, accepted
       <div className="ws-nextaction">
         <span className="ws-eyebrow">Next</span>
         <p><strong>{status.headline}</strong></p>
-        {status.nextQuestion && <p className="ws-small ws-muted">Chosen by the reasoning model. The voice assistant asks it on the customer&apos;s next call; this prototype sends no outbound messages.</p>}
+        {status.nextQuestion && (
+          <p className="ws-small ws-muted">
+            Chosen by the reasoning model{status.nextQuestionFor ? <> for the work item <strong>{status.nextQuestionFor}</strong></> : null}. The voice assistant asks it on the customer&apos;s next call; this prototype sends no outbound messages.
+          </p>
+        )}
         {!bankOk && <RetrieveButton caseId={caseId} again={!bankNever} primary />}
       </div>
 

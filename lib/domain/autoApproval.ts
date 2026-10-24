@@ -11,16 +11,19 @@
  */
 import type { CaseAnalysis } from "./workflow";
 import type { PaymentOrigin, ProviderEvidence, Statement, TransactionEvidence } from "./schemas";
-import { fraudScoreSignal, identitySignal, merchantHistorySignal, paymentOriginSignal, refundSignal } from "./fraudSignals";
+import { fraudScoreSignal, identitySignal, merchantHistorySignal, paymentOriginSignal, priorReimbursementSignal, refundSignal, type PriorReimbursement } from "./fraudSignals";
 
 /**
  * Version 2 (2026-10-24, user-approved) adds verification against evidence instead of the
  * customer's word: payment origin, merchant history, refunds, a required identity check, and a low
  * Fraud Finder score.
+ * Version 3 (2026-10-24, user-approved) adds the double-payment guard: a payment already reimbursed
+ * under any claim (a decision on record or our SIMULATED payout deposit) is never paid again
+ * automatically.
  */
 export const AUTO_APPROVAL_POLICY = {
   id: "AUTO-1",
-  version: "2026-10-24.2",
+  version: "2026-10-24.3",
   /** Largest claim the app may approve on its own (demo money). */
   maxAmount: 100,
   /** Days from the transaction to the first report. Stricter than Reg E's 60 days from the statement, which comes later. */
@@ -51,12 +54,14 @@ export interface AutoApprovalInput {
   paymentOrigin: PaymentOrigin | null;
   /** Customer's home state, from the bank's customer profile. */
   homeState: string;
+  /** Reimbursements already decided for the same bank transaction on OTHER cases. */
+  priorReimbursements?: PriorReimbursement[];
 }
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const DAY_MS = 86_400_000;
 
-export function evaluateAutoApproval({ analysis, transactions, statements, providerEvidence, paymentOrigin, homeState }: AutoApprovalInput): AutoApprovalEvaluation {
+export function evaluateAutoApproval({ analysis, transactions, statements, providerEvidence, paymentOrigin, homeState, priorReimbursements = [] }: AutoApprovalInput): AutoApprovalEvaluation {
   const { facts, match } = analysis;
   const p = AUTO_APPROVAL_POLICY;
   const txn = match.outcome === "clear" && match.matchedRef ? transactions.find((t) => t.ref === match.matchedRef) ?? null : null;
@@ -125,6 +130,7 @@ export function evaluateAutoApproval({ analysis, transactions, statements, provi
   signal("payment_origin_supports_claim", paymentOriginSignal(origin, homeState));
   signal("no_prior_payments_to_merchant", txn ? merchantHistorySignal(txn, transactions) : { ok: false, detail: "No matched bank record." });
   signal("no_refund_received", txn ? refundSignal(txn, transactions) : { ok: false, detail: "No matched bank record." });
+  signal("not_already_reimbursed", txn ? priorReimbursementSignal(txn, transactions, priorReimbursements) : { ok: false, detail: "No matched bank record." });
   signal("identity_check_clear", identitySignal(providerEvidence));
   signal("fraud_risk_low", fraudScoreSignal(providerEvidence));
 

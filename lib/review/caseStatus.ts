@@ -92,6 +92,8 @@ export interface CaseStatus {
   /** Proposed disposition (approve, deny or escalate). request_information is a next step, not a disposition. */
   disposition: Disposition | null;
   nextQuestion: string | null;
+  /** The work item the model's question advances (its title), so the question can be read against the plan. */
+  nextQuestionFor: string | null;
   outcome: AuthorizedOutcome | null;
   blockers: string[];
 }
@@ -137,6 +139,7 @@ export function caseStatus(i: CaseStatusInput): CaseStatus {
         }
       : null;
   const nextQuestion = p?.decision === "request_information" && a!.current ? p.nextQuestion : null;
+  const nextQuestionFor = nextQuestion ? (p!.investigation.workItems.find((w) => w.key === p!.nextQuestionFor)?.title ?? null) : null;
 
   let attention: CaseAttention;
   let headline: string;
@@ -191,7 +194,7 @@ export function caseStatus(i: CaseStatusInput): CaseStatus {
     : attention === "reviewer" ? "Ready for review"
     : "Investigating";
 
-  return { source, sourceLabel, investigation, work, summary: p?.summary ?? null, attention, headline, statusLabel, disposition, nextQuestion, outcome, blockers };
+  return { source, sourceLabel, investigation, work, summary: p?.summary ?? null, attention, headline, statusLabel, disposition, nextQuestion, nextQuestionFor, outcome, blockers };
 }
 
 function authorizedOutcome(outcomes: OutcomeRow[], a: AssessmentRow | null): AuthorizedOutcome | null {

@@ -220,7 +220,10 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
       const amounts = multiAmount.interpretation!.amounts.map(usd).join(", ");
       // When the records already single out one payment, confirm it instead of asking an open question.
       if (matchedTxn) q("multiple_amounts", `tentative:${matchedTxn.ref}`, `You mentioned more than one amount (${amounts}). Is the payment you're disputing ${describeTxn(matchedTxn)}?`, [multiAmount.ref, matchedTxn.ref]);
-      else q("multiple_amounts", `multiple_amounts:${multiAmount.ref}`, `You mentioned more than one amount (${amounts}). Which single payment are you disputing?`, [multiAmount.ref]);
+      // One stable key, not one per statement: a reply that again names several amounts (a customer
+      // disputing all of them) must count as the same question, so the twice-per-call limit hands it
+      // to a reviewer instead of asking forever (live 2026-10-24: asked five times in a row).
+      else q("multiple_amounts", "multiple_amounts", `You mentioned more than one amount (${amounts}). Which single payment are you disputing?`, [multiAmount.ref]);
     }
 
     if (input.bankFetch.status === "ok") {

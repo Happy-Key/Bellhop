@@ -23,6 +23,13 @@ const MAX_INTERPRETATION_WAIT_MS = 15_000;
  * Stays under the tool's 20 s timeout; the customer has been told to wait.
  */
 const MAX_TOTAL_WAIT_MS = 16_000;
+/**
+ * A text chat has no voice tool timeout and shows "Assistant is typing…", so it waits long enough
+ * for the reasoning model to choose the question (live 2026-10-24: extraction 5–10 s plus a 12–16 s
+ * reassessment usually missed the 16 s voice budget, so chats mostly got the rule questions).
+ */
+const TEXT_INTERPRETATION_WAIT_MS = 30_000;
+const TEXT_MAX_TOTAL_WAIT_MS = 45_000;
 const POLL_MS = 250;
 
 function interpretationWaitMs(): number {
@@ -40,13 +47,17 @@ export interface RecordedTurn {
   statementId?: Id<"statements"> | null;
 }
 
-export async function takeTurn(ctx: Pick<GenericActionCtx<DataModel>, "runQuery" | "runMutation">, result: RecordedTurn): Promise<VoiceToolResponse> {
+export async function takeTurn(
+  ctx: Pick<GenericActionCtx<DataModel>, "runQuery" | "runMutation">,
+  result: RecordedTurn,
+  channel: "voice" | "text" = "voice",
+): Promise<VoiceToolResponse> {
   // Live interpretation runs in the background. Wait for it so the next question reflects what the
   // customer just said; if it still isn't ready, the next question comes from earlier statements.
   let awaiting = result.pending;
   const started = Date.now();
   if (awaiting && result.statementId) {
-    const deadline = started + interpretationWaitMs();
+    const deadline = started + (channel === "text" ? TEXT_INTERPRETATION_WAIT_MS : interpretationWaitMs());
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, POLL_MS));
       const status = await ctx.runQuery(internal.voice.statementStatus, { statementId: result.statementId });
@@ -62,7 +73,7 @@ export async function takeTurn(ctx: Pick<GenericActionCtx<DataModel>, "runQuery"
   // question. The reassessment row is created in the same transaction that stores the
   // interpretation, so "not pending" here means there is nothing to wait for.
   if (!awaiting) {
-    const deadline = started + MAX_TOTAL_WAIT_MS;
+    const deadline = started + (channel === "text" ? TEXT_MAX_TOTAL_WAIT_MS : MAX_TOTAL_WAIT_MS);
     while (Date.now() < deadline && (await ctx.runQuery(internal.voice.assessmentPending, { sessionId: result.sessionId }))) {
       await new Promise((r) => setTimeout(r, POLL_MS));
     }

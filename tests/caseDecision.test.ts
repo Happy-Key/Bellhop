@@ -61,7 +61,24 @@ describe("case decision proposals", () => {
     const { input } = caseInput(["There's a charge from Volt Electronics"]);
     expect(input.caseFacts.openQuestions.some((q) => q.blocking)).toBe(true);
     expect(validateProposal(proposal({ decision: "approve", rationale: [{ point: "x", refs: ["S1"] }] }), input).ok).toBe(false);
-    expect(validateProposal(proposal({ decision: "request_information", rationale: [{ point: "Amount missing.", refs: ["S1"] }], nextQuestion: "How much was the charge?" }), input).ok).toBe(true);
+    const amountWork = { key: "amount", title: "Establishing the amount", doneTitle: null, detail: "", status: "awaiting_customer" as const, outcome: null, refs: [] };
+    const ask = { decision: "request_information" as const, rationale: [{ point: "Amount missing.", refs: ["S1"] }], nextQuestion: "How much was the charge?" };
+    expect(validateProposal(proposal({ ...ask, investigation: { ...EMPTY_INVESTIGATION, workItems: [amountWork] }, nextQuestionFor: "amount" }), input).ok).toBe(true);
+  });
+
+  it("keeps the question tied to the model's own plan: it must advance a work item awaiting the customer", () => {
+    const { input } = caseInput(["There's a charge from Volt Electronics"]);
+    const work = (key: string, status: "awaiting_customer" | "done") => ({ key, title: key, doneTitle: null, detail: "", status, outcome: null, refs: [] });
+    const ask = (workItems: ReturnType<typeof work>[], nextQuestionFor?: string) =>
+      validateProposal(proposal({ decision: "request_information", rationale: [{ point: "Amount missing.", refs: ["S1"] }], nextQuestion: "How much was the charge?", nextQuestionFor, investigation: { ...EMPTY_INVESTIGATION, workItems } }), input);
+    // No work waits on the customer: the question has nothing behind it.
+    expect(ask([work("amount", "done")]).problems).toContain("nextQuestion doesn't advance any work item awaiting the customer");
+    // It names finished work.
+    expect(ask([work("amount", "done"), work("who", "awaiting_customer")], "amount").problems[0]).toMatch(/for work item amount, which isn't awaiting the customer \(done\)/);
+    // It names nothing: linked to the item that waits on the customer, with a note.
+    const linked = ask([work("who", "awaiting_customer")]);
+    expect(linked.ok && linked.proposal.nextQuestionFor).toBe("who");
+    expect(linked.problems).toContain("nextQuestion linked to work item who (the model didn't name one)");
   });
 
   it("acts automatically only where no person is needed", () => {

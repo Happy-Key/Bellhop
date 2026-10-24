@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { analyzeCase, type CaseAnalysis } from "@/lib/domain/workflow";
 import { evaluateAutoApproval } from "@/lib/domain/autoApproval";
-import { FRAUD_FINDER_PRODUCT, IDENTITY_PRODUCT } from "@/lib/domain/fraudSignals";
+import { FRAUD_FINDER_PRODUCT, IDENTITY_PRODUCT, isAppPayout } from "@/lib/domain/fraudSignals";
 import { getCrsPersona } from "@/lib/fixtures/crsPersonas";
-import { DEMO_PERSONAS, getDemoPersona, personaPurchaseFor, type DemoPersona } from "@/lib/fixtures/demoPersonas";
+import { DEMO_PERSONAS, getDemoPersona, personaPurchaseFor, seedDifferences, type DemoPersona } from "@/lib/fixtures/demoPersonas";
 import type { ProviderEvidence, Statement, TransactionEvidence } from "@/lib/domain/schemas";
 import { NOW, replyTo, resetStatements, stmt, txn } from "./helpers/build";
+import { answerRuleQuestion } from "@/lib/fixtures/customerSim";
 
 const DAY = 86_400_000;
 const ok = { status: "ok", at: NOW, count: 0 } as const;
@@ -33,15 +34,26 @@ function crsEvidence(crsId: string): ProviderEvidence[] {
   return [row(IDENTITY_PRODUCT, "verification_messages", issues.length ? "issues returned" : "none returned", "result"), ...issues, row(FRAUD_FINDER_PRODUCT, "risk_score", score, "ff-score")];
 }
 
-/** Plays the persona's script: the first line opens the call, each later line answers the question the backend asks next. */
+/**
+ * Plays the persona's conversation: the customer opens, then answers whichever question the rules
+ * actually ask next, from the persona's sheet (lib/fixtures/customerSim.ts). As on a call, a question
+ * is asked at most twice. A question the sheet can't answer fails the test.
+ */
 function playScript(p: DemoPersona) {
   const transactions = ledger(p);
   const providerEvidence = crsEvidence(p.crsPersonaId);
-  const statements: Statement[] = [];
+  const statements: Statement[] = [stmt(p.customer.opening)];
   const analyze = (): CaseAnalysis => analyzeCase({ statements, transactions, providerEvidence, bankFetch: { ...ok, count: transactions.length } });
-  for (const [i, line] of p.script.entries()) {
-    const next = analyze().questions.find((q) => q.audience === "customer");
-    statements.push(stmt(line, i === 0 ? {} : { replyTo: replyTo(next) }));
+  const asked = new Map<string, number>();
+  const transcript: string[] = [`Customer: ${p.customer.opening}`];
+  for (let turn = 0; turn < 10; turn++) {
+    const next = analyze().questions.find((q) => q.audience === "customer" && (asked.get(q.key) ?? 0) < 2);
+    if (!next) break;
+    asked.set(next.key, (asked.get(next.key) ?? 0) + 1);
+    const answer = answerRuleQuestion(p, next);
+    if (answer === null) throw new Error(`${p.id} has no answer for ${next.kind} (${next.key}): "${next.text}"`);
+    transcript.push(`Assistant: ${next.text}`, `Customer: ${answer}`);
+    statements.push(stmt(answer, { replyTo: replyTo(next) }));
   }
   const analysis = analyze();
   const matched = analysis.match.matchedRef ? transactions.find((t) => t.ref === analysis.match.matchedRef && t.kind === "purchase") : undefined;
@@ -54,7 +66,7 @@ function playScript(p: DemoPersona) {
     paymentOrigin: matched && purchase ? { txnRef: matched.ref, ...purchase.origin, synthetic: true } : null,
     homeState: p.home.state,
   });
-  return { analysis, evaluation, purchase, failed: evaluation.checks.filter((c) => !c.passed).map((c) => c.id) };
+  return { analysis, evaluation, purchase, transcript, failed: evaluation.checks.filter((c) => !c.passed).map((c) => c.id) };
 }
 
 describe("demo personas (SYNTHETIC)", () => {
@@ -79,10 +91,16 @@ describe("demo personas (SYNTHETIC)", () => {
 
   // Every persona, core and suite: the script ends with exactly the expected AUTO-1 result.
   it.each(DEMO_PERSONAS.map((p) => [p.id, p] as const))("%s: ends with the expected AUTO-1 result", (_id, p) => {
-    const { evaluation, failed, purchase } = playScript(p);
+    const { evaluation, failed, purchase, transcript } = playScript(p);
+    if (process.env.SHOW_TRANSCRIPTS) console.log(`--- ${p.id}\n${transcript.join("\n")}\nfailed: ${failed.join(", ")}`);
     expect(purchase?.key, "matched record").toBe(p.expected.match === "none" ? undefined : p.disputedKey);
     expect(failed).toEqual(p.expected.failingChecks);
     expect(evaluation.eligible).toBe(p.expected.route === "auto_approve");
+  });
+
+  it("Elena: a customer disputing several payments is asked which one at most twice, however often she names them all", () => {
+    const { transcript } = playScript(getDemoPersona("elena")!);
+    expect(transcript.filter((l) => l.includes("Which single payment")).length).toBeLessThanOrEqual(2);
   });
 
   it("Margaret: the script ends in an automatic approval of the disputed $58", () => {
@@ -114,5 +132,31 @@ describe("demo personas (SYNTHETIC)", () => {
     expect(analysis.recommendation.action).toBe("escalate");
     expect(evaluation.eligible).toBe(false);
     expect(analysis.questions.filter((q) => q.audience === "customer")).toEqual([]);
+  });
+});
+
+describe("persona accounts against their seeds (reset)", () => {
+  const tomas = getDemoPersona("tomas")!;
+  const seeded = [
+    ...tomas.purchases.map((x) => ({ kind: "purchase", merchantName: x.merchant, amount: x.amount, description: x.description })),
+    ...(tomas.deposits ?? []).map((d) => ({ kind: "deposit", merchantName: null, amount: d.amount, description: d.description })),
+  ];
+
+  it("an account exactly as seeded has no differences", () => {
+    expect(seedDifferences(tomas, seeded)).toEqual([]);
+  });
+
+  it("names a leftover payout, a missing purchase, and a duplicate", () => {
+    const payout = { kind: "deposit", merchantName: null, amount: 87, description: "SIMULATED reimbursement for T:x, auto-approved under AUTO-1 [claim k1]" };
+    expect(seedDifferences(tomas, [...seeded, payout])).toEqual(["extra deposit SIMULATED reimbursement for T:x, auto-approved under AUTO-1 [claim k1] $87"]);
+    expect(seedDifferences(tomas, seeded.slice(1))[0]).toMatch(/^missing purchase FCI Demo Pike Place Produce \$31/);
+    expect(seedDifferences(tomas, [...seeded, seeded[0]!])).toContain("duplicate purchases");
+  });
+
+  it("recognizes only this app's payouts as deletable", () => {
+    expect(isAppPayout("SIMULATED reimbursement for T:abc, auto-approved under AUTO-1@2026-10-24.3 [claim kd7]")).toBe(true);
+    expect(isAppPayout("Refund from FCI Demo SkyHop Air")).toBe(false);
+    expect(isAppPayout("SIMULATED reimbursement for T:abc")).toBe(false);
+    expect(isAppPayout(null)).toBe(false);
   });
 });

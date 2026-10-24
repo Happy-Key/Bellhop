@@ -54,8 +54,9 @@ export function ClaimSuite() {
         <div>
           <h1>Claim suite</h1>
           <p className="ws-muted">
-            {rows.length} SYNTHETIC personas, each with a script and the outcome it should reach. A run plays the script as a customer text chat on
-            a new case, through the same path as <Link href="/call">the customer line</Link>, with live Nessie, CRS and (when configured) Bitdeer.
+            {rows.length} SYNTHETIC personas, each with an answer sheet and the outcome it should reach. A run opens a customer text chat on a new
+            case, through the same path as <Link href="/call">the customer line</Link>: the persona opens, then a simulated customer (Bitdeer, playing
+            the persona) answers whatever the assistant actually asks, using only the sheet. Or play the customer yourself.
           </p>
         </div>
         <div className="cs-actions">
@@ -65,7 +66,7 @@ export function ClaimSuite() {
         </div>
       </header>
       <p className="ws-small ws-muted">
-        Each run opens a new case and makes live provider calls (Nessie, CRS, and one Bitdeer call per statement plus a reassessment per case
+        Each run opens a new case and makes live provider calls (Nessie, CRS, and Bitdeer: one call per statement, one per simulated customer reply, and a reassessment per case
         change). To start from an empty database: <code>npm run reset:convex -- --confirm</code>.
       </p>
       {message && <p className="cs-message" role="status">{message}</p>}
@@ -172,6 +173,7 @@ function SuiteRow({ row: r, busy, expanded, onToggle, onRun }: { row: Row; busy:
       <td className="cs-row-actions">
         <button type="button" className="ws-btn" disabled={busy || running} onClick={onRun}>{r.run ? "Run again" : "Run"}</button>
         {r.run?.caseId && !r.run.caseDeleted && <Link className="ws-btn" href={`/review/${r.run.caseId}`}>Open case</Link>}
+        <Link className="ws-btn" href={`/call?persona=${r.persona.id}&channel=text`} title="Be the customer yourself: opens the customer chat with this persona and its answer sheet">Play it yourself</Link>
       </td>
     </tr>
   );
@@ -214,7 +216,11 @@ function SuiteDetail({ row: r }: { row: Row }) {
           <ol className="cs-transcript">
             {r.run.transcript.map((m, i) => (
               <li key={i} className={m.role === "customer" ? "cs-customer" : "cs-assistant"}>
-                <span className="ws-small ws-muted">{m.role === "customer" ? "Customer" : "Assistant"}</span> {m.text}
+                <span className="ws-small ws-muted">
+                  {m.role === "customer" ? "Customer" : "Assistant"}
+                  {m.via ? ` (${m.via})` : ""}
+                </span>{" "}
+                {m.text}
               </li>
             ))}
           </ol>

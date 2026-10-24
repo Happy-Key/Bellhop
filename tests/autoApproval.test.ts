@@ -14,6 +14,7 @@ const CLEAN_CRS = [crs(IDENTITY_PRODUCT, "verification_messages", "none returned
 
 interface Over {
   transactions?: TransactionEvidence[];
+  prior?: { caseId: string; txnRef: string; amount: number; outcome: string }[];
   providerEvidence?: ProviderEvidence[];
   origin?: PaymentOriginPreset | null;
 }
@@ -23,7 +24,7 @@ const evaluate = (statements: Statement[], over: Over = {}) => {
   const preset = over.origin === undefined ? "new_device_far_away" : over.origin;
   const paymentOrigin: PaymentOrigin | null =
     preset && analysis.match.matchedRef ? { txnRef: analysis.match.matchedRef, ...PAYMENT_ORIGIN_PRESETS[preset].origin, synthetic: true } : null;
-  return evaluateAutoApproval({ analysis, transactions: input.transactions, statements, providerEvidence: input.providerEvidence, paymentOrigin, homeState: "CA" });
+  return evaluateAutoApproval({ analysis, transactions: input.transactions, statements, providerEvidence: input.providerEvidence, paymentOrigin, homeState: "CA", priorReimbursements: over.prior ?? [] });
 };
 const failed = (e: ReturnType<typeof evaluate>) => e.checks.filter((c) => !c.passed).map((c) => c.id);
 const CLAIM = "I did not make the $23 purchase at Corner Grocer. I never shared my card or codes.";
@@ -34,8 +35,21 @@ describe("automatic approval policy (approve-only)", () => {
   it("approves a clear, small, unauthorized debit reported in time, once the evidence backs it", () => {
     const e = evaluate([stmt(CLAIM)]);
     expect(failed(e)).toEqual([]);
-    expect(e).toMatchObject({ eligible: true, txnRef: "T:eee555", amount: 23, policy: "AUTO-1@2026-10-24.2" });
-    expect(e.checks).toHaveLength(14);
+    expect(e).toMatchObject({ eligible: true, txnRef: "T:eee555", amount: 23, policy: "AUTO-1@2026-10-24.3" });
+    expect(e.checks).toHaveLength(15);
+  });
+
+  it("never pays the same payment twice: an approval on another case, or our SIMULATED deposit for it, sends the claim to a person", () => {
+    const onOtherCase = evaluate([stmt(CLAIM)], { prior: [{ caseId: "case-a", txnRef: "T:eee555", amount: 23, outcome: "auto_approved" }] });
+    expect(failed(onOtherCase)).toEqual(["not_already_reimbursed"]);
+    expect(onOtherCase.checks.find((c) => c.id === "not_already_reimbursed")?.detail).toMatch(/already reimbursed: \$23\.00 auto approved on case case-a/);
+    resetStatements();
+    // An approval for a different payment doesn't count.
+    expect(failed(evaluate([stmt(CLAIM)], { prior: [{ caseId: "case-a", txnRef: "T:aaa111", amount: 64, outcome: "auto_approved" }] }))).toEqual([]);
+    resetStatements();
+    // After a database reset only the bank's record is left: our payout deposit for this payment.
+    const payout: TransactionEvidence = { ...txn("dep-1", 23, "2026-10-23", ""), kind: "deposit", merchantId: null, merchantName: null, description: "SIMULATED reimbursement for T:eee555, auto-approved under AUTO-1@2026-10-24.2 [claim k123]" };
+    expect(failed(evaluate([stmt(CLAIM)], { transactions: [...LEDGER, payout] }))).toEqual(["not_already_reimbursed"]);
   });
 
   it("sends anything over the $100 limit to a person", () => {

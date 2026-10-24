@@ -20,7 +20,8 @@ import { openReviewerQuestions } from "./reviewerQuestions";
 import type { AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 import type { CaseAnalysis } from "../lib/domain/workflow";
 import { readStoredAnalysis } from "../lib/domain/triage";
-import { loadCaseInput, logActivity, reasoningConfig, toDomainProviderEvidence, toDomainStatement, toDomainTransaction } from "./model";
+import { loadCaseInput, logActivity, reasoningConfig, reimbursementsElsewhere, toDomainProviderEvidence, toDomainStatement, toDomainTransaction } from "./model";
+import { priorReimbursementSignal } from "../lib/domain/fraudSignals";
 
 /** Case reasoning runs when live reasoning is configured, unless CASE_REASONING=off. */
 export function caseReasoningEnabled(): boolean {
@@ -180,8 +181,12 @@ export const resolve = mutation({
     if (accept && p.plan.kind === "needs_person_to_approve") {
       if (existing.length) throw new Error("this case already has an approval");
       const ref = cur.analysis.match.matchedRef;
-      const t = ref ? (await loadCaseInput(ctx, p.caseId)).transactions.find((x) => x.ref === ref) : undefined;
+      const { transactions } = await loadCaseInput(ctx, p.caseId);
+      const t = ref ? transactions.find((x) => x.ref === ref) : undefined;
       if (!ref || !t) throw new Error("no matched bank record to approve");
+      // Double-payment guard (user-approved 2026-10-24): a person can't pay a payment that was already reimbursed either.
+      const paid = priorReimbursementSignal(toDomainTransaction(t), transactions.map(toDomainTransaction), await reimbursementsElsewhere(ctx, p.caseId, ref));
+      if (!paid.ok) throw new Error(paid.detail);
       const evaluation = (cur.c.autoApproval ?? null) as AutoApprovalEvaluation | null;
       decisionId = await ctx.db.insert("reimbursementDecisions", {
         caseId: p.caseId,

@@ -41,6 +41,8 @@ export const CaseProposalOutput = z.object({
   /** The model's current investigation of the case (lib/domain/investigation.ts). */
   investigation: InvestigationOutput,
   nextQuestion: text(300).nullable(),
+  /** The key of the awaiting_customer work item the question advances, so question and plan agree. */
+  nextQuestionFor: z.string().nullable().optional(),
   documents: z
     .array(z.object({ kind: z.enum(["investigation_summary", "customer_letter", "information_request"]), text: text(3000).pipe(z.string().min(1)) }))
     .max(3),
@@ -181,9 +183,21 @@ export function validateProposal(p: CaseProposal, input: CaseReasoningInput): Va
     fatal.push(`${p.decision} while the model itself lists a blocking uncertainty`);
   }
   if (p.decision === "request_information" && !p.nextQuestion) fatal.push("request_information needs a nextQuestion");
+  // The question must advance the model's own plan: a work item waiting on the customer.
+  let nextQuestionFor = p.nextQuestionFor;
+  if (p.nextQuestion) {
+    const awaiting = p.investigation.workItems.filter((w) => w.status === "awaiting_customer");
+    const linked = p.investigation.workItems.find((w) => w.key === nextQuestionFor);
+    if (awaiting.length === 0) fatal.push("nextQuestion doesn't advance any work item awaiting the customer");
+    else if (linked && linked.status !== "awaiting_customer") fatal.push(`nextQuestion is for work item ${linked.key}, which isn't awaiting the customer (${linked.status})`);
+    else if (!linked) {
+      nextQuestionFor = awaiting[0]!.key;
+      problems.push(`nextQuestion linked to work item ${nextQuestionFor} (the model ${p.nextQuestionFor ? `named unknown item ${p.nextQuestionFor}` : "didn't name one"})`);
+    }
+  }
   if (fatal.length) return { ok: false, problems: [...fatal, ...problems] };
   const inv = validateInvestigation(p.investigation, input.citableRefs, input.referenceRules.index.map((r) => r.id));
-  return { ok: true, proposal: { ...p, rationale, legalBasis, investigation: inv.investigation }, problems: [...problems, ...inv.problems] };
+  return { ok: true, proposal: { ...p, rationale, legalBasis, investigation: inv.investigation, nextQuestionFor: p.nextQuestion ? nextQuestionFor : null }, problems: [...problems, ...inv.problems] };
 }
 
 /**

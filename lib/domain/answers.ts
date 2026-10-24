@@ -18,6 +18,12 @@ const OTHER_PERSON = /\b(?:someone\s+else|somebody\s+else|they\s+did|he\s+did|sh
 const CUSTOMER =
   /^\s*(?:yes,?\s+)?(?:me|myself|it\s+was\s+me|i\s+did(?!\s*n))\b|\bi\s+(?:sent|entered|made|typed|pressed|did)\s+(?:it|that|them|the\s+(?:payment|transfer)|it\s+myself)\b|\bi\s+(?:personally|myself)\b|\bit\s+was\s+me\b/i;
 
+// A reply that opens by saying the customer did it ("Yes, I did it myself. ... because the caller told
+// me to") is about the customer, even when it goes on to mention the caller (live 2026-10-24: read as
+// "someone else", which raised a false contradiction and a repeated question).
+const LEADS_WITH_SELF = /^\s*(?:(?:yes|yeah|yep),?\s+)?(?:me|myself|it\s+was\s+me|i\s+did(?!\s*n)|i\s+(?:made|sent|paid|bought|ordered|entered|typed))\b/i;
+const SOMEONE_ELSE = /\b(?:someone|somebody)\s+else\b/i;
+
 // "I don't recognize it" / "No, I've never shopped there" reply to "did you make it yourself?" with a denial.
 const NOT_RECOGNIZED = /\b(?:do\s*n[o']?t|did\s*n[o']?t|dont|didnt)\s+recogni[sz]e\b|\bnever\s+(?:seen|heard\s+of|shopped|been|bought|used|made|sent)\b|^\s*(?:no|nope|nah|never)\b/i;
 
@@ -39,6 +45,7 @@ export function interpretAnswer(text: string, asked: AskedQuestion | undefined, 
   const kind = asked.key === "conflict:authorization" ? "initiation" : asked.key === "conflict:credentialSharing" ? "credential_sharing" : asked.kind;
   switch (kind) {
     case "initiation": {
+      if (LEADS_WITH_SELF.test(text) && !SOMEONE_ELSE.test(text)) return { ...base, state: "answered", derived: { authorization: "authorized" } };
       // "someone else" is checked first: "not me" contains "me".
       if (OTHER_PERSON.test(text)) return { ...base, state: "answered", derived: { authorization: "denies_authorization" } };
       if (CUSTOMER.test(text)) return { ...base, state: "answered", derived: { authorization: "authorized" } };

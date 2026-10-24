@@ -10,6 +10,7 @@ import { interpretStatementScripted, looksLikeCorrection } from "../lib/domain/i
 import { interpretAnswer, relatedRefFromKey } from "../lib/domain/answers";
 import { redactSensitive } from "../lib/domain/redact";
 import { evaluateAutoApproval, type AutoApprovalEvaluation } from "../lib/domain/autoApproval";
+import type { PriorReimbursement } from "../lib/domain/fraudSignals";
 import { DEMO_CUSTOMER } from "../lib/fixtures/demo";
 import { maybeRequestProposal } from "./proposals";
 import { getDemoPersona } from "../lib/fixtures/demoPersonas";
@@ -109,6 +110,7 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
       : null,
     // The bank's customer profile: the demo persona's, or the synthetic demo customer's.
     homeState: getDemoPersona(c.demoPersonaId)?.home.state ?? DEMO_CUSTOMER.address.state,
+    priorReimbursements: matched ? await reimbursementsElsewhere(ctx, caseId, matched.ref) : [],
   });
   await ctx.db.patch(caseId, { analysis: JSON.parse(JSON.stringify(stored)), analysisVersion: c.analysisVersion + 1, autoApproval: evaluation });
   if (analysis.rejectedFindings.length > 0) {
@@ -117,6 +119,12 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
   await applyAutoApproval(ctx, caseId, evaluation, statements.some((s) => s.interpretationStatus === "pending"));
   // The reasoning model reassesses the case whenever its state changes (live mode only).
   await maybeRequestProposal(ctx, caseId);
+}
+
+/** Reimbursement decisions for the same bank transaction on other cases (the double-payment guard). */
+export async function reimbursementsElsewhere(ctx: QueryCtx, caseId: Id<"cases">, txnRef: string): Promise<PriorReimbursement[]> {
+  const rows = await ctx.db.query("reimbursementDecisions").withIndex("by_txn", (q) => q.eq("txnRef", txnRef)).collect();
+  return rows.filter((d) => d.caseId !== caseId).map((d) => ({ caseId: d.caseId, txnRef: d.txnRef, amount: d.amount, outcome: d.outcome }));
 }
 
 /**

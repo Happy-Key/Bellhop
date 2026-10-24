@@ -14,23 +14,36 @@
  * The call can instead continue an EXISTING case (DEMO ONLY: any case can be picked, since there are
  * no customer logins), so the customer can call back with more information after a review.
  */
-import { useCallback, useState } from "react";
+import { Suspense, useCallback, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { VoiceCall } from "@/components/VoiceCall";
 import { TextChat } from "@/components/TextChat";
 import { DEMO_PERSONAS, getDemoPersona } from "@/lib/fixtures/demoPersonas";
+import { customerSheet } from "@/lib/fixtures/customerSim";
 
 export default function CustomerCallPage() {
+  // useSearchParams needs a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <CustomerCall />
+    </Suspense>
+  );
+}
+
+function CustomerCall() {
+  // "Play it yourself" on the claim suite links here with ?persona=<id>&channel=text.
+  const search = useSearchParams();
   const createPlain = useMutation(api.cases.createSynthetic);
   const createForPersona = useMutation(api.personas.createForPersona);
   const cases = useQuery(api.cases.list);
-  const [personaId, setPersonaId] = useState<string | null>(null);
+  const [personaId, setPersonaId] = useState<string | null>(() => getDemoPersona(search.get("persona"))?.id ?? null);
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [existingId, setExistingId] = useState<Id<"cases"> | null>(null);
   const [inCall, setInCall] = useState(false);
-  const [channel, setChannel] = useState<"voice" | "text">("voice");
+  const [channel, setChannel] = useState<"voice" | "text">(() => (search.get("channel") === "text" ? "text" : "voice"));
   const persona = getDemoPersona(personaId);
   // A case deleted from the developer tab drops out of the list, and out of the selection.
   const existing = cases?.find((c) => c._id === existingId) ?? null;
@@ -157,13 +170,21 @@ export default function CustomerCallPage() {
                   </tbody>
                 </table>
                 <p>
-                  <strong>Suggested lines</strong> (answer the assistant&apos;s questions in between):
+                  <strong>Open with:</strong> &ldquo;{persona.customer.opening}&rdquo;
                 </p>
-                <ol>
-                  {persona.script.map((line) => (
-                    <li key={line}>&ldquo;{line}&rdquo;</li>
+                <p>
+                  <strong>Then answer what the assistant actually asks</strong>, in your own words:
+                </p>
+                <ul>
+                  {customerSheet(persona).map((x) => (
+                    <li key={x.when}>
+                      <em>{x.when}:</em> &ldquo;{x.say}&rdquo;
+                    </li>
                   ))}
-                </ol>
+                  {(persona.customer.facts ?? []).map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
               </details>
             ) : (
               <p className="muted">With no persona, records are retrieved and CRS checks run by hand on the case page.</p>
