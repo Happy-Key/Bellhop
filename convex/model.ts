@@ -27,6 +27,8 @@ export function reasoningConfig(): ReasoningConfig {
 }
 
 export async function logActivity(ctx: MutationCtx, caseId: Id<"cases">, actor: string, kind: string, message: string) {
+  // A case removed while work for it was in flight (cases.remove) gets no orphaned log rows.
+  if (!(await ctx.db.get(caseId))) return;
   await ctx.db.insert("activity", { caseId, at: Date.now(), actor, kind, message: message.slice(0, 1000) });
 }
 

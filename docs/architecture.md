@@ -82,6 +82,12 @@ Rejected findings are shown in the UI and logged.
   the same live calls as the case-page buttons). The persona's SYNTHETIC payment-origin records
   attach when records are stored, and never overwrite one already set. Cases opened without a
   persona get no automatic setup.
+- **Removing a case (developer tool):** `cases.remove` deletes the case row first, then every row
+  holding its `caseId` (every such table has a `by_case` index), in batches with a scheduled
+  follow-up. Late writes from in-flight work can't leave orphans: `logActivity` skips a missing
+  case and other writes fail on it and roll back. Payment-origin records (keyed by Nessie
+  transaction) and anything in Nessie stay. `/call` may continue any existing case (DEMO ONLY:
+  there are no customer logins yet).
 - Voice tool calls are tied to a case through a backend-issued voice session (30-minute TTL).
   The browser binds Cartesia's `call_id` to the session once (`voice.bindVoiceCall`: one call per
   session, one session per call). The tool sends that ID from `system__conversation_id`, and is

@@ -41,3 +41,8 @@ button { font: inherit; padding: 4px 10px; margin: 4px 4px 4px 0; }
 .persona-notes ol { margin: 4px 0; padding-left: 20px; }
 .persona-ledger { margin: 6px 0; font-size: 13px; }
 .persona-disputed td { font-weight: 600; }
+button.danger { color: #c62828; border: 1px solid #c6282866; background: transparent; border-radius: 4px; cursor: pointer; }
+button.danger:disabled { opacity: 0.6; cursor: progress; }
+.persona-modes { margin-bottom: 8px; }
+.callback-picker select { max-width: 100%; font: inherit; padding: 4px; }
+.callback-picker p { margin: 6px 0 0; }

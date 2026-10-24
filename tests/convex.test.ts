@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
 import schema from "../convex/schema";
 import { api, internal } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import { AWAITING_PROMPT } from "../lib/domain/voiceTurn";
 
 const modules = import.meta.glob("../convex/**/*.*s");
@@ -465,5 +466,91 @@ describe("demo personas (SYNTHETIC)", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+const newTest = () => convexTest(schema, modules);
+type TestConvex = ReturnType<typeof newTest>;
+
+describe("removing a case", () => {
+  const TABLES = ["statements", "transactions", "providerEvidence", "activity", "processedEvents", "reimbursementDecisions", "caseProposals", "intakeTurns", "voiceSessions"] as const;
+
+  /** A case with a row in every table that holds case data, through the real entry points where they exist. */
+  async function populatedCase(t: TestConvex) {
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(api.cases.submitStatement, { caseId, text: "I did not make the $23 purchase", clientEventId: "evt-rm-0001" });
+    await t.mutation(internal.cases.storeTransactions, {
+      caseId,
+      transactions: [{ ref: "T:rm-1", externalId: "rm-1", provider: "nessie", kind: "purchase", amount: 23, date: "2026-10-22", description: null, merchantId: "m", merchantName: "Shop", status: "completed", medium: "balance" }],
+      warnings: [],
+    });
+    await t.mutation(internal.crsData.storeIdentityEvidence, { caseId, personaId: "P01", rows: [{ ref: "X:crs:P01:k:result", provider: "crs", product: "transunion-identity-manager-basic", field: "verification_messages", value: "none returned", syntheticAssociation: true }] });
+    await t.mutation(api.voice.createVoiceSession, { caseId });
+    await t.run(async (ctx) => {
+      const session = (await ctx.db.query("voiceSessions").withIndex("by_case", (q) => q.eq("caseId", caseId)).first())!;
+      await ctx.db.insert("intakeTurns", { caseId, sessionId: session._id, questionKey: "initiation", kind: "initiation", text: "q", issuedAt: 1, analysisVersion: 1 });
+      await ctx.db.insert("reimbursementDecisions", { caseId, txnRef: "T:rm-1", amount: 23, policy: "AUTO-1@test", outcome: "auto_approved", checks: [], decidedAt: 1, payout: { simulated: true, status: "pending" } });
+      await ctx.db.insert("caseProposals", { caseId, signature: "s", status: "pending", trigger: "manual", input: {}, requestedAt: 1 });
+      await ctx.db.insert("paymentOrigins", { txnExternalId: "rm-1", channel: "online_banking", device: "new_device", twoFactor: "not_used", city: "X", state: "TX", synthetic: true, preset: "new_device_far_away", setAt: 1 });
+    });
+    return caseId;
+  }
+  const countRows = (t: TestConvex, caseId: Id<"cases">) =>
+    t.run(async (ctx) => Object.fromEntries(await Promise.all(TABLES.map(async (table) => [table, (await ctx.db.query(table).withIndex("by_case", (q) => q.eq("caseId", caseId)).collect()).length] as const))));
+
+  it("deletes the case and every row recorded for it, leaves other cases alone, and keeps payment-origin records", async () => {
+    const t = newTest();
+    const doomed = await populatedCase(t);
+    const kept = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(api.cases.submitStatement, { caseId: kept, text: "Another claim", clientEventId: "evt-rm-0002" });
+    expect(Object.values(await countRows(t, doomed)).every((n) => n > 0)).toBe(true);
+
+    expect(await t.mutation(api.cases.remove, { caseId: doomed })).toEqual({ removed: true });
+    expect(await countRows(t, doomed)).toEqual(Object.fromEntries(TABLES.map((x) => [x, 0])));
+    expect(await t.query(api.cases.view, { caseId: doomed })).toBeNull();
+    expect((await t.query(api.cases.list, {})).map((c) => c._id)).toEqual([kept]);
+    expect((await t.query(api.cases.view, { caseId: kept }))?.statements).toHaveLength(1);
+    // Origins belong to the Nessie transaction, which later cases reuse.
+    expect(await t.run((ctx) => ctx.db.query("paymentOrigins").withIndex("by_txn", (q) => q.eq("txnExternalId", "rm-1")).unique())).not.toBeNull();
+    // Removing again is a no-op.
+    expect(await t.mutation(api.cases.remove, { caseId: doomed })).toEqual({ removed: false });
+  });
+
+  it("work still in flight for a removed case writes nothing", async () => {
+    const t = newTest();
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(api.cases.remove, { caseId });
+    await t.mutation(internal.crsData.recordCrsError, { caseId, error: "late" });
+    await t.mutation(internal.personas.logSetup, { caseId, kind: "persona_setup_done", message: "late" });
+    await expect(t.mutation(internal.cases.storeTransactions, { caseId, transactions: [], warnings: [] })).rejects.toThrow();
+    await expect(t.mutation(api.cases.submitStatement, { caseId, text: "late", clientEventId: "evt-rm-0003" })).rejects.toThrow(/case not found/);
+    await expect(t.mutation(api.voice.createVoiceSession, { caseId })).rejects.toThrow(/case not found/);
+    expect(Object.values(await countRows(t, caseId)).every((n) => n === 0)).toBe(true);
+  });
+
+  it("finishes a large case in scheduled batches", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = newTest();
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      await t.run(async (ctx) => {
+        for (let i = 0; i < 1200; i++) await ctx.db.insert("activity", { caseId, at: i, actor: "test", kind: "note", message: "x" });
+      });
+      await t.mutation(api.cases.remove, { caseId });
+      expect((await countRows(t, caseId)).activity).toBeGreaterThan(0);
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect((await countRows(t, caseId)).activity).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lists what the call page needs to pick a case to call back about", async () => {
+    const t = newTest();
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(api.cases.submitStatement, { caseId, text: "There's a charge I don't recognize", clientEventId: "evt-rm-0004" });
+    const [row] = await t.query(api.cases.list, {});
+    expect(row).toMatchObject({ _id: caseId, demoPersonaId: null, customerLabel: expect.stringMatching(/synthetic/i), stage: expect.any(String) });
+    expect(typeof row!.openCustomerQuestions).toBe("number");
   });
 });
