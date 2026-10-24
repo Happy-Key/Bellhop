@@ -79,7 +79,9 @@ http.route({
         await new Promise((r) => setTimeout(r, POLL_MS));
         const status = await ctx.runQuery(internal.voice.statementStatus, { statementId: result.statementId });
         if (status !== "pending") {
-          awaiting = status !== "done";
+          // A failed interpretation (e.g. provider out of credits) must not stall the call: it is
+          // shown on the case, and the conversation continues with the next question.
+          awaiting = false;
           break;
         }
       }

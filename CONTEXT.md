@@ -31,7 +31,7 @@ Rules that always hold:
 | Backend (Convex) | ✅ Cloud dev deployment linked (team `maximo-zhang`, project `calhacks`) |
 | Bank records (Capital One Nessie) | ✅ **Live**: synthetic demo account seeded (5 purchases); retrieval verified |
 | Identity evidence (CRS sandbox) | ✅ **Live**: TransUnion identity check on test personas; verified with P12 (3 issues) and P01 (clean) |
-| Reasoning | ⚠️ **Scripted mode** (deterministic, labelled). Live model provider built but not configured |
+| Reasoning | ✅ **Live: Bitdeer `zai-org/GLM-5.3-Flash`** on the dev deployment (2026-10-24). ⚠️ Credits not approved ($0.00); may be refused at any time. Rule-based answer reader runs alongside |
 | Voice (Cartesia) | ✅ **Live**: browser call from the case page works end to end (2026-10-24). The call is linked to the case by call ID; statements are recorded through the `record_statement` webhook tool; End call works. Quality issues are open (see below). Agent balance about $0.86 |
 | Regulatory considerations | ✅ Curated official sources (Reg E and CFPB), scenario-scoped, no deadline math. 3 excerpts need word-for-word verification |
 | Developer agent (Factory Droid) | ❌ Not started |
@@ -140,10 +140,11 @@ Rules that always hold:
    - **Still to do:** the welcome message and the rest of the Playground instructions. Lower the
      inactivity timeout. Add a login or rate limit before sharing the app URL (starting a call is
      public and billed).
-2. **Live extraction through Bitdeer: PAUSED (2026-10-24, by the user).** Code and docs are ready but
-   nothing is configured; Convex stays in scripted mode. To resume: claim the credits and create a key. Run `npm run live:reasoning`
-   to pick a model and check latency. Then set the `REASONING_*` Convex env vars (steps in
-   `docs/integrations.md`).
+2. **Live extraction through Bitdeer: ON for the dev deployment (2026-10-24).** Model `zai-org/GLM-5.3-Flash`;
+   verified end to end with a text statement. **Credits are not approved yet ($0.00 balance) but requests
+   still succeed, so Bitdeer may refuse at any moment.** Keep live calls to a minimum; refusals show on the case.
+   Next: one voice call with Bitdeer on, then tune `VOICE_INTERPRETATION_WAIT_MS` (typical 4–8 s vs the 4.5 s wait).
+   Measurements and switch-off command: `docs/integrations.md`.
 3. **Simulated reimbursement.** A Nessie deposit labelled SIMULATED, with explicit human
    approval and protection against running twice.
 4. **Factory Droid loop.**
@@ -161,9 +162,11 @@ Rules that always hold:
   - Cases can hold several payments; labelled deadline estimates and both screens are allowed.
   - Credit cards get full support. Demo login now, bank SSO later. Keep the 3-minute cap.
   - Calls are transcribed only, with consent and an AI notice on every call. Extraction uses Bitdeer.
-- **Bitdeer (paused):** when resuming, claim the credits, create a key at
-  https://www.bitdeer.ai/en/model/apikeys, then follow "How to turn it on" in `docs/integrations.md`.
-  - Still for you: check Cartesia's retention settings so audio isn't kept.
+- **Bitdeer credits:** waiting on manual approval of the CalHacks credits.
+- **Demo plan (decided 2026-10-24):** a prepared bank record plus a matching script. The customer is framed
+  as already logged in to their bank, which is why we already hold their records. So **don't** pull bank
+  records automatically when a call starts.
+- **Cartesia:** check the retention settings so audio isn't kept.
 - **Voice fixes go-live:** run `npx convex dev` (pushes the new schema and functions to cloud dev),
   then `npx convex run voiceSetup:registerVoiceTool`, then paste the updated agent instructions from
   `docs/integrations.md` into the Playground.
@@ -209,6 +212,7 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | First live voice test passed (Playground → webhook tool → Convex → dashboard). Found `end_call` not enabled; usage recorded |
 | 2026-10-24 | Committed and pushed tool registration (`ed41f61`). Browser call client built: `components/VoiceCall.tsx` + `lib/voice/`, 9 new tests; not run live |
 | 2026-10-24 | Live browser call failed: `dynamic_variables_not_allowed` for browser tokens. Switched to binding by call ID (`bindVoiceCall`, tool sends `system__conversation_id`); 74 tests pass; tool needs re-registering |
+| 2026-10-24 | **Bitdeer integration resumed and enabled on dev.** Key works ($0.00 balance; credits pending, so requests may start failing). Compared 4 models; chose `zai-org/GLM-5.3-Flash` (4–8 s typical). Prompt fixes: extract only from the current statement, short labels, "bank" isn't a merchant, being asked isn't sharing. Over-long labels are shortened, not rejected. Provider errors keep their reason. A failed interpretation no longer stalls a voice call. Code pushed to dev (`convex dev --once`), `REASONING_*` env set, verified end to end. User declined auto-retrieval of bank records (demo plan) |
 | 2026-10-24 | Diagnosed the "first statement not saved" report from the activity log and Convex logs. Call 1 (case `…8gxj8w`, 14:34Z) was bound, but **no tool request ever reached the backend**: the display crash unmounted `VoiceCall`, whose cleanup hung up before the agent saved anything. Call 2 (case `…8gxfs6`) saved S1 normally. Added `CallDisplayBoundary` so a display error can't end a call again. Also found: `/call` cases never retrieve bank records (stage stays `retrieve_evidence`); S1 "I do not believe I authorized it" was read as `authorized` by the scripted extractor, so the agent asked the scam follow-up (pinned for Bitdeer) |
 | 2026-10-24 | Live test after Convex push: browser errors on the customer call view ("useEffect must not return anything…", then "destroy is not a function" ×2). Cause: the transcript auto-scroll effect in `components/VoiceCall.tsx` returned `scrollIntoView()`'s value (a Promise in current browsers). Fixed with a block body; verify passes |
 | 2026-10-24 | Pulled merged `foundation` (`ff904d8`, includes `client-view`); handoff commit rebased on top. `npm run verify` passes on the merged tree (100 tests; build includes `/call`). Local `.env.local` targets `dev:dynamic-chihuahua-120` |

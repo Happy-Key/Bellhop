@@ -98,6 +98,22 @@ describe("OpenAI-compatible reasoning provider (mocked)", () => {
     await expect(provider("{}", 429).interpret(ctx)).rejects.toMatchObject({ kind: "http", httpStatus: 429 });
   });
 
+  it("keeps the provider's reason (e.g. out of credits) and never the key", async () => {
+    const p = new OpenAICompatibleReasoningProvider({ baseUrl: "https://example.invalid/v1", apiKey: "sekrit-key-123", model: "m", providerLabel: "bitdeer" }, async () =>
+      new Response(JSON.stringify({ error: { message: "Insufficient balance for key sekrit-key-123" } }), { status: 402 }));
+    const err = (await p.interpret(ctx).catch((e: unknown) => e)) as Error;
+    expect(err).toMatchObject({ kind: "http", httpStatus: 402 });
+    expect(err.message).toContain("Insufficient balance");
+    expect(err.message).not.toContain("sekrit-key-123");
+  });
+
+  it("shortens over-long labels instead of rejecting the whole output, but still rejects bad values", async () => {
+    const out = { amounts: [5], dates: [], merchantTerms: [], authorization: "denies_authorization", credentialSharing: "unspecified", scamIndicators: ["x".repeat(120)], findings: [], followUpQuestion: null };
+    const r = await provider(JSON.stringify(out)).interpret(ctx);
+    expect(r.interpretation.scamIndicators[0]).toHaveLength(80);
+    await expect(provider(JSON.stringify({ ...out, authorization: "approved" })).interpret(ctx)).rejects.toMatchObject({ kind: "malformed_response" });
+  });
+
   it("sends the question being answered so short replies can be read, with bearer auth", async () => {
     let sent: { url: string; auth: string | null; body: { messages: { content: string }[] } } | null = null;
     const out = { amounts: [], dates: [], merchantTerms: [], authorization: "authorized", credentialSharing: "unspecified", scamIndicators: [], findings: [], followUpQuestion: null };

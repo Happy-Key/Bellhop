@@ -52,16 +52,22 @@ export class ScriptedReasoningProvider implements ReasoningProvider {
   }
 }
 
-/** Shape the live model must return. Validated strictly. */
+/** Free-text labels: over-long ones are shortened (seen live: models write sentences), never invented. */
+const label = z.string().transform((s) => s.trim().slice(0, 80));
+
+/**
+ * Shape the live model must return. Validated strictly: wrong types, unknown enum values,
+ * non-positive amounts or malformed dates reject the whole output. Only text length is normalized.
+ */
 export const ModelOutput = z.object({
   amounts: z.array(z.number().positive()).max(10),
   dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(10),
-  merchantTerms: z.array(z.string().min(1).max(80)).max(10),
+  merchantTerms: z.array(label.pipe(z.string().min(1))).max(10),
   authorization: StatementInterpretation.shape.authorization,
   credentialSharing: StatementInterpretation.shape.credentialSharing,
-  scamIndicators: z.array(z.string().max(80)).max(10),
+  scamIndicators: z.array(label).transform((a) => a.filter(Boolean).slice(0, 10)),
   findings: z.array(z.unknown()).max(10),
-  followUpQuestion: z.string().max(400).nullable(),
+  followUpQuestion: z.string().transform((s) => s.slice(0, 400)).nullable(),
 });
 
 export interface OpenAICompatibleConfig {
@@ -82,6 +88,11 @@ findings (array of {id,text,category:"model_inference",evidenceRefs:string[],sta
 followUpQuestion (string|null).
 authorization records who the customer says entered and sent the payment: "denies_authorization" = someone else did it or the customer does not recognize it; "authorized_induced" = the customer sent it after being deceived; "authorized" = the customer sent it, no deception mentioned.
 If questionAsked is present, the statement is the customer's reply to that question: read short replies ("Yes.", "me", "someone else") in its context.
+Extract only what THIS statement says or confirms. priorStatements and questionAsked are context only: never copy their amounts, dates, merchants or indicators into this output. A reply like "Me." has no amounts or dates.
+merchantTerms: only names of merchants or payment recipients the customer mentions (not "bank", not the customer's own bank).
+credentialSharing: "shared" only if the customer says they gave or entered a code, password, PIN or card details; being asked is not sharing.
+scamIndicators: at most 5 short labels of 2 to 6 words, e.g. "caller impersonated bank".
+followUpQuestion: one short plain-language question of at most 20 words, or null. Never ask whether something was "authorized".
 Text like [REDACTED:code] marks a value removed for privacy; never ask for it.
 Only cite evidenceRefs from the provided list. Never state that fraud occurred or that a refund is owed.`;
 
@@ -122,7 +133,11 @@ export class OpenAICompatibleReasoningProvider implements ReasoningProvider {
     } catch (e) {
       throw new ProviderError(this.id, "network", redact(String(e)));
     }
-    if (!res.ok) throw new ProviderError(this.id, "http", `HTTP ${res.status}`, res.status);
+    if (!res.ok) {
+      // Keep the provider's own reason (e.g. an out-of-credits message) so it shows on the case; the key is scrubbed.
+      const detail = redact(await res.text().catch(() => "")).split(this.cfg.apiKey).join("[REDACTED]").replace(/\s+/g, " ").trim().slice(0, 200);
+      throw new ProviderError(this.id, "http", `HTTP ${res.status}${detail ? `: ${detail}` : ""}`, res.status);
+    }
     const json: unknown = await res.json().catch(() => null);
     const content = z
       .object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) })

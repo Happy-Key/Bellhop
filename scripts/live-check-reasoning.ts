@@ -19,6 +19,8 @@ const SAMPLES = [
     questionAsked: null,
   },
   { statement: "Me.", questionAsked: "Did you personally enter and send this payment, or did someone else do that?" },
+  // The scripted extractor read this as "authorized" on the live test of 2026-10-24.
+  { statement: "An unknown transaction for 5 dollars appeared in my account. I do not believe I authorized it.", questionAsked: null },
 ];
 
 async function main() {

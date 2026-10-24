@@ -63,6 +63,26 @@ Claude Code is the development assistant only. **The app does not use the Anthro
 4. Convex env: `npx convex env set REASONING_PROVIDER openai-compatible`, plus `REASONING_PROVIDER_LABEL bitdeer`, `REASONING_BASE_URL https://api-inference.bitdeer.ai/v1` and `REASONING_MODEL <id>`. Then `npx convex env set REASONING_API_KEY <key>` (type it in your terminal; never paste it in chat).
 5. Record a statement on a synthetic case. It shows "pending", then "model: bitdeer:<model>", or a visible failure with Retry.
 
+**Live results (2026-10-24, synthetic statements, our full prompt):**
+- **Credits:** the CalHacks credits are not approved yet and the balance shows **$0.00**, but requests still succeed. **Bitdeer may start refusing at any moment.** Keep live requests to a minimum. A refusal now shows the provider's own reason on the case (`interpretation failed: HTTP 4xx: …`). On voice, a failed interpretation doesn't stall the call; the next question is still asked.
+- **Models available to our key:** DeepSeek-V4.1-Flash, DeepSeek-V4-Flash, GLM-5.3, GLM-5.3-Flash, Qwen3.8-27B (plus embedding, reranker and image models).
+
+  | Model | Time per statement | Notes |
+  |---|---|---|
+  | **`zai-org/GLM-5.3-Flash` (chosen)** | 4–8 s typical, one 24 s outlier | Correct on all three samples after the prompt fixes |
+  | `deepseek-ai/DeepSeek-V4.1-Flash` | 11–13 s; one 30 s timeout | Correct, but too slow for voice |
+  | `deepseek-ai/DeepSeek-V4-Flash` | 7–22 s; one timeout | Called "bank" a merchant; assumed a code was shared |
+  | `Qwen/Qwen3.8-27B` | ~22 s; one timeout | Too slow |
+
+- A minimal request takes **under 1 s** (about 50 output tokens, 45 of them `reasoning_tokens`; the response has a `reasoning_content` field). Our time goes into the long prompt and output.
+- **Prompt fixes found by testing:**
+  - Extract only what *this* statement says (models copied amounts and dates from earlier statements into "Me.").
+  - Short labels: models wrote sentences, so over-long labels are now shortened to 80 characters instead of the whole output being rejected.
+  - "Bank" is not a merchant; being asked for a code is not sharing it.
+- **End-to-end on dev (2026-10-24):** "An unknown transaction for 5 dollars appeared in my account. I do not believe I authorized it." was read as `denies_authorization`; the next question was `credentials`. The scripted extractor had read the same sentence as `authorized`.
+- **Voice:** typical times are above the 4.5 s `VOICE_INTERPRETATION_WAIT_MS`. So after a long narrative the agent usually says "anything else you'd like to add?" and the result applies on the next turn. Short answers are read instantly by the rule-based answer reader. Raise the wait (the tool timeout is 15 s) if that sounds unnatural.
+- **Dev deployment configured:** `REASONING_PROVIDER=openai-compatible`, `REASONING_PROVIDER_LABEL=bitdeer`, `REASONING_BASE_URL`, `REASONING_MODEL=zai-org/GLM-5.3-Flash`, `REASONING_API_KEY` (set from `.env.local`). To go back to scripted: `npx convex env set REASONING_PROVIDER scripted`.
+
 **Data note:** with live extraction on, statement text leaves our backend for Bitdeer. That is fine for synthetic data. Real customer data would need the bank's vendor review and a data agreement.
 
 ## Cartesia (voice)
