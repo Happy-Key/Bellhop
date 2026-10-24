@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (merged the text-chat, reviewer-question and auto-approval-category work into the Bellhop UI)_
+_Last updated: 2026-10-24 (Bellhop checked out on the second machine; claim-suite work parked on local branch `claim-suite`)_
 
 ## What this is
 
@@ -142,6 +142,8 @@ Rules that always hold:
 
 ## Waiting on the user
 
+- **Claim-suite work (parked, not pushed):** local branch `claim-suite` (`ad7a191`, 4 commits on `5097cd3`) holds the 17-persona suite, `/review/suite` runner, `npm run reset:convex`, the AUTO-1 v3 double-payment guard, `REASONING_EFFORT`, and several bug fixes. Porting notes: `docs/claim-suite-experiment.md` on that branch. Decide whether to push the branch and/or port it onto Bellhop.
+
 - **Cartesia Playground (by hand), if not done yet:** paste the agent instructions from `docs/integrations.md`;
   enable **end_call** (description in the doc, pre-tool speech Off); set the **inactivity check-in to 20 s**.
   Also check the retention settings so audio isn't kept.
@@ -249,3 +251,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Page titles enlarged, bolder (800) and set in Title Case on request: "Claims Queue" (32 px), the case name (30 px), "Developer Tools", "Demo Bank Fraud Support" (20 px), the demo beat titles and "A Person Decides."; e2e expectations updated |
 | 2026-10-24 | Demo ending changed on request: the workspace finale is gone; past the last beat a short exit runway (IntersectionObserver) or the next key press routes to `/call`, the hint reads "Scroll to the customer line". `DemoStory.tsx` no longer builds a workspace; `pitchWorkspaceData()` and `onDemoAction` remain for the demo-mode workspace components. Demo e2e test rewritten |
 | 2026-10-24 | Committed and pushed the hierarchy pass, dark rail, page bar, Title Case titles, demo ending and Bellhop mark cleanup on `foundation` (`npm run verify` passed first: 218 tests) |
+| 2026-10-24 | On the second machine: fetched the Bellhop push (`ebe589b`). Local `foundation` had 4 unpushed claim-suite commits; they were moved to a new local branch `claim-suite` (`ad7a191`), the personal review deployment `friendly-grouse-183` was emptied with that branch's reset (its schema had a `suiteRuns` table Bellhop lacks), and local `foundation` was reset to `origin/foundation`. Bellhop deployed to `friendly-grouse-183`; `npm run verify` passes (218 tests); `/review`, `/review/demo` and `/call` render |
