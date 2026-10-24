@@ -52,9 +52,10 @@ Rules that always hold:
 
 ## Branch and git
 
-- Branch `foundation`. Local `foundation` = `origin/foundation` (personas, case control, promo note, legislative pack)
-  merged with the investigation-restructure commit `1c38656`. **Not pushed** (see `git log origin/foundation..foundation`).
-  Push only when the user asks.
+- Branch `foundation`, **pushed** to `origin/foundation` at `3018d2f` (investigation restructure, the merge of the
+  persona/case-control work, and the reference registry). Push only when the user asks.
+- The main dev deployment `dynamic-chihuahua-120` gets this code only when the machine running its watchers pulls
+  `foundation` (or someone runs `npx convex dev --once` against it).
 - `legislative-reference/` (research pack: Overview.md and the rule-registry CSV) is committed (user approved, 2026-10-24).
 - Commit as `maximozhang <145702814+maximozhang@users.noreply.github.com>`.
 
@@ -148,7 +149,7 @@ Rules that always hold:
 
 - **Cartesia:** paste the updated agent instructions; check the retention settings so audio isn't kept;
   lower the inactivity timeout. Balance about $0.86 before the promo code.
-- **Housekeeping:** rotate the CRS password (it was pasted in chat once). Push `foundation` when ready.
+- **Housekeeping:** rotate the CRS password (it was pasted in chat once).
 - **Factory:** API key and `droid` CLI, when we reach that step.
 
 ## How to run
@@ -217,3 +218,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | **The model's investigation drives the workflow** (user's restructuring brief). New `lib/domain/investigation.ts`: the model's findings (reported/corroborated), hypotheses, uncertainties, work items and change notes, with validation (unknown refs dropped, uncorroborated findings downgraded, all listed), a code-computed diff, and a labelled rule-based fallback. Case reasoning now runs on every case-state change (not only at decision points) and gets the previous assessment; `missingInformation` replaced by `investigation`; `caseProposals.changeLog` added (optional field). Voice asks the model's question first, waiting up to 12 s total; rule question is the logged fallback. New `lib/review/caseStatus.ts` (who acts, headline, disposition, authorized outcome). Workspace rebuilt conclusion-first with a collapsed decision record; queue regrouped (reviewer / customer / investigating / no report / decided). Pitch demo shows the planned work changing. Removed NextSteps, ReviewControls and the case brief. Docs: CLAUDE.md, architecture, integrations. 180 tests pass. Not run against live Bitdeer |
 | 2026-10-24 | Committed the pitch demo and investigation restructure (`1c38656`) and merged `origin/foundation` (personas, case control, promo, legislative pack). Only conflict: this file, consolidated (remote facts kept: first live deposit, personas, promo, watchers, legislative pack committed; duplicate intake-questions log row removed). 191 tests pass on the merge. Not pushed |
 | 2026-10-24 | **Legislative reference pack wired into the model** (user: use it as data/reference for what each fraud category needs). It was already committed (came in with the `origin/foundation` merge; not gitignored). New `lib/domain/ruleRegistry.ts` (CSV parser, claim-lean selection), generated `ruleRegistryData.ts` (`npm run build:rules`, drift test). Case reasoning input gets `referenceRules` (index of 31 case rules + detail for the lean: unknown 15, unauthorized 22, scam 16; wires/checks/brokerage index-only; ~20–25 KB); the prompt says reference only, never evidence or deadlines; model returns `investigation.rulesConsulted`, unknown IDs dropped; shown in the decision record. Fact IDs F01–F42 undefined in the repo (asked the user). 4 new tests, 195 pass. Not run live |
+| 2026-10-24 | Pushed `foundation` to `origin` (`4b10dcd..3018d2f`): pitch demo, model-driven investigation, the `origin/foundation` merge and the reference registry. Not deployed to the main dev deployment from here |
