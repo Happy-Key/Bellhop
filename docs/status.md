@@ -30,7 +30,7 @@ Legend: [x] done and tested · [~] implemented, not yet verified live · [ ] not
 - [x] Sensitive values removed before storage; evidence history kept (superseded, not deleted)
 - [ ] Re-register the tool and paste the updated agent instructions (`docs/integrations.md`), then test live
 - [ ] Claim-intake redesign (`docs/claim-intake-design.md`): waiting on decisions
-- [x] Live extraction via Bitdeer (`zai-org/GLM-5.3-Flash`), enabled on the dev deployment and verified end to end with a text statement (2026-10-24). Credits not approved yet ($0.00 balance); Bitdeer may refuse at any time
+- [x] Live extraction via Bitdeer (`zai-org/GLM-5.3-Flash`), enabled on the dev deployment and verified end to end with a text statement (2026-10-24). CalHacks promo active (2026-10-24); the $0.00 balance Bitdeer shows is a display bug
 - [ ] Voice call with Bitdeer on: tune `VOICE_INTERPRETATION_WAIT_MS`
 
 ## Phase 4: CRS evidence

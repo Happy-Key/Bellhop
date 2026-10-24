@@ -35,9 +35,10 @@ Rules that always hold:
 | Area | State |
 |---|---|
 | Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call` (with a **demo persona picker**), **bank claims workstation `/review`** (queue + investigation workspace) and **synthetic guided-intake demo `/review/demo`** (merged from `bank-dashboard` 2026-10-24). The workstation does not yet show AUTO-1 results or payouts; use the case page for those |
-| Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. **Latest code is deployed**, including the uncommitted demo personas (pushed with `npx convex dev --once`). Env `NESSIE_PERSONA_ACCOUNTS` set |
+| Case control | ✅ **Delete** on the developer tab `/` (`cases.remove`: the case and every row recorded for it, batched for big cases; payment origins and Nessie records stay; late writes from in-flight work are dropped). **Call back** on `/call`: "An existing case" continues any case (DEMO ONLY, no logins) |
+| Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. ⚠️ **Two `npx convex dev` watchers are running** on the dev machine and push every saved change, so dev tracks the working copy (including uncommitted work), not a chosen commit. With `REASONING_PROVIDER=openai-compatible` and `CASE_REASONING` unset, **Bitdeer whole-case decisions are ON on dev**. Env `NESSIE_PERSONA_ACCOUNTS` set |
 | Bank records (Nessie) | ✅ Live: purchases **and deposits** (deposits drive the refund check; never matched as the disputed payment) |
-| Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ⚠️ **Credits not approved ($0.00 balance); may be refused at any moment.** Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
+| Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ✅ **CalHacks promo active** (2026-10-24, per user); the $0.00 balance shown is a Bitdeer display bug. Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
 | Voice (Cartesia) | ✅ Live: one question per turn (`question_id`), **tailored to what AUTO-1 needs** (mostly a yes or no about one named bank record); waits up to 8 s for extraction; at most one "anything else?" in a row; a display error can't end a call |
 | CRS | ✅ Identity check and **Fraud Finder** live (persona bodies only; Fraud Finder verified on P01, score 11) |
 | Case decisions (Bitdeer) | 🟡 **Built, mock-tested, not run live** (committed on `foundation`): the model proposes approve / deny / request information / escalate with cited reasons, a legal reading and draft letters. Info requests and escalations are automatic; approvals pay out automatically only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Validated before use. Off switch: `CASE_REASONING=off`. The personal review deployment has no Bitdeer key (scripted) |
@@ -46,7 +47,7 @@ Rules that always hold:
 | Demo personas | ✅ `/call` picker: Margaret (P01, auto-approve), Grace (P19, own device → person), Victor (P12, identity fail → person), Samuel (P16, scam → specialist). Each has its own seeded Nessie account; its case sets itself up. Margaret verified live end to end. Committed and pushed (rebased onto `936dea4`) |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
 | Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify` (personas rebased onto the case-decision commits): typecheck, lint, **170 tests**, build pass |
+| Checks | ✅ `npm run verify`: typecheck, lint, **174 tests**, build pass |
 
 ## Branch and git
 
@@ -112,7 +113,7 @@ Rules that always hold:
 - The voice agent asks the model's question when the rules have nothing to ask (same 2-per-call limit).
 - Route wording in `workflow.ts` / `triage.ts` updated (no rule changes). Stored analyses keep the old text until their next recompute.
 - To try it live: on a deployment with the Bitdeer env vars (shared dev has them), finish a case to a decision point or press
-  "Ask the model now". Bitdeer credits were $0.00 and unapproved at last check.
+  "Ask the model now". The Bitdeer promo is active (its $0.00 balance display is a bug).
 
 ## Known limitations
 
@@ -124,7 +125,8 @@ Rules that always hold:
 
 ## Waiting on the user
 
-- **Bitdeer credits:** manual CalHacks approval pending.
+- **Dev watchers / case reasoning:** decide whether to stop the `npx convex dev` watchers (dev then stays on a chosen commit) and whether case reasoning (`CASE_REASONING`) should stay on for dev.
+
 - **Cartesia:** paste the updated agent instructions; check the retention settings so audio isn't kept;
   lower the inactivity timeout. Balance about $0.86 before the promo code.
 - **Housekeeping:** rotate the CRS password (it was pasted in chat once). Push `foundation` when ready.
@@ -136,7 +138,7 @@ Rules that always hold:
 npx convex dev             # backend (cloud dev deployment)
 npm run dev                # http://localhost:3000
 npm run verify             # all checks
-npm run live:reasoning     # Bitdeer check (spends credits; keep rare)
+npm run live:reasoning     # Bitdeer check (live; promo credits)
 ```
 
 Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
@@ -191,3 +193,5 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Pushed `foundation` `c858e1b` (tailored questions plus the `bank-dashboard` workstation) to the main dev deployment `dynamic-chihuahua-120` with `npx convex dev --once`; `review:queue` is registered there |
 | 2026-10-24 | **Demo personas on `/call`** (user decisions: full automatic setup for personas, none without one; four scenarios; seeding approved). `lib/fixtures/demoPersonas.ts` (Margaret/P01, Grace/P19, Victor/P12, Samuel/P16, each with merchants, purchases, per-purchase SYNTHETIC origins, expected outcome and script); `convex/personas.ts` (`createForPersona`: the backend maps persona → account via `NESSIE_PERSONA_ACCOUNTS`, never from the client; origins attached on retrieval without overwriting); `convex/personaSetup.ts` (retrieve → CRS identity → Fraud Finder); the Nessie and CRS action bodies became shared helpers; `cases.demoPersonaId`; persona home state used for AUTO-1; `/call` picker with presenter notes, locked during a call; `npm run seed:personas` (shared seed helpers). Seeded all four in the Nessie sandbox (read-back verified), set the env var, deployed. **Live check (Margaret, by text):** setup 3 records + 3 origins + CRS clean + score 11; Bitdeer read S1 correctly but tagged it as a scam indicator; after the credentials line, all 14 checks passed and **the first live SIMULATED deposit** went through ($58). 159 tests pass (7 new). Not committed |
 | 2026-10-24 | User couldn't click other personas on `/call`. Not reproduced: in headless Chrome the picker switches personas, and it unlocks after a failed call start; likely a stale tab, a Next.js error overlay, or the deliberate lock during a call. Removed the CRS-persona import from `lib/fixtures/demoPersonas.ts` so the browser bundle no longer carries CRS test identity bodies (check kept in `tests/personas.test.ts`); redeployed |
+| 2026-10-24 | **Case control.** Developer tab `/` gets a Delete button per case (confirm dialog). `cases.remove` deletes the case row first, then every row with its `caseId` in statements, transactions, providerEvidence, activity, processedEvents, reimbursementDecisions, caseProposals, intakeTurns and voiceSessions (new `by_case` indexes on the last three), 500 per table per mutation, continuing in `cases.purgeRemainingRows`. Payment origins (keyed by Nessie transaction) and Nessie records (including SIMULATED deposits) stay. `logActivity` skips a removed case, and other late writes fail and roll back, so in-flight work leaves no orphans. `/call` gets "A new report" / "An existing case": pick any case (persona, time, stage, questions waiting) and the call continues it; `cases.list` returns persona, recommendation and open customer questions. 4 new Convex tests; checked in headless Chrome against dev (create → delete; callback picker). Found two running `npx convex dev` watchers auto-pushing to dev (so this work is already on dev) and Bitdeer case reasoning ON there; left both alone per the user. 174 tests pass. Not committed |
+| 2026-10-24 | **Bitdeer promo active** (user): the $0.00 balance on Bitdeer's dashboard is a display bug, not missing credits. Status rows and "waiting on the user" updated |
