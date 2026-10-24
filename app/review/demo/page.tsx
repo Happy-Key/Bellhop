@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { PitchDemo } from "@/components/review/PitchDemo";
+import { DemoStory } from "@/components/demo/DemoStory";
 
 export const metadata: Metadata = {
-  title: "Demo (synthetic) · Claims workstation",
-  description: "Scripted replay: a customer's account of a payment becomes an evidence-backed proposed outcome that a person authorizes. Nothing is saved.",
+  title: "Bellhop · Demo",
+  description: "One claim, from the customer's call to a person's decision. Scripted replay on synthetic data.",
 };
 
 export default function DemoPage() {
-  return <PitchDemo />;
+  return <DemoStory />;
 }

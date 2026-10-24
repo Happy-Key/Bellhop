@@ -449,7 +449,8 @@ describe("demo personas (SYNTHETIC)", () => {
       await expect(t.mutation(api.personas.createForPersona, { personaId: "nobody" })).rejects.toThrow(/unknown demo persona/);
       const caseId = await t.mutation(api.personas.createForPersona, { personaId: "margaret" });
       const view = await t.query(api.cases.view, { caseId });
-      expect(view?.case).toMatchObject({ nessieAccountId: "acct-margaret", crsPersonaId: "P01", demoPersonaId: "margaret", bankFetch: { status: "never" } });
+      expect(view?.case).toMatchObject({ nessieAccountBound: true, crsPersonaId: "P01", demoPersonaId: "margaret", bankFetch: { status: "never" } });
+      expect(view?.case).not.toHaveProperty("nessieAccountId");
       expect(view?.case.customerLabel).toMatch(/Margaret Okafor \(SYNTHETIC demo persona/);
       expect(view?.activity.some((a) => a.kind === "case_created" && /Expected outcome/.test(a.message))).toBe(true);
     } finally {

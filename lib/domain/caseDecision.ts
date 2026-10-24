@@ -16,7 +16,7 @@
  */
 import { z } from "zod";
 import type { AutoApprovalEvaluation } from "./autoApproval";
-import { InvestigationOutput, validateInvestigation, type Investigation } from "./investigation";
+import { EMPTY_INVESTIGATION, InvestigationOutput, validateInvestigation, type Investigation } from "./investigation";
 import { REGULATORY_SOURCES } from "./regulatory";
 import { referenceRulesFor, type ClaimLean } from "./ruleRegistry";
 import { evidenceKindOf, type ProviderEvidence, type Statement, type TransactionEvidence } from "./schemas";
@@ -26,11 +26,13 @@ export const PROPOSED_DECISIONS = ["approve", "deny", "request_information", "es
 export type ProposedDecision = (typeof PROPOSED_DECISIONS)[number];
 
 const text = (max: number) => z.string().transform((s) => s.trim().slice(0, max));
+/** Like text(), but a cut is visible: a summary is read as prose, so it must not end mid-sentence without a sign. */
+const prose = (max: number) => z.string().transform((s) => (s.trim().length > max ? `${s.trim().slice(0, max - 1).trimEnd()}…` : s.trim()));
 
 /** What the model must return. Strict on structure; long text is shortened, never invented. */
 export const CaseProposalOutput = z.object({
   decision: z.enum(PROPOSED_DECISIONS),
-  summary: text(600).pipe(z.string().min(1)),
+  summary: prose(600).pipe(z.string().min(1)),
   rationale: z
     .array(z.object({ point: text(400).pipe(z.string().min(1)), refs: z.array(z.string()).max(10) }))
     .min(1)
@@ -90,8 +92,16 @@ export interface CaseReasoningInput {
   citableRefs: string[];
   /** Research reference (legislative-reference/ rule registry) for deciding what information is needed. Not citable as evidence. */
   referenceRules: ReturnType<typeof referenceRulesFor>;
+  /** Instructions from the bank's own reviewer: work they sent the case back for, or a question they want asked. Part of the case state (and the signature). */
+  reviewerRequests: ReviewerRequest[];
   /** The previous assessment, so the model revises it rather than starting over. Not part of the signature. */
   previous: { decision: string; investigation: Investigation } | null;
+}
+
+export interface ReviewerRequest {
+  at: string;
+  kind: "return" | "override";
+  text: string;
 }
 
 export function buildCaseReasoningInput(a: {
@@ -101,6 +111,7 @@ export function buildCaseReasoningInput(a: {
   providerEvidence: ProviderEvidence[];
   autoApproval: AutoApprovalEvaluation | null;
   previous?: { decision: string; investigation: Investigation } | null;
+  reviewerRequests?: ReviewerRequest[];
 }): CaseReasoningInput {
   const { analysis } = a;
   const refs = [...a.statements.map((s) => s.ref), ...a.transactions.map((t) => t.ref), ...a.providerEvidence.map((p) => p.ref), ...REGULATORY_SOURCES.map((s) => s.ref)];
@@ -123,7 +134,32 @@ export function buildCaseReasoningInput(a: {
     legalSources: REGULATORY_SOURCES.map((s) => ({ ref: s.ref, kind: s.kind, citation: s.citation, excerpt: s.excerpt, applicability: s.applicability })),
     citableRefs: refs,
     referenceRules: referenceRulesFor(claimLean(analysis)),
+    reviewerRequests: a.reviewerRequests ?? [],
     previous: a.previous ?? null,
+  };
+}
+
+/**
+ * Reads a proposal as stored on a caseProposals row. Rows written before the investigation format
+ * (2026-10-24) have no `investigation`; they are returned with an empty one and `legacy: true`, so
+ * readers show the rule-based fallback for their work rather than crashing (seen live on FC-8GW9M3).
+ */
+export function readStoredProposal(raw: unknown): { proposal: CaseProposal; legacy: boolean } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw as Partial<CaseProposal>;
+  if (!p.decision || !(PROPOSED_DECISIONS as readonly string[]).includes(p.decision)) return null;
+  const inv = p.investigation;
+  return {
+    legacy: !inv,
+    proposal: {
+      decision: p.decision,
+      summary: p.summary ?? "",
+      rationale: p.rationale ?? [],
+      legalBasis: p.legalBasis ?? [],
+      investigation: inv ? { ...EMPTY_INVESTIGATION, ...inv, rulesConsulted: inv.rulesConsulted ?? [] } : EMPTY_INVESTIGATION,
+      nextQuestion: p.nextQuestion ?? null,
+      documents: p.documents ?? [],
+    },
   };
 }
 

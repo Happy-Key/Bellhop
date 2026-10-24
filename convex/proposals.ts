@@ -35,8 +35,14 @@ async function currentInput(ctx: QueryCtx, caseId: Id<"cases">): Promise<{ input
   const analysis = readStoredAnalysis<CaseAnalysis>(c.analysis);
   if (!analysis) return null;
   const prev = (await lastAccepted(ctx, caseId))?.proposal as CaseProposal | undefined;
+  const actions = await ctx.db.query("reviewActions").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect();
   const input = buildCaseReasoningInput({
     previous: prev?.investigation ? { decision: prev.decision, investigation: prev.investigation } : null,
+    // What the bank's reviewer asked for, oldest first. Part of the signature, so a return triggers a reassessment.
+    reviewerRequests: actions
+      .filter((x) => x.kind === "return" || (x.kind === "override" && !!x.question))
+      .sort((x, y) => x.at - y.at)
+      .map((x) => ({ at: new Date(x.at).toISOString(), kind: x.kind === "return" ? ("return" as const) : ("override" as const), text: x.kind === "return" ? x.reason : `Ask the customer: ${x.question}` })),
     analysis,
     statements: statements.map(toDomainStatement),
     transactions: transactions.map(toDomainTransaction),
@@ -150,7 +156,21 @@ export const latest = query({
       enabled: caseReasoningEnabled(),
       proposal: p ? strip(p) : null,
       accepted: accepted[0] ? strip(accepted[0]) : null,
-      history: accepted.map((r) => ({ _id: r._id, completedAt: r.completedAt ?? r.requestedAt, provider: r.provider ?? null, decision: (r.proposal as CaseProposal | undefined)?.decision ?? null, changeLog: r.changeLog ?? [], resolution: r.resolution ?? null })),
+      // Every assessment, including failed and rejected ones, so the record shows what happened and when.
+      history: rows.map((r) => ({
+        _id: r._id,
+        status: r.status,
+        trigger: r.trigger,
+        requestedAt: r.requestedAt,
+        completedAt: r.completedAt ?? r.requestedAt,
+        provider: r.provider ?? null,
+        decision: (r.proposal as CaseProposal | undefined)?.decision ?? null,
+        changeLog: r.changeLog ?? [],
+        resolution: r.resolution ?? null,
+        problems: r.problems ?? [],
+        error: r.error ?? null,
+        current: r.signature === signature,
+      })),
     };
   },
 });
@@ -213,10 +233,81 @@ export const resolve = mutation({
 /** The model's question, when its assessment of the case as it stands now asks for information. */
 export async function modelQuestionFor(ctx: QueryCtx, caseId: Id<"cases">): Promise<{ key: string; text: string } | null> {
   const p = await newest(ctx, caseId);
+  // A question the bank's reviewer wrote (an override to "ask the customer") comes first, until the model has reassessed after it.
+  const action = await ctx.db.query("reviewActions").withIndex("by_case", (q) => q.eq("caseId", caseId)).order("desc").first();
+  if (action?.kind === "override" && action.decision === "request_information" && action.question && (!p || action.at > (p.completedAt ?? p.requestedAt))) {
+    return { key: `reviewer:${action._id}`, text: action.question };
+  }
   if (!p || p.status !== "done") return null;
   const proposal = p.proposal as { decision?: string; nextQuestion?: string | null } | undefined;
   if (proposal?.decision !== "request_information" || !proposal.nextQuestion) return null;
   const cur = await currentInput(ctx, caseId);
   if (!cur || inputSignature(cur.input) !== p.signature) return null;
   return { key: `model:${p._id}`, text: proposal.nextQuestion };
+}
+
+/**
+ * A person decides differently from the newest proposal. The override is recorded with its reason as
+ * the human-authorized handling. Nothing is executed by it: no payout, no letter is sent. Approving
+ * money is never an override; it needs a proposed approval (or policy AUTO-1) and the payout path.
+ * "Ask the customer" with a question makes that question the next one on the customer's call-back.
+ */
+export const override = mutation({
+  args: {
+    proposalId: v.id("caseProposals"),
+    decision: v.union(v.literal("deny"), v.literal("escalate"), v.literal("request_information")),
+    reason: v.string(),
+    question: v.optional(v.string()),
+  },
+  handler: async (ctx, { proposalId, decision, reason, question }) => {
+    const p = await ctx.db.get(proposalId);
+    if (!p || p.status !== "done") throw new Error("proposal not found or not ready");
+    const last = await newest(ctx, p.caseId);
+    if (last?._id !== p._id) throw new Error("a newer assessment exists; decide on that one");
+    if (p.resolution) throw new Error("this proposal was already answered");
+    const trimmed = reason.trim().slice(0, 1000);
+    if (!trimmed) throw new Error("an override needs a reason");
+    const q = question?.trim().slice(0, 300) || undefined;
+    if (decision === "request_information" && !q) throw new Error("say what to ask the customer");
+    const proposal = p.proposal as CaseProposal | undefined;
+    if (proposal?.decision === decision) throw new Error("that is the proposed decision; authorize it instead");
+    const at = Date.now();
+    const id = await ctx.db.insert("reviewActions", { caseId: p.caseId, proposalId, kind: "override", decision, reason: trimmed, ...(q ? { question: q } : {}), at });
+    await logActivity(
+      ctx,
+      p.caseId,
+      "human",
+      "proposal_overridden",
+      `A person OVERRODE the model's proposed ${proposal?.decision?.replace(/_/g, " ") ?? "step"} with: ${decision.replace(/_/g, " ")}. Reason: ${trimmed}${q ? ` Question for the customer: ${q}` : ""}`,
+    );
+    return id;
+  },
+});
+
+/**
+ * A person sends the case back to the investigator with the work they want done. The request is
+ * recorded, and with live reasoning on the model reassesses the case with that request in its input.
+ */
+export const returnToAgent = mutation({
+  args: { caseId: v.id("cases"), proposalId: v.optional(v.id("caseProposals")), request: v.string() },
+  handler: async (ctx, { caseId, proposalId, request: text }) => {
+    const c = await ctx.db.get(caseId);
+    if (!c) throw new Error("case not found");
+    const trimmed = text.trim().slice(0, 1000);
+    if (!trimmed) throw new Error("say what should be looked into");
+    const at = Date.now();
+    const id = await ctx.db.insert("reviewActions", { caseId, ...(proposalId ? { proposalId } : {}), kind: "return", reason: trimmed, at });
+    await logActivity(ctx, caseId, "human", "returned_to_investigator", `A person RETURNED the case to the investigator: ${trimmed}`);
+    const live = caseReasoningEnabled();
+    if (live) {
+      const cur = await currentInput(ctx, caseId);
+      if (cur) await request(ctx, caseId, cur.input, "manual");
+    }
+    return { id, reassessing: live };
+  },
+});
+
+/** The input the next assessment would be built from (for inspection and tests). */
+export async function currentReasoningInput(ctx: QueryCtx, caseId: Id<"cases">): Promise<CaseReasoningInput | null> {
+  return (await currentInput(ctx, caseId))?.input ?? null;
 }

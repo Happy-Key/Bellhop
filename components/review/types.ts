@@ -1,6 +1,6 @@
 import type { MatchCandidate } from "@/lib/domain/matching";
 
-export type { CaseView } from "@/lib/review/types";
+export type { CaseView, ViewActivity, ViewStatement, ViewTransaction } from "@/lib/review/types";
 
 /** A bank record the matcher put forward for this case. */
 export interface Payment {

@@ -129,8 +129,19 @@ export default defineSchema({
       error: v.optional(v.string()),
       at: v.optional(v.number()),
     }),
-    /** Set when facts change after approval so the policy no longer passes: a person must look. */
-    needsReview: v.optional(v.object({ at: v.number(), reason: v.string() })),
+    /**
+     * Set when facts change after approval so the policy no longer passes: a person must look.
+     * `failedChecks` names the policy checks that failed (labelled in the UI). `review` records the
+     * person's look: affirmed clears the flag; otherwise the flag stays with their note.
+     */
+    needsReview: v.optional(
+      v.object({
+        at: v.number(),
+        reason: v.string(),
+        failedChecks: v.optional(v.array(v.string())),
+        review: v.optional(v.object({ at: v.number(), affirmed: v.boolean(), note: v.string() })),
+      }),
+    ),
   }).index("by_case", ["caseId"]),
 
   /**
@@ -160,6 +171,22 @@ export default defineSchema({
     changeLog: v.optional(v.array(v.object({ kind: v.string(), text: v.string() }))),
     /** A person's answer to a proposal that needs one. */
     resolution: v.optional(v.object({ accepted: v.boolean(), note: v.string(), at: v.number(), decisionId: v.optional(v.id("reimbursementDecisions")) })),
+  }).index("by_case", ["caseId"]),
+
+  /**
+   * What a person did on a case beyond answering a proposal (convex/proposals.ts `resolve`): an
+   * override of the proposed handling with its reason, a return to the investigator with the work
+   * requested, or a note. Append-only audit record. Overrides never move money.
+   */
+  reviewActions: defineTable({
+    caseId: v.id("cases"),
+    proposalId: v.optional(v.id("caseProposals")),
+    kind: v.union(v.literal("override"), v.literal("return"), v.literal("note")),
+    decision: v.optional(v.union(v.literal("deny"), v.literal("escalate"), v.literal("request_information"))),
+    reason: v.string(),
+    /** For "ask the customer" overrides: the question the reviewer wants asked on the call-back. */
+    question: v.optional(v.string()),
+    at: v.number(),
   }).index("by_case", ["caseId"]),
 
   /** Every question the backend put to the customer on a voice call, so it can avoid repeats. */

@@ -47,3 +47,32 @@ export const retryPayout = mutation({
     await ctx.scheduler.runAfter(0, internal.payout.payDecision, { decisionId });
   },
 });
+
+/**
+ * A person reviews an automatic approval that was flagged after the facts changed. Affirming clears
+ * the flag: the approval and its SIMULATED payout stand. Otherwise the flag stays, with the note.
+ * Nothing is reversed here: money that moved is never reversed automatically, and this prototype has
+ * no reversal path; a reversal would be a separate, explicit action.
+ */
+export const reviewFlaggedApproval = mutation({
+  args: { decisionId: v.id("reimbursementDecisions"), affirm: v.boolean(), note: v.string() },
+  handler: async (ctx, { decisionId, affirm, note }) => {
+    const d = await ctx.db.get(decisionId);
+    if (!d) throw new Error("decision not found");
+    if (!d.needsReview) throw new Error("this approval is not flagged");
+    if (d.needsReview.review?.affirmed) throw new Error("this approval was already affirmed");
+    const trimmed = note.trim().slice(0, 1000);
+    if (!affirm && !trimmed) throw new Error("keeping the flag needs a note");
+    const at = Date.now();
+    await ctx.db.patch(decisionId, { needsReview: { ...d.needsReview, review: { at, affirmed: affirm, note: trimmed } } });
+    await logActivity(
+      ctx,
+      d.caseId,
+      "human",
+      affirm ? "approval_affirmed" : "approval_review_note",
+      affirm
+        ? `A person reviewed the flagged approval of ${d.txnRef} and AFFIRMED it.${trimmed ? ` Note: ${trimmed}` : ""}`
+        : `A person reviewed the flagged approval of ${d.txnRef} and kept it flagged: ${trimmed}`,
+    );
+  },
+});

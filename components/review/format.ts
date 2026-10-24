@@ -27,6 +27,9 @@ export const humanize = (s: string) => s.replace(/_/g, " ");
 
 /** Long provider IDs (Nessie UUIDs) shortened for display; the full ref stays in titles and labels. */
 export function shortRef(ref: string): string {
+  // Provider facts: X:<provider>:<subject>:<uuid>:<field> → X:<provider>·<subject>·<field>
+  const x = ref.match(/^X:([^:]+):([^:]+):[^:]+:(.+)$/);
+  if (x) return `X:${x[1]}·${x[2]}·${x[3]}`;
   const m = ref.match(/^(T:)(.+)$/);
   if (!m || ref.length <= 14) return ref;
   return `${m[1]}${m[2]!.slice(0, 4)}…${m[2]!.slice(-4)}`;

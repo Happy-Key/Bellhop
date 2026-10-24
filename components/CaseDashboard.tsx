@@ -12,6 +12,7 @@ import { AUTO_APPROVAL_POLICY, type AutoApprovalEvaluation } from "@/lib/domain/
 import { PAYMENT_ORIGIN_PRESETS } from "@/lib/fixtures/paymentOrigins";
 import { DEMO_STATEMENTS } from "@/lib/fixtures/demo";
 import { CRS_PERSONAS, getCrsPersona } from "@/lib/fixtures/crsPersonas";
+import type { CaseView } from "@/lib/review/types";
 import { IntegrationStatus } from "./IntegrationStatus";
 import { VoiceCall } from "./VoiceCall";
 
@@ -27,17 +28,16 @@ export function CaseDashboard({ caseId }: { caseId: string }) {
   const analysis = readStoredAnalysis(data.case.analysis);
 
   return (
-    <main>
-      <p><Link href="/">← all cases</Link></p>
+    <main className="page">
+      <p className="small"><Link href="/">← Developer tools</Link> · <Link href={`/review/${caseId}`}>Open in the claims workstation</Link></p>
       <h1>
-        <span className="label synthetic">synthetic</span>
-        {data.case.title}
+        <span className="label synthetic">synthetic</span> {data.case.title}
       </h1>
       <p className="muted">
         Customer: {data.case.customerLabel}. Stage: <strong>{analysis?.stage ?? "intake"}</strong>. Workflow: intake → retrieve evidence → match →
         clarify → assess considerations → prepare packet → human review.
       </p>
-      <div className="grid">
+      <div className="dev-grid">
         <Statements caseId={id} statements={data.statements} />
         <Evidence caseId={id} c={data.case} transactions={data.transactions} providerEvidence={data.providerEvidence} paymentOrigins={data.paymentOrigins} analysis={analysis} />
       </div>
@@ -74,7 +74,7 @@ function Statements({ caseId, statements }: { caseId: Id<"cases">; statements: D
   }
 
   return (
-    <section>
+    <section className="dev-section">
       <h2>1. Conversation — customer statements <span className="muted">(customer-reported, unverified)</span></h2>
       {statements.length === 0 && <p className="muted">No statements yet.</p>}
       {statements.map((s) => (
@@ -142,7 +142,7 @@ function Interpretation({ s, onRetry, onScripted }: { s: Doc<"statements">; onRe
 
 function Evidence({ caseId, c, transactions, providerEvidence, paymentOrigins, analysis }: {
   caseId: Id<"cases">;
-  c: Doc<"cases"> & { nessieAccountBound: boolean };
+  c: CaseView["case"];
   transactions: Doc<"transactions">[];
   providerEvidence: Doc<"providerEvidence">[];
   paymentOrigins: (Doc<"paymentOrigins"> & { txnRef: string })[];
@@ -157,7 +157,7 @@ function Evidence({ caseId, c, transactions, providerEvidence, paymentOrigins, a
   const bf = c.bankFetch;
 
   return (
-    <section>
+    <section className="dev-section">
       <h2>2. Evidence</h2>
       <h3 style={{ fontSize: 14 }}>Bank records — Capital One Nessie <span className="label live">live API</span><span className="label synthetic">synthetic account</span></h3>
       <button disabled={busy} onClick={async () => { setBusy(true); try { await retrieve({ caseId }); } finally { setBusy(false); } }}>
@@ -274,7 +274,7 @@ function CrsEvidence({ caseId, personaId, evidence }: { caseId: Id<"cases">; per
 
 function FindingsAndQuestions({ analysis }: { analysis: StoredAnalysis }) {
   return (
-    <section>
+    <section className="dev-section">
       <h2>3. Findings and unresolved questions</h2>
       <table>
         <thead><tr><th>ID</th><th>Finding</th><th>Category</th><th>Evidence</th><th>Status</th><th>Contradictions</th></tr></thead>
@@ -315,7 +315,7 @@ function AutoApprovalPanel({ evaluation, decisions }: { evaluation: AutoApproval
   const retry = useMutation(api.payoutData.retryPayout);
   const [error, setError] = useState<string | null>(null);
   return (
-    <section>
+    <section className="dev-section">
       <h2>5. Automatic reimbursement <span className="label synthetic">SIMULATED money</span></h2>
       <p className="muted">
         Policy {evaluation?.policy ?? `${AUTO_APPROVAL_POLICY.id}@${AUTO_APPROVAL_POLICY.version}`}: the app may approve a claim of up to ${AUTO_APPROVAL_POLICY.maxAmount} when every check
@@ -358,7 +358,7 @@ function AutoApprovalPanel({ evaluation, decisions }: { evaluation: AutoApproval
 function Packet({ analysis }: { analysis: StoredAnalysis }) {
   const p = analysis.packet;
   return (
-    <section>
+    <section className="dev-section">
       <h2>4. Draft claim packet <span className="label">{p.readyForHumanReview ? "ready for human review" : "incomplete"}</span></h2>
       <p className="muted">{p.notice}</p>
       <ul>{p.summary.map((s) => <li key={s}>{s}</li>)}</ul>
@@ -391,7 +391,7 @@ function Packet({ analysis }: { analysis: StoredAnalysis }) {
 
 function Activity({ activity }: { activity: Doc<"activity">[] }) {
   return (
-    <section>
+    <section className="dev-section">
       <h2>6. Activity log</h2>
       <table>
         <tbody>

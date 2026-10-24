@@ -150,7 +150,7 @@ async function applyAutoApproval(ctx: MutationCtx, caseId: Id<"cases">, evaluati
   for (const d of decisions) {
     if (d.needsReview) continue;
     const reason = `Facts changed after automatic approval; now failing: ${failed.map((c) => c.id).join(", ")}.`;
-    await ctx.db.patch(d._id, { needsReview: { at: Date.now(), reason } });
+    await ctx.db.patch(d._id, { needsReview: { at: Date.now(), reason, failedChecks: failed.map((c) => c.id) } });
     await logActivity(ctx, caseId, `policy:${evaluation.policy}`, "auto_approval_needs_review", `${reason} A person must review the approval of ${d.txnRef}; nothing was reversed.`);
   }
 }

@@ -6,7 +6,7 @@
  */
 import type { Established, IntakeProgress, IntakeQuestion, IntakeTurn } from "@/lib/review/intake";
 import { RefChip } from "./EvidenceRef";
-import { AudienceTag, KindTag } from "./Tags";
+import { Mark } from "./ui";
 import { CREDENTIALS_LABEL, POSITION_LABEL, clockTime, exactTime, humanize, shortKey, usd } from "./format";
 
 const STATE_LABEL: Record<IntakeTurn["state"], string> = {
@@ -57,18 +57,14 @@ export function GuidedIntake({ progress }: { progress: IntakeProgress }) {
   return (
     <section id="intake" className="ws-section" aria-labelledby="intake-h">
       <div className="ws-section-head">
-        <h2 id="intake-h">How the intake progressed</h2>
-        <p className="ws-muted ws-small">
-          Each customer reply, attached to the question it answered. Only submitted replies are stored, so this is not a full call transcript. Questions come from the
-          rules; the assistant only words them.
-        </p>
+        <h2 id="intake-h">Conversation</h2>
       </div>
 
       {turns.length === 0 && <p className="ws-muted">No replies yet.</p>}
       <ol className="ws-intake">
         {turns.map((t) => (
           <li key={t.ref} className="ws-turn">
-            {t.asked ? <QuestionBlock q={t.asked} label="Question asked" /> : <div className="ws-turn-q"><span className="ws-eyebrow">No recorded question</span> <span className="ws-small ws-muted">{t.state === "opening" ? "The customer's own account, not a reply to a backend question." : ""}</span></div>}
+            {t.asked ? <QuestionBlock q={t.asked} label="Question asked" /> : <div className="ws-turn-q"><span className="ws-eyebrow">No recorded question</span> <span className="ws-small ws-muted">{t.state === "opening" ? "Opening account" : ""}</span></div>}
             <div className="ws-turn-a">
               <div className="ws-turn-meta">
                 <RefChip refId={t.ref} />
@@ -81,13 +77,13 @@ export function GuidedIntake({ progress }: { progress: IntakeProgress }) {
               {t.reply.redactions && t.reply.redactions.length > 0 && <p className="ws-small ws-muted">Removed before storage: {t.reply.redactions.map(humanize).join(", ")}.</p>}
             </div>
             <div className="ws-turn-est">
-              <span className="ws-eyebrow">Read from this reply</span> <KindTag kind="reported" />
+              <span className="ws-eyebrow">Read from this reply</span> <Mark kind="reported" />
               {t.interpretation === "pending" ? (
-                <p className="ws-small ws-muted">Interpretation pending. Facts from this reply aren&apos;t in the analysis yet.</p>
+                <p className="ws-small ws-muted">Pending.</p>
               ) : t.interpretation === "failed" ? (
                 <p className="ws-small ws-error-text">Interpretation failed{t.interpretationError ? `: ${t.interpretationError}` : ""}. Not interpreted.</p>
               ) : t.established.length === 0 ? (
-                <p className="ws-small ws-muted">Nothing new was read from this reply.</p>
+                <p className="ws-small ws-muted">Nothing new.</p>
               ) : (
                 <ul className="ws-est">
                   {t.established.map((e) => (
@@ -104,7 +100,7 @@ export function GuidedIntake({ progress }: { progress: IntakeProgress }) {
       </ol>
 
       <div className="ws-intake-next" aria-live="polite">
-        {next.status === "awaiting_report" && <p className="ws-muted">Waiting for the customer&apos;s report.</p>}
+        {next.status === "awaiting_report" && <p className="ws-muted">Waiting for the report.</p>}
         {next.status === "awaiting_interpretation" && (
           <p>
             <strong>Waiting for interpretation</strong> of {next.refs.map((r) => <RefChip key={r} refId={r} />)}. The next question is chosen after it lands, because the pending reply
@@ -114,11 +110,10 @@ export function GuidedIntake({ progress }: { progress: IntakeProgress }) {
         {next.status === "question" && (
           <>
             <QuestionBlock q={next.question} label="Next question for the customer" />
-            <p className="ws-small ws-muted">The assistant receives only this question on the next turn. It never sees the draft route.</p>
           </>
         )}
-        {next.status === "reviewer_only" && <p><AudienceTag audience="reviewer" /> No customer questions remain. {next.count} item{next.count === 1 ? "" : "s"} need a bank reviewer.</p>}
-        {next.status === "complete" && <p className="ws-muted">No open questions remain for the customer or a reviewer.</p>}
+        {next.status === "reviewer_only" && <p><Mark kind="bank" /> No customer questions remain. {next.count} item{next.count === 1 ? "" : "s"} need a bank reviewer.</p>}
+        {next.status === "complete" && <p className="ws-muted">No open questions.</p>}
       </div>
     </section>
   );

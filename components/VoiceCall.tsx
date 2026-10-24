@@ -10,6 +10,7 @@
  * transcript shown here is display only.
  */
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
+import { CustomerCallView, type AudioLevels, type CallStatus, type CallTurn } from "@/components/call/CustomerCallView";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -40,8 +41,15 @@ class PcmCapture extends AudioWorkletProcessor {
 registerProcessor("pcm-capture", PcmCapture);
 `;
 
-type Status = "idle" | "connecting" | "live" | "ended" | "error";
-interface Turn { turn: number; role: "user" | "assistant"; text: string; interrupted: boolean }
+type Status = CallStatus;
+type Turn = CallTurn;
+
+/** Root mean square of a chunk, scaled so ordinary speech lands around 0.5–0.9. */
+function level(samples: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) sum += samples[i]! * samples[i]!;
+  return Math.min(1, Math.sqrt(sum / Math.max(1, samples.length)) * 7);
+}
 
 interface CallResources {
   sessionToken: string | null;
@@ -79,7 +87,10 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
   const [elapsed, setElapsed] = useState(0);
   const [agentSpeaking, setAgentSpeaking] = useState(false);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [muted, setMuted] = useState(false);
   const res = useRef<CallResources>(emptyResources());
+  /** Live levels for the display; written on the audio path, read by the view's animation frame. */
+  const levels = useRef<AudioLevels>({ mic: 0, agent: 0 });
 
   function stopPlayback() {
     for (const s of res.current.sources) {
@@ -91,6 +102,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     }
     res.current.sources.clear();
     res.current.nextPlayTime = 0;
+    levels.current.agent = 0;
     setAgentSpeaking(false);
   }
 
@@ -108,12 +120,21 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     src.start(start);
     res.current.nextPlayTime = start + buffer.duration;
     res.current.sources.add(src);
+    // The chunk's level is shown when it is heard, not when it arrives.
+    const heardIn = Math.max(0, (start - ctx.currentTime) * 1000);
+    const chunkLevel = level(samples);
+    setTimeout(() => {
+      if (res.current.ctx === ctx) levels.current.agent = chunkLevel;
+    }, heardIn);
     if (res.current.closingSeenAt !== null) res.current.audioAfterClosingS += buffer.duration;
     setAgentSpeaking(true);
     src.onended = () => {
       res.current.sources.delete(src);
       res.current.lastAudioEndAt = Date.now();
-      if (res.current.sources.size === 0) setAgentSpeaking(false);
+      if (res.current.sources.size === 0) {
+        levels.current.agent = 0;
+        setAgentSpeaking(false);
+      }
     };
   }
 
@@ -133,8 +154,11 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     r.stream?.getTracks().forEach((t) => t.stop());
     if (r.ws && r.ws.readyState <= WebSocket.OPEN) r.ws.close(1000, "call ended by customer");
     void r.ctx?.close().catch(() => {});
+    levels.current.mic = 0;
+    levels.current.agent = 0;
     setAgentSpeaking(false);
     setSessionToken(null);
+    setMuted(false);
   }
 
   function fail(message: string) {
@@ -155,6 +179,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     const resampler = new Resampler(ctx.sampleRate, AGENT_SAMPLE_RATE);
     let pending = new Float32Array(0);
     capture.port.onmessage = (e: MessageEvent<Float32Array>) => {
+      levels.current.mic = res.current.stream?.getAudioTracks().some((t) => t.enabled) ? level(e.data) : 0;
       const out = resampler.push(e.data);
       const merged = new Float32Array(pending.length + out.length);
       merged.set(pending);
@@ -271,6 +296,17 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     setDetail("You ended the call.");
   }
 
+  /** Mutes the microphone track; the call stays connected and the agent hears silence. */
+  function toggleMute() {
+    const tracks = res.current.stream?.getAudioTracks() ?? [];
+    const next = !muted;
+    tracks.forEach((t) => {
+      t.enabled = !next;
+    });
+    if (next) levels.current.mic = 0;
+    setMuted(next);
+  }
+
   // Release the microphone and socket if the page is left mid-call.
   useEffect(() => () => teardown(), []);
 
@@ -301,7 +337,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     // The boundary keeps a display error from unmounting VoiceCall, whose cleanup would hang up the call.
     return (
       <CallDisplayBoundary inCall={inCall} onHangUp={hangUp}>
-        <CustomerCallView status={status} detail={detail} turns={turns} elapsed={elapsed} agentSpeaking={agentSpeaking} onStart={start} onHangUp={hangUp} />
+        <CustomerCallView status={status} detail={detail} turns={turns} elapsed={elapsed} maxSeconds={MAX_CALL_SECONDS} agentSpeaking={agentSpeaking} muted={muted} levels={levels} onStart={start} onHangUp={hangUp} onToggleMute={toggleMute} />
       </CallDisplayBoundary>
     );
   }
@@ -328,16 +364,6 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
   );
 }
 
-const CUSTOMER_STATUS: Record<Status, string> = {
-  idle: "Tap the button to talk to our fraud support assistant.",
-  connecting: "Connecting you…",
-  live: "",
-  ended: "Your call has ended. Thank you — a member of our team will review your report.",
-  error: "We couldn't complete the call. Please try again.",
-};
-
-const formatClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-
 /**
  * Catches errors in the call display only. Without it, a rendering bug unmounts the whole call
  * component, and its cleanup closes the agent socket: the call ends and the statement in
@@ -357,51 +383,17 @@ class CallDisplayBoundary extends Component<{ inCall: boolean; onHangUp: () => v
   override render() {
     if (!this.state.failed) return this.props.children;
     return (
-      <div className="cc-call">
+      <div className="cl-canvas">
+        <p className="cl-state">{this.props.inCall ? "Connected" : "Reload to call again"}</p>
+        <p className="cl-note">{this.props.inCall ? "Your call is still connected. Go ahead and speak." : "Please reload the page to start a new call."}</p>
         {this.props.inCall && (
-          <button className="cc-call-button cc-hang-up" onClick={this.props.onHangUp}>
-            End call
-          </button>
+          <div className="cl-controls">
+            <button type="button" className="cl-ctl cl-ctl-end" aria-label="End call" onClick={this.props.onHangUp}>
+              End
+            </button>
+          </div>
         )}
-        <p className="cc-status">{this.props.inCall ? "Your call is still connected. Go ahead and speak." : "Please reload the page to start a new call."}</p>
       </div>
     );
   }
-}
-
-/** Customer-facing presentation: no case data, costs or call internals. */
-function CustomerCallView(props: { status: Status; detail: string | null; turns: Turn[]; elapsed: number; agentSpeaking: boolean; onStart: () => void; onHangUp: () => void }) {
-  const { status, detail, turns, elapsed, agentSpeaking, onStart, onHangUp } = props;
-  const inCall = status === "connecting" || status === "live";
-  const transcriptEnd = useRef<HTMLDivElement>(null);
-  // Braces matter: an effect may only return a cleanup function, and some browsers' scrollIntoView returns a Promise.
-  useEffect(() => {
-    transcriptEnd.current?.scrollIntoView({ block: "nearest" });
-  }, [turns.length]);
-  const message = status === "live" ? (agentSpeaking ? "Assistant is speaking…" : "Listening — go ahead and speak.") : CUSTOMER_STATUS[status];
-  return (
-    <div className="cc-call">
-      <button className={`cc-call-button${inCall ? " cc-hang-up" : ""}`} onClick={inCall ? onHangUp : onStart}>
-        {inCall ? "End call" : status === "idle" ? "Start call" : "Call again"}
-      </button>
-      <p className="cc-status" aria-live="polite">
-        {message}
-        {status === "live" && <span className="cc-clock"> {formatClock(elapsed)} / {formatClock(MAX_CALL_SECONDS)}</span>}
-      </p>
-      {status === "error" && detail && <p className="cc-detail error">{detail}</p>}
-      {turns.length > 0 && (
-        <div className="cc-transcript">
-          {turns.map((t) => (
-            <div key={`${t.role}-${t.turn}`} className={`cc-bubble ${t.role === "user" ? "cc-user" : "cc-agent"}`}>
-              <span className="cc-speaker">{t.role === "user" ? "You" : "Assistant"}</span>
-              {t.text}
-              {t.interrupted && <span className="muted"> …</span>}
-            </div>
-          ))}
-          <div ref={transcriptEnd} />
-        </div>
-      )}
-      {!inCall && <p className="muted">For the best experience, use headphones. Calls last up to {MAX_CALL_SECONDS / 60} minutes.</p>}
-    </div>
-  );
 }

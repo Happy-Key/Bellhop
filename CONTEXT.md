@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (legislative reference registry wired into the model's investigation)_
+_Last updated: 2026-10-24 (UX remodel delivered: new workspace, queue, demo, customer line; reviewer actions persisted; deployed to dev)_
 
 ## What this is
 
@@ -35,128 +35,130 @@ Rules that always hold:
 
 | Area | State |
 |---|---|
-| Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call` (with a **demo persona picker**), **bank claims workstation `/review`** (queue grouped by who acts + conclusion-first case workspace with a collapsed decision record, including AUTO-1 checks and payouts) and **pitch demo `/review/demo`** (five-act scripted replay; rebuilt 2026-10-24) |
-| Case control | ✅ **Delete** on the developer tab `/` (`cases.remove`: the case and every row recorded for it, batched for big cases; payment origins and Nessie records stay; late writes from in-flight work are dropped). **Call back** on `/call`: "An existing case" continues any case (DEMO ONLY, no logins) |
-| Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. ⚠️ **Two `npx convex dev` watchers are running** on the dev machine and push every saved change, so dev tracks the working copy (including uncommitted work), not a chosen commit. With `REASONING_PROVIDER=openai-compatible` and `CASE_REASONING` unset, **Bitdeer whole-case decisions are ON on dev**. Env `NESSIE_PERSONA_ACCOUNTS` set. Those watchers aren't on this machine. **This machine** runs one `npx convex dev` watcher (since 07:23) against the personal review deployment `friendly-grouse-183` (no Bitdeer key, so the rule fallback shows there); it already has the investigation restructure |
+| Web app (Next.js 16) | ✅ **Remodelled 2026-10-24, pass 3** (`docs/ux-remodel-plan.md`): white-dominant productivity theme (page `#EAE9EE`, white cards, `#D3D0DC` rail and case header, `#DEDBE5` section headers and chips, charcoal text `#1C1A21`, purple `#5A43A8` for actions / selection / focus / the model, teal `#0B6E8A` for customer statements, green for a person and authorized outcomes, amber `#F08A2E` for changed-since, red for blockers; evidence chips coloured by kind via `data-kind`), cards and comfortable density, nearly all explanatory copy removed (the only markers left: rail footer "Synthetic data · simulated money", "simulated" beside payouts, "Simulated voice" and "Scripted replay · synthetic data" on the demo). App shell with a left rail; **claims queue `/review`** (pill stat filters, rows with customer and payment, live reorder animation); **case workspace `/review/<id>`** = decision band (Proposed | Authorized, reviewer controls), findings, rules and policy, outputs, investigation, plus an **inspector** (Record / Timeline / Evidence / Conversation and a detail view for any selected item; a drawer under 1100 px); **demo `/review/demo`** = a scroll-driven story on one pinned stage (eight beats) that ends in the real workspace in demo mode (`components/demo/`); **customer line `/call`** = a full-height canvas (minimal header, Bellhop inside rings that follow the live audio level, Ready / Listening / Speaking label, round mic / call / transcript controls, transcript as a side or bottom panel, presenter controls in a top-right popover; `components/call/`); developer tools `/` and `/cases/<id>`. Hot spots for merging someone else's frontend work: `app/globals.css`, `app/review/review.css`, `app/layout.tsx`, `app/call/page.tsx`, `components/VoiceCall.tsx` |
+| Backend (Convex) | ✅ Main dev deployment `dev:dynamic-chihuahua-120`. ⚠️ On the user's machine (this working copy), **two `npx convex dev` watchers push every saved change to it**, so dev tracks this working copy (including uncommitted work), not a chosen commit. Dev runs `c0e064a`. `REASONING_PROVIDER=openai-compatible` and `CASE_REASONING` unset, so **Bitdeer extraction and whole-case reasoning are ON on dev**. `NESSIE_PERSONA_ACCOUNTS` set. A separate machine runs a watcher against the personal review deployment `friendly-grouse-183` (no Bitdeer key, so the rule fallback shows there) |
 | Bank records (Nessie) | ✅ Live: purchases **and deposits** (deposits drive the refund check; never matched as the disputed payment) |
-| Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ✅ **CalHacks promo active** (2026-10-24, per user); the $0.00 balance shown is a Bitdeer display bug. Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
-| Voice (Cartesia) | ✅ Live: one question per turn (`question_id`). Waits up to **12 s** for extraction, then (with case reasoning on) up to **16 s in total** for the model's reassessment, which **chooses the next question** (rule question as the logged fallback). No "anything else?" acknowledgement turns; the agent says a wait line before every tool call (`pre_tool_speech: force`); **calls end properly**: one wrap-up question, then the closing with `end_call: true`, and `/call` hangs up itself once the closing is heard. Tool updated live on Cartesia; **agent instructions and Playground settings still need pasting** (see Waiting on the user) |
-| CRS | ✅ Identity check and **Fraud Finder** live (persona bodies only; Fraud Finder verified on P01, score 11) |
-| Case investigation (Bitdeer) | 🟡 **Built, mock-tested, not run live.** The model reassesses each case whenever it changes: findings (reported / corroborated), hypotheses, uncertainties, the work items it chooses, the next question, and a proposed disposition (approve / deny / request information / escalate) with cited reasons, legal reading and drafts. It plans against the **reference rule registry** from `legislative-reference/` (index of all case rules + detail for the claim type it leans towards) and records `rulesConsulted`. Every assessment is kept with a code-computed diff. Info requests and escalations are automatic; approvals pay out automatically only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Rules = guardrail + labelled fallback. Off switch: `CASE_REASONING=off`. The personal review deployment has no Bitdeer key (rule fallback shown) |
-| Automatic reimbursement | ✅ Built: AUTO-1 v2, 14 checks, SIMULATED deposit that can't be paid twice. ✅ **First live deposit made** 2026-10-24 (persona Margaret, $58, Nessie deposit `96ead8f0…`) |
+| Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ✅ **CalHacks promo active**; the $0.00 balance Bitdeer shows is a display bug. Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
+| Case investigation (Bitdeer) | 🟡 Live on dev, **not yet rehearsed on purpose**. The model reassesses each case whenever it changes: findings (reported / corroborated), hypotheses, uncertainties, work items, the next question, and a proposed disposition (approve / deny / request information / escalate) with cited reasons, legal reading and drafts, planned against the **reference rule registry** (`legislative-reference/`). Every assessment is kept with a code-computed diff. Info requests and escalations apply automatically; approvals pay only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Off switch: `CASE_REASONING=off` |
+| Voice (Cartesia) | ✅ Live and **re-tested by the user after the fixes ("much better")**. One question per turn (`question_id`): the model's question first, the rule question as the logged fallback (`rule_question_fallback`). Waits up to 12 s for extraction and 16 s in total with the reassessment (tool timeout 20 s). No "anything else?" acknowledgement turns; a wait line before every tool call (`pre_tool_speech: force`); one wrap-up question, then the closing with `end_call: true`; `/call` hangs up itself once the closing is heard. Tool definition applied live. **Whether the new agent instructions and Playground settings were pasted is unconfirmed** (see Waiting on the user) |
+| CRS | ✅ Identity check and **Fraud Finder** live (persona bodies only) |
+| Automatic reimbursement | ✅ AUTO-1 v2, 14 checks, SIMULATED deposit that can't be paid twice. Live deposits made (persona Margaret, $58). An approval is flagged for review only when facts really change, not while a statement is still being interpreted |
+| Demo personas | ✅ `/call` picker: Margaret (P01 → automatic approval), Grace (P19, own device → person), Victor (P12, identity fails → person), Samuel (P16, scam → specialist). Each has its own seeded Nessie account and sets its case up automatically. Margaret verified live end to end (text and voice); the others offline (`tests/personas.test.ts`) |
+| Case control | ✅ **Delete** on `/` (`cases.remove`: the case and every row recorded for it, batched; payment origins and Nessie records stay; in-flight work leaves no orphans). **Call back** on `/call` via "An existing case" (DEMO ONLY, no logins); every new-report call opens a new case |
 | Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown); persona cases attach their own automatically |
-| Demo personas | ✅ `/call` picker: Margaret (P01, auto-approve), Grace (P19, own device → person), Victor (P12, identity fail → person), Samuel (P16, scam → specialist). Each has its own seeded Nessie account; its case sets itself up. Margaret verified live end to end. Committed and pushed (rebased onto `936dea4`) |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
 | Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, **199 tests**, build pass |
+| Checks | ✅ `npm run verify`: typecheck, lint, **213 tests**, build pass. ✅ `npm run test:e2e`: **4 Playwright smoke tests** (read-only, drive the installed Chrome) pass against a running dev server |
 
 ## Branch and git
 
-- Branch `foundation`, **pushed** to `origin/foundation` at `3018d2f` (investigation restructure, the merge of the
-  persona/case-control work, and the reference registry). Push only when the user asks.
-- The main dev deployment `dynamic-chihuahua-120` gets this code only when the machine running its watchers pulls
-  `foundation` (or someone runs `npx convex dev --once` against it).
-- `legislative-reference/` (research pack: Overview.md and the rule-registry CSV) is committed (user approved, 2026-10-24).
+- Branch `foundation` = `origin/foundation` at **`c0e064a`**, working tree clean. Every remote branch
+  (`bank-dashboard`, `client-view`, `main`) is merged into it. Push only when the user asks.
+- The user expects **frontend changes** from someone else; they were not pushed at the last fetch. When they
+  land: fetch, rebase or merge, resolve, `npm run verify`, then push. Files that conflict most often:
+  `CONTEXT.md`, `convex/voice.ts`, `convex/model.ts`, `convex/http.ts`, `app/call/page.tsx`, `app/globals.css`.
+- Pulling or rebasing in this working copy changes dev immediately (the watchers push it).
 - Commit as `maximozhang <145702814+maximozhang@users.noreply.github.com>`.
 
 ## Demo plan (user decisions)
 
-- **Demo personas on `/call`** (decided 2026-10-24). Pick one before starting the call. Each persona is hardwired to
-  its own seeded Nessie account (`NESSIE_PERSONA_ACCOUNTS`), a CRS test identity and payment-origin records per
-  purchase (`lib/fixtures/demoPersonas.ts`). Its case **sets itself up**: records retrieved, origins attached, CRS
-  identity check and Fraud Finder run (`convex/personaSetup.ts`). The presenter notes on the page show the
-  ledger, expected outcome and suggested lines. Say the amount and merchant (purchase dates are fixed at the seed
-  date). Re-seed with `npm run seed:personas -- --confirm [--only=<id>]`, then update the env var.
-- **No persona** = the old behaviour: a prepared bank record and script, the customer framed as already logged
-  in, and **no automatic bank-record pull** when a call starts.
-- Bitdeer tags a plain denial ("a charge I didn't make") as a scam indicator, so AUTO-1 waits for the
-  credentials answer: always say the "No, I never gave anyone a code…" line.
-- **Manual run-through (no persona) for an automatic approval:**
-  1. Open the case page and click **Retrieve bank records**.
-  2. Set the demo payment's "How it was made" to **New device, no two-factor, out of state**.
-  3. Link persona **P01** (or P19) and click **Run CRS checks**.
-  4. Make the claim.
-  - Section 5 should show 14 passes and an automatic approval, followed by a SIMULATED deposit.
-- **The demo payment must be under $100**, at a merchant with **no other payments** on the account (the two
-  Corner Grocer purchases block each other). The script must state the **exact amount** and the merchant or date.
-- Payment-origin records belong to the Nessie transaction, not the case: set once, and later cases reuse it.
-- For a "false claim" demo, choose **Customer's own device, two-factor passed**: the claim goes to a person.
+- **Demo personas on `/call`** (decided 2026-10-24). Choose "A new report", pick a persona, start the call.
+  Each persona is hardwired to its own seeded Nessie account (`NESSIE_PERSONA_ACCOUNTS`), a CRS test identity and
+  payment-origin records per purchase (`lib/fixtures/demoPersonas.ts`). Its case **sets itself up**: records
+  retrieved, origins attached, CRS identity check and Fraud Finder run (`convex/personaSetup.ts`). The presenter
+  notes show the ledger, expected outcome and suggested lines. Say the **amount and merchant** (purchase dates are
+  fixed at the seed date, 2026-10-24). Re-seed with `npm run seed:personas -- --confirm [--only=<id>]`, then update
+  the env var.
+- **Every new-report call opens a new case.** To continue a case (e.g. after a reviewer asked for more), choose
+  "An existing case"; the case just used is pre-selected there.
+- **No persona** = a plain synthetic case with **no automatic setup**: records are retrieved and CRS checks run by
+  hand on the case page (`/cases/<id>`), and payment origins are set there.
+- Bitdeer tags a plain denial ("a charge I didn't make") as a scam sign, so AUTO-1 waits for the credentials
+  answer: always say the "No, I never gave anyone a code…" line.
+- **Demo payments must be under $100**, at a merchant with no other payments on the account, stated with the
+  exact amount.
+- For a "false claim" demo, use Grace (own device, two-factor passed): the claim goes to a person.
 
 ## What needs to be done next (priority order)
 
-1. **A full voice rehearsal of each persona** on dev. Margaret was verified end to end by text (setup, Bitdeer,
-   14 checks, SIMULATED deposit); Grace, Victor and Samuel are verified offline only (`tests/personas.test.ts`).
-   Consider fixing the Bitdeer prompt so a plain denial isn't a scam indicator.
-2. **A voice re-test** after pasting the new agent instructions and Playground settings: no "anything else?" loop, the
-   wait line before each pause, the call ending right after the closing, and the model-chosen questions. Extraction plus
-   reassessment must fit the 16 s webhook budget, otherwise the rule question is used (look for `rule_question_fallback`).
-3. **More reviewer actions:** persist override and return-to-agent, and let a person reverse a flagged approval.
-   Approving or confirming a model proposal already works in `/review/<id>`.
-4. **Login and access control** before any non-synthetic use (Convex Auth now, bank SSO later; decided).
-5. **The redesign phases** in `docs/claim-intake-design.md`: per-payment fact model, screening results,
+1. **Pull the frontend changes** when they are pushed (see Branch and git).
+2. **Commit the UX remodel** (41 files, uncommitted) after a look, then **rehearse the demo journey end to end**: a persona call on `/call`, the case in `/review/<id>`, a “Return to the investigator” (live model call) to show the adaptive moment, and an authorization. The old `/review/<id>` controls are gone; approve / confirm / reject, override, return and flag review all live in the decision band.
+3. **Rehearse each persona by voice** on dev with case reasoning on: check that the model asks for what AUTO-1
+   needs (credentials, who made the payment), that extraction plus reassessment fits the 16 s budget (look for
+   `rule_question_fallback` and `asked_without_waiting` in the activity log), and the outcomes in the table above.
+4. **Bitdeer extraction prompt:** a plain denial shouldn't count as a scam sign (it costs a turn on every claim).
+5. **Reviewer actions still missing:** reversing a flagged payout (no Nessie path; the flag review says so) and sign-off on escalations. Override, return-to-investigator, a banker-written question for the call-back and flag review are built (`reviewActions` table, `proposals.override` / `returnToAgent`, `payoutData.reviewFlaggedApproval`).
+6. **Login and access control** before any non-synthetic use (Convex Auth now, bank SSO later; decided).
+7. **The redesign phases** in `docs/claim-intake-design.md`: per-payment fact model, screening results,
    disputes and recovery events, deadline estimates, documents.
-6. **Regulatory:** verify the 1005.6 and 1005.11 excerpts word for word (the CFPB FAQ excerpt is done).
-7. **Factory Droid loop.**
+8. **Regulatory:** verify the 1005.6 and 1005.11 excerpts word for word (the CFPB FAQ excerpt is done).
+9. **Factory Droid loop.**
 
 ## Claims workstation (`/review`)
 
 - **Queue** `/review`: groups Needs a bank reviewer / Waiting on the customer / Investigating / No report yet / Decided;
   rows show the active work item, any proposal and blockers; search, filter, keyboard selection. Read-only
   `review:queue` query; view model `lib/review/caseStatus.ts`.
-- **Case workspace** `/review/<id>` (rebuilt conclusion-first 2026-10-24): **What happened** (model summary or the
-  customer's words, payment, status, blockers) → **Investigation** (work items, active first) → **Established and
-  open** (findings reported/corroborated, uncertainties, hypotheses) → collapsed **Decision record** (evidence;
-  rules, policies, AUTO-1 checks and the rule trace; how the assessment changed; conversation; documents; activity).
-  Right column: authorized outcome, proposed disposition with the computed amount and authorize controls, next step,
-  "Reassess now". Evidence links open the collapsed section that holds the source. Without a model assessment the
-  investigation is the labelled rule-based fallback.
-- **Demo** `/review/demo`: a five-act pitch (problem → conversation → the answer that changes the interpretation →
-  finished case → a person decides). The customer's lines and the model's outputs are a scripted replay
-  (`lib/fixtures/pitchDemo.ts`); the match, rule fallback, proposal validator, execution plan and AUTO-1 run on it
-  for real (`lib/review/pitchDemo.ts`). No AI, Convex or Nessie calls; buttons say "Demo, not saved". The old
-  guided-intake walkthrough lives only as a test fixture (`tests/helpers/`).
-- Not yet in the workstation: payment-origin presets, CRS controls, persona setup (use `/cases/<id>` and `/call`).
-  Override and return-to-agent are not persisted.
+- **Case workspace** `/review/<id>`: **What happened** → **Investigation** (work items) → **Established and open**
+  (findings, uncertainties, hypotheses) → collapsed **Decision record** (evidence; rules, policies, AUTO-1 checks;
+  assessment history; conversation; documents; activity). Right column: authorized outcome, proposed disposition
+  with authorize controls, next step, "Reassess now". Without a model assessment the investigation is the labelled
+  rule-based fallback.
+- **Demo** `/review/demo`: a scroll-driven story (`components/demo/DemoStory.tsx`, `objects.tsx`, `demo.css`) on the
+  scripted fixture (`lib/fixtures/pitchDemo.ts`, `lib/review/pitchDemo.ts`): call → matched record → evidence → the model's
+  assessment → the clarification "I made the payment, but someone pretending to be my bank told me to" changes it (the
+  earlier assessment is kept as history) → guardrails → the real `CaseWorkspace` in demo mode with reviewer actions on page
+  state. The match, rule fallback, proposal validator, execution plan and AUTO-1 run on it for real. No AI, Convex or Nessie calls.
+- **Old stored analyses:** a case's analysis is recomputed only when its evidence changes, so early cases keep an
+  older shape. Every reader goes through `readStoredAnalysis()` (`lib/domain/triage.ts`), which fills the gaps.
+  Don't "fix" old cases by recomputing them: that re-runs AUTO-1 (payouts) and the reasoning model.
+- The Evidence tab of the inspector now carries the live actions (retrieve records, attach a payment-origin preset, run the CRS checks, retry an interpretation); linking a CRS persona and text statements stay on `/cases/<id>`.
+- Reviewer actions: approve / confirm / reject a proposal (`proposals.resolve`), decide differently with a reason (`proposals.override`; never approve, never moves money; an “ask the customer” override becomes the next call-back question), return to the investigator (`proposals.returnToAgent`; reassesses with the request in the model input), affirm or keep a flagged approval (`payoutData.reviewFlaggedApproval`). All recorded in `reviewActions` or on the decision, and in the activity log.
 
 ## Case investigation and decisions by the reasoning model (user decisions 2026-10-24)
 
 - Bitdeer is the reasoning model; no Claude API. Not every decision needs a person; the model may propose denials.
-- The model reassesses each case whenever it changes (a statement, no pending interpretation, bank records in) and
-  maintains the investigation; code validates it, computes amounts and records a diff per assessment.
-- Files: `lib/domain/investigation.ts` (investigation schema, validation, diff, rule fallback), `lib/domain/caseDecision.ts`
-  (proposal schema, input, validation, who acts), `convex/proposals.ts` (stores every assessment + `changeLog`),
-  `convex/caseReasoning.ts` (Bitdeer call), `lib/review/caseStatus.ts`, `components/review/CaseInvestigation.tsx` and
-  `CaseDecision.tsx` (disposition panel).
-- The voice agent asks the model's current question first; the webhook waits for the reassessment (12 s total budget).
-  If none is ready, the rule question is used and logged `rule_question_fallback` (same 2-per-call limit).
-- Route wording in `workflow.ts` / `triage.ts` updated (no rule changes). Stored analyses keep the old text until their next recompute.
-- To try it live: on a deployment with the Bitdeer env vars (shared dev has them), submit a statement (the model reassesses automatically) or press
-  "Reassess now". The Bitdeer promo is active (its $0.00 balance display is a bug).
+- Files: `lib/domain/investigation.ts` (schema, validation, diff, rule fallback), `lib/domain/caseDecision.ts`
+  (proposal schema, input, validation, who acts), `convex/proposals.ts` (stores every assessment),
+  `convex/caseReasoning.ts` (Bitdeer call), `lib/review/caseStatus.ts`, `components/review/CaseInvestigation.tsx`,
+  `CaseDecision.tsx`.
+- Voice: `issueVoiceQuestion` (`convex/voice.ts`) asks the model's current question first, then the rule question,
+  then the wrap-up and the closing (`lib/domain/voiceTurn.ts`).
 
 ## Known limitations
 
-- Extraction takes 4–8 s, longer than ideal for voice, and the case reassessment adds another model call per
-  case change. Bitdeer ignores both thinking-off parameters tried.
+- Extraction takes 4–8 s, and the case reassessment adds another model call per case change; a statement
+  can take up to 16 s on a call (the agent tells the customer to wait). Bitdeer ignores both thinking-off
+  parameters tried.
 - Payment-origin data is SYNTHETIC: Nessie has no device or login records.
 - CRS checks the *person* (identity, contact-detail risk), not whether a payment was authorized.
 - Spoken digits ("four eight two…") aren't redacted; only digit strings next to a keyword are.
 - The 3-minute call cap stays (decided), so intake may need a second call or text.
+- Proposals stored before the 2026-10-24 investigation restructure have no `investigation` field. The two workspace reads that crashed on them (`CaseReview.tsx`, `CaseInvestigation.tsx`) are now guarded, but `caseStatus` still labels their rule-based fallback work items as the model's; a `readStoredProposal()` normaliser is planned (remodel plan, gap 4).
+- Dev data: case `jx73ejhb…` carries a needs-review flag from the fixed transient-interpretation bug; cases
+  `jx76s097…`, `jx7b3anr…` and `jx72bbhy…` have the old analysis shape. All can be deleted from `/`.
 
 ## Waiting on the user
 
-- **Dev watchers / case reasoning:** decide whether to stop the `npx convex dev` watchers (dev then stays on a chosen commit) and whether case reasoning (`CASE_REASONING`) should stay on for dev.
-
-- **Cartesia (Playground, by hand):** paste the updated agent instructions from `docs/integrations.md`; enable **end_call** (description in the doc, pre-tool speech Off); set the **inactivity check-in to 20 s**. Also check the retention settings so audio isn't kept. Balance about $0.86 before the promo code.
+- **Cartesia Playground (by hand), if not done yet:** paste the agent instructions from `docs/integrations.md`;
+  enable **end_call** (description in the doc, pre-tool speech Off); set the **inactivity check-in to 20 s**.
+  Also check the retention settings so audio isn't kept.
+- **Dev watchers / case reasoning:** whether to keep the watchers (dev follows the working copy) and whether
+  `CASE_REASONING` stays on for dev.
+- **Frontend branch:** push it, then tell the agent to pull.
 - **Housekeeping:** rotate the CRS password (it was pasted in chat once).
 - **Factory:** API key and `droid` CLI, when we reach that step.
 
 ## How to run
 
 ```
-npx convex dev             # backend (cloud dev deployment)
+npx convex dev             # backend (cloud dev); already running as watchers on the user's machine
 npm run dev                # http://localhost:3000
 npm run verify             # all checks
+npm run test:e2e           # Playwright smoke tests (read-only; drives the installed Chrome; starts next dev if :3000 is free)
+npx convex dev --once      # push backend changes when the watchers aren't running (done 2026-10-24 13:39 for the remodel)
 npm run live:reasoning     # Bitdeer check (live; promo credits)
+npm run seed:personas -- --confirm   # re-seed demo personas in the shared Nessie sandbox
 ```
 
 Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
@@ -221,3 +223,15 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | **Third live call diagnosed** (case `jx73ejhb…`, Margaret): the user heard "anything else before we finish?" instead of the credentials question. The log shows the call landed on the **same case** as the first call ("Call again" reused it), where credentials were already answered (S3, "I never gave anyone a code…") and the claim was already approved and paid; so nothing was left to ask. It also showed a bug: the call-back statement, while still being interpreted, failed `all_statements_interpreted` and **permanently flagged the approval for review**. Fixes: approvals aren't flagged while a statement is pending (a failed interpretation still flags); a new report on `/call` opens a **new case on every call**, and the case just used is pre-selected under "An existing case"; a call with nothing left to ask opens with `WRAP_UP_COMPLETE_PROMPT` ("Your report already has everything we need…"). 2 new tests (176). Case `jx73ejhb…` still carries the wrong needs-review flag. Not committed |
 | 2026-10-24 | Voice fixes rebased onto the model-driven investigation (`2d500c9`). Merged `issueVoiceQuestion`: upstream's order (the model's question first, rule question as the logged fallback) plus no acknowledgement turns, the wrap-up and the closing with `end_call`. Waits: extraction 12 s (cap 15 s), extraction plus reassessment 16 s in total, under the 20 s tool timeout. 197 tests pass. Committed and pushed |
 | 2026-10-24 | **Claims queue crash fixed** (`review:queue`: "Cannot read properties of undefined (reading 'filter')"). Cause: 3 of the 11 dev cases (created before ~07:20 on 2026-10-24) keep an older stored analysis: no `facts.txnDecisions`/`facts.answers`, and questions without `key`/`audience`/`priority`. An analysis is recomputed only when the case's evidence changes, and the new rule-based investigation reads `facts.txnDecisions` once a payment is matched. Fix: `readStoredAnalysis()` (`lib/domain/triage.ts`) fills the gaps, and every reader uses it (queue, model input in `proposals.ts`, case workspace, old case page). Not recomputing old cases on purpose: that would re-run AUTO-1 (possible payouts) and the reasoning model. Regression test fails without the fix with the same error. Queue verified on dev (11 cases). 199 tests. Not committed |
+| 2026-10-24 | End-of-session refresh before a context reset: status sections rewritten (branch `c0e064a`, the user's voice re-test, call-back and case control, case reasoning live on dev, next steps led by the pending frontend pull, dev-data cleanup notes) and `docs/agent-handoff.md` rewritten from scratch (it still described Bitdeer as paused and branch `01b5a42`) |
+| 2026-10-24 | **UX remodel, first pass** (inspection and planning only; no redesign yet). Audited every route in the browser (Playwright script driving the installed Chrome, read-only). Found and fixed a crash: opening a case whose stored proposal predates the investigation restructure (FC-8GW9M3, `jx73ejhb…`, top of the queue) threw `Cannot read properties of undefined (reading 'changes')`; two optional-chaining guards in `CaseReview.tsx` and `CaseInvestigation.tsx`. Added `lucide-react` 1.59.0, `motion` 14.3.1 and `@playwright/test` 1.64.1 (exact pins), `playwright.config.ts`, a read-only smoke suite `tests/e2e/smoke.spec.ts` (`npm run test:e2e`, 4 pass), `data-scroll-behavior="smooth"` on `<html>` (Next 16 note), gitignore entries. Tailwind, Radix, React Flow and charts deliberately not added. Handoff with status map, UX problems, visual direction, workspace structure, data gaps and the phased plan: `docs/ux-remodel-plan.md`. `npm run verify` passes (199 tests). Convex watchers were not running; nothing pushed to dev. Not committed |
+| 2026-10-24 | **UX remodel delivered** (pass 2 of `docs/ux-remodel-plan.md`). Backend: `reviewActions` table; `proposals.override` and `returnToAgent` (reviewer requests go into the model input as `reviewerRequests`, prompt updated); `payoutData.reviewFlaggedApproval`; `needsReview.failedChecks` / `.review`; `review.queue` projection; `proposals.latest.history` includes failed and rejected rows; `cases.view` stops sending `nessieAccountId`; `readStoredProposal()`; summaries get an ellipsis when cut; the reviewer's question outranks the model's on the call-back. Pushed to dev with `npx convex dev --once` (new index `reviewActions.by_case`). Frontend: app shell + tokens + IBM Plex via next/font (`app/globals.css`, `components/shell/AppShell.tsx`); workspace rebuilt (`CaseWorkspace`, `CaseHeader`, `DecisionBand`, `ReviewActions`, `FindingsPanel`, `FrameworkPanel`, `OutputsPanel`, `WorkPanel`, `Inspector`, `InspectorDetails`, `WorkspaceContext`, `ui.tsx`; `lib/review/inspector.ts`, `labels.ts`, `caseStatus.ts` extended); queue, pitch demo, `/call`, `/` and `/cases/<id>` restyled; `app/icon.svg`. Removed `CaseDecision`, `CaseInvestigation`, `Investigation`, `Tags`, `WorkspaceMode`, `WorkstationBar`, `SiteBanner`. 14 new tests (213). Browser-checked at 1440 / 1024 / 400 px and in dark mode; one deliberate write (a reviewer note kept the flagged approval FC-8GW9M3 flagged) persisted. `npm run verify` and `npm run test:e2e` pass. Not committed |
+| 2026-10-24 | **UX repass and scroll-driven demo** (pass 3 of `docs/ux-remodel-plan.md`). Warm palette restored (`app/globals.css`), `app/review/review.css` rewritten on cards, helper copy removed across the shell, workspace, inspector, queue, call page; page titles drop "(prototype)". `/review/demo` rebuilt as one pinned stage with eight scroll beats ending in the real workspace (`components/demo/`); `PitchDemo.tsx` deleted; `pitchWorkspaceData()` adds the earlier assessment as history; `CaseWorkspace` takes `onDemoAction`. Reference videos in `visualReferences/` read as frames (OpenCV in a scratchpad venv; no ffmpeg here). Checks pass: typecheck, lint, 213 unit tests, build, 4 e2e. Nothing committed |
+| 2026-10-24 | **Palette brief applied** (user: warm, neutral, productivity-first; muted indigo accent; surfaces not borders): tokens in `app/globals.css` (`--surface-nav`, `--surface-inspect` added), rail and inspector on stone surfaces, selection and the current nav item in indigo, Proposed label indigo / Authorized label green, changed-since boxes amber, document previews on the card surface, the demo's model scene on an indigo-tinted ground instead of dark. Screenshots re-checked light and dark; 4 e2e pass |
+| 2026-10-24 | `eslint.config.mjs` ignores `.claude/worktrees/**`: a second worktree `agent-2` (branch `agent-2`, at `c0e064a`, clean) appeared under `.claude/worktrees/` and its generated Convex files produced lint warnings. Typecheck and Vitest are unaffected |
+| 2026-10-24 | **Customer line redesigned** on the user's Hume-style reference: `app/call/page.tsx` owns a minimal header (brand, centred "Fraud support assistant", presenter popover), `components/call/CustomerCallView.tsx` draws the canvas (figure in rings driven by a `--lv` CSS variable from real mic and agent RMS levels, state label, three round controls, collapsible transcript), `components/call/AgentFigure.tsx` is an original deer line drawing. `VoiceCall.tsx` gains audio levels (`levels` ref) and a mute toggle (track `enabled`); old `cust-*`/`cc-stage` CSS replaced by `cl-*` in `app/globals.css` with `--cl-*` tokens (beige `#f3efe7`, ivory, peach and sage washes, red reserved for End call). Reduced motion keeps the rings still. Verified at 1440 and 400 px, light and dark, no call placed; 4 e2e pass; build passes |
+| 2026-10-24 | **Light theme applied** from the user's spec (white dominant, purple actions, peach highlights): all tokens in `app/globals.css` retuned (light and a mirrored dark), the demo's dark "Matched · code" label and the matched-record ink border replaced with white and purple, changed work items tinted peach, the customer line's washes switched to peach and lavender. Every route screenshotted in light and dark (queue, case, inspector, dialog, demo beats, finale, call, developer pages): no dark panels, no white-on-pale text. Lint, build, 4 e2e pass |
+| 2026-10-24 | Contrast tuned on request: page `#EFEDF3` (was `#F5F4F7`), rail and case header `#E4E0EC`, secondary surfaces `#E9E6F0`, inspector `#F5F3F9`; the case header moved from white to the rail surface. Checked on the queue, case and call |
+| 2026-10-24 | Contrast and functional colour pass on request ("more digital, less pastel"): darker text and firmer lines, deeper purple, saturated status colours, radii 8/6; new `--cust` teal for customer statements (marks, S-chips, demo bubbles, transcript, listening ring), bank-record chips white mono, provider chips dashed, model/inferred marks purple, person marks green (`.mark-*` rules in `app/globals.css`; `data-kind` on `RefChip`). Call-canvas washes reduced. Checked on queue, case, demo and call in light and dark; 4 e2e pass |
+| 2026-10-24 | Rail / case header `--surface-nav` darkened to `#D3D0DC` and section headers `--sunken` to `#DEDBE5` for contrast against the `#EAE9EE` page, on request |
+| 2026-10-24 | **Product named Bellhop.** The user supplied `bellhop.png` (kept at the repo root as the source); resized copies at `public/bellhop.png` (512 px) and `app/icon.png` (favicon, replaces `icon.svg`). The mark appears in the rail brand ("Bellhop · Demo Bank · claims"), the customer line header and as the assistant figure in the call rings (replacing the drawn deer, `AgentFigure.tsx` deleted), and on the demo call surface ("Bellhop · voice"). Page titles: "Bellhop", "Bellhop · Claims", "Bellhop · Demo" |

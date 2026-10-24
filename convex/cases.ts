@@ -29,7 +29,7 @@ export const list = query({
 });
 
 /** Every table that holds rows for one case. Payment-origin records are keyed by the Nessie transaction, not the case, and are kept. */
-const CASE_TABLES = ["statements", "transactions", "providerEvidence", "activity", "processedEvents", "reimbursementDecisions", "caseProposals", "intakeTurns", "voiceSessions"] as const;
+const CASE_TABLES = ["statements", "transactions", "providerEvidence", "activity", "processedEvents", "reimbursementDecisions", "caseProposals", "reviewActions", "intakeTurns", "voiceSessions"] as const;
 /** Rows deleted per table per mutation; a bigger case continues in a scheduled follow-up. */
 const PURGE_BATCH = 500;
 
@@ -77,18 +77,37 @@ export const view = query({
   handler: async (ctx, { caseId }) => {
     const c = await ctx.db.get(caseId);
     if (!c) return null;
-    const [statements, evidence, activity, decisions] = await Promise.all([
+    const [statements, evidence, activity, decisions, reviewActions] = await Promise.all([
       ctx.db.query("statements").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect(),
       currentEvidence(ctx, caseId),
       ctx.db.query("activity").withIndex("by_case", (q) => q.eq("caseId", caseId)).order("desc").take(200),
       ctx.db.query("reimbursementDecisions").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect(),
+      ctx.db.query("reviewActions").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect(),
     ]);
     // SYNTHETIC payment-origin records for this case's transactions (keyed by the Nessie id).
     const paymentOrigins = (
       await Promise.all(evidence.transactions.map((t) => ctx.db.query("paymentOrigins").withIndex("by_txn", (q) => q.eq("txnExternalId", t.externalId)).unique()))
     ).flatMap((o, i) => (o ? [{ txnRef: evidence.transactions[i]!.ref, ...o }] : []));
     return {
-      case: { ...c, nessieAccountBound: c.nessieAccountId !== null },
+      // The browser never needs the Nessie account ID, only whether one is bound.
+      case: {
+        _id: c._id,
+        _creationTime: c._creationTime,
+        title: c.title,
+        synthetic: c.synthetic,
+        customerLabel: c.customerLabel,
+        ...(c.crsPersonaId !== undefined ? { crsPersonaId: c.crsPersonaId } : {}),
+        ...(c.demoPersonaId !== undefined ? { demoPersonaId: c.demoPersonaId } : {}),
+        nextStatementNumber: c.nextStatementNumber,
+        bankFetch: c.bankFetch,
+        analysis: c.analysis,
+        analysisVersion: c.analysisVersion,
+        ...(c.autoApproval !== undefined ? { autoApproval: c.autoApproval } : {}),
+        createdAt: c.createdAt,
+        nessieAccountBound: c.nessieAccountId !== null,
+      },
+      /** Overrides, returns and notes by a person, newest first. */
+      reviewActions: reviewActions.sort((a, b) => b.at - a.at),
       paymentOrigins,
       statements: statements.sort((a, b) => a.receivedAt - b.receivedAt),
       transactions: evidence.transactions.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")),

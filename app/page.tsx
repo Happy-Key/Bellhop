@@ -1,5 +1,6 @@
 "use client";
 
+/** Developer tools: create and delete synthetic cases, open the per-case controls, see integration configuration. Not a reviewer screen. */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -7,6 +8,8 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { IntegrationStatus } from "@/components/IntegrationStatus";
+import { caseRef } from "@/components/review/format";
+import { customerName } from "@/lib/review/labels";
 
 export default function Home() {
   const cases = useQuery(api.cases.list);
@@ -30,19 +33,26 @@ export default function Home() {
   };
 
   return (
-    <main>
-      <h1>Cases</h1>
-      <button
-        onClick={async () => {
-          const id = await create({});
-          router.push(`/cases/${id}`);
-        }}
-      >
-        Create synthetic claim
-      </button>
-      <section>
-        <h2>Existing cases</h2>
-        {removeError && <p className="error">Delete failed: {removeError}</p>}
+    <main className="page">
+      <div className="page-head">
+        <div>
+          <h1>Developer tools</h1>
+          <p className="muted">Synthetic cases and integration configuration. Reviewers work in the claims queue.</p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={async () => {
+            const id = await create({});
+            router.push(`/cases/${id}`);
+          }}
+        >
+          Create a synthetic case
+        </button>
+      </div>
+      <section className="dev-section">
+        <h2>Cases</h2>
+        {removeError && <p className="error small">Delete failed: {removeError}</p>}
         {cases === undefined ? (
           <p className="muted">Loading…</p>
         ) : cases.length === 0 ? (
@@ -50,16 +60,25 @@ export default function Home() {
         ) : (
           <table>
             <thead>
-              <tr><th>Case</th><th>Stage</th><th>Created</th><th></th></tr>
+              <tr>
+                <th>Case</th>
+                <th>Customer</th>
+                <th>Stage</th>
+                <th>Created</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody>
               {cases.map((c) => (
                 <tr key={c._id}>
-                  <td><span className="label synthetic">synthetic</span><Link href={`/cases/${c._id}`}>{c.title}</Link></td>
-                  <td>{c.stage}</td>
-                  <td>{new Date(c.createdAt).toLocaleString()}</td>
                   <td>
-                    <button className="danger" disabled={removing === c._id} onClick={() => removeCase(c._id, c.title)}>
+                    <span className="ref">{caseRef(c._id)}</span> <Link href={`/cases/${c._id}`}>Case tools</Link> · <Link href={`/review/${c._id}`}>Workstation</Link>
+                  </td>
+                  <td>{customerName(c).name}</td>
+                  <td>{c.stage.replace(/_/g, " ")}</td>
+                  <td className="tnum">{new Date(c.createdAt).toLocaleString()}</td>
+                  <td>
+                    <button type="button" className="btn btn-sm btn-danger" disabled={removing === c._id} onClick={() => removeCase(c._id, c.title)}>
                       {removing === c._id ? "Deleting…" : "Delete"}
                     </button>
                   </td>

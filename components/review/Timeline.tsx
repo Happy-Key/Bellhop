@@ -32,9 +32,6 @@ export function Timeline({ data, recordSource, reviewEvents }: { data: CaseView;
     <section id="timeline" className="ws-section" aria-labelledby="timeline-h">
       <div className="ws-section-head">
         <h2 id="timeline-h">Timeline</h2>
-        <p className="ws-muted ws-small">
-          Oldest first. Bank records carry a date only and are placed at that date. Reviewer activity appears only when it was recorded. Select an event to open its evidence.
-        </p>
       </div>
       <div className="ws-segmented ws-segmented-sm" role="group" aria-label="Filter timeline events">
         {FILTERS.map((f) => (
@@ -46,7 +43,7 @@ export function Timeline({ data, recordSource, reviewEvents }: { data: CaseView;
       {visible.length > LIMIT && !all && (
         <p><button type="button" className="ws-link" onClick={() => setAll(true)}>Show {visible.length - LIMIT} earlier events</button></p>
       )}
-      {visible.length === 0 && <p className="ws-muted ws-small">No events in this category.</p>}
+      {visible.length === 0 && <p className="ws-muted ws-small">No events.</p>}
       <ol className="ws-timeline">
         {shown.map((e) => (
           <li key={e.id} className={`ws-tl ws-tl-${e.problem ? "problem" : e.cls}`}>

@@ -1,50 +1,40 @@
 "use client";
 
 /**
- * Claims queue: cases grouped by who needs to act. Selection lives in the URL (?case=<id>) so a
- * presentation can deep-link to a selected case. Keyboard: ↑/↓/Home/End move the selection,
- * Enter opens the case review.
+ * Claims queue: every case grouped by who has to act, the counts as filters. Selection lives in the
+ * URL (?case=<id>). Keyboard: ↑/↓/Home/End move the selection, Enter opens the case. Rows move
+ * between groups as cases are reassessed; the move is animated, skipped under reduced motion.
  */
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
-import { DECISION_LABEL, type CaseAttention } from "@/lib/review/caseStatus";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
+import { api } from "@/convex/_generated/api";
+import type { CaseAttention } from "@/lib/review/caseStatus";
+import { DECISION_SHORT, customerName } from "@/lib/review/labels";
 import { caseRef, exactTime, relativeTime, usd } from "./format";
-import { AttentionGlyph } from "./Tags";
+import { Mark, Pill, type MarkKind, type Tone } from "./ui";
 
 type QueueCase = FunctionReturnType<typeof api.review.queue>[number];
 type Filter = "all" | CaseAttention;
 
-const GROUPS: { id: CaseAttention; label: string; hint: string }[] = [
-  { id: "reviewer", label: "Needs a bank reviewer", hint: "Authorize, confirm, review or unblock" },
-  { id: "customer", label: "Waiting on the customer", hint: "The investigation needs the customer's answer" },
-  { id: "system", label: "Investigating", hint: "The reasoning model is working; nobody needs to act" },
-  { id: "no_report", label: "No report yet", hint: "Case opened, nothing recorded" },
-  { id: "decided", label: "Decided", hint: "An authorized outcome is recorded" },
+const GROUPS: { id: CaseAttention; label: string; mark: MarkKind; tone: Tone }[] = [
+  { id: "reviewer", label: "Needs a reviewer", mark: "bank", tone: "accent" },
+  { id: "customer", label: "Waiting on the customer", mark: "customer", tone: "warn" },
+  { id: "system", label: "Investigating", mark: "model", tone: "neutral" },
+  { id: "decided", label: "Decided", mark: "person", tone: "ok" },
+  { id: "no_report", label: "No report", mark: "customer", tone: "quiet" },
 ];
-
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "reviewer", label: "Reviewer" },
-  { id: "customer", label: "Customer" },
-  { id: "system", label: "Investigating" },
-  { id: "decided", label: "Decided" },
-];
-
-const WORK_STATE: Record<string, string> = { in_progress: "in progress", awaiting_customer: "awaiting the customer", awaiting_bank: "awaiting the bank" };
 
 const lastTouched = (c: QueueCase) => c.lastActivity?.at ?? c.createdAt;
 
-export function paymentSummary(c: QueueCase): { text: string; note: string } {
-  if (c.matched) return { text: `${usd(c.matched.amount)} · ${c.matched.merchant ?? "Unknown merchant"}`, note: "matched to bank record" };
+function paymentOf(c: QueueCase): { amount: string | null; sub: string } {
+  if (c.matched) return { amount: usd(c.matched.amount), sub: `${c.matched.merchant ?? "Unknown merchant"} · ${c.matched.date ?? ""}` };
   const r = c.reported;
-  const reported = [r.amount !== null ? usd(r.amount) : null, r.merchant].filter(Boolean).join(" · ");
-  if (c.candidateCount > 1) return { text: reported || `${c.candidateCount} possible payments`, note: `${c.candidateCount} possible bank records` };
-  if (reported) return { text: reported, note: c.bankFetchStatus === "ok" ? "reported, not matched" : "reported, records not retrieved" };
-  return { text: "No payment details yet", note: "" };
+  if (r.amount !== null || r.merchant) return { amount: r.amount !== null ? usd(r.amount) : null, sub: `${r.merchant ?? "payee unknown"} · ${c.candidateCount > 1 ? `${c.candidateCount} possible records` : c.bankFetchStatus === "ok" ? "not matched" : "records not retrieved"}` };
+  return { amount: null, sub: "No payment details" };
 }
 
 function useNow(intervalMs = 30_000) {
@@ -63,28 +53,28 @@ export function ClaimsQueue() {
   const selectedId = params.get("case");
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [showEmpty, setShowEmpty] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const now = useNow();
+  const reduce = useReducedMotion();
 
   const visible = useMemo(() => {
     if (!cases) return [];
     const term = search.trim().toLowerCase();
     return cases
-      .filter((c) => filter === "all" || c.status.attention === filter)
+      .filter((c) => (filter === "all" ? showEmpty || c.status.attention !== "no_report" : c.status.attention === filter))
       .filter((c) => {
         if (!term) return true;
-        const p = paymentSummary(c);
-        return [caseRef(c._id), p.text, c.matched?.ref ?? "", c.status.headline, ...c.status.work.map((w) => w.title)].some((s) => s.toLowerCase().includes(term));
+        const p = paymentOf(c);
+        return [caseRef(c._id), customerName(c).name, p.amount ?? "", p.sub, c.matched?.ref ?? "", c.status.headline, ...c.status.work.map((w) => w.title)].some((s) => s.toLowerCase().includes(term));
       })
-      .sort((a, b) => GROUPS.findIndex((g) => g.id === a.triage.attention) - GROUPS.findIndex((g) => g.id === b.triage.attention) || lastTouched(b) - lastTouched(a));
-  }, [cases, filter, search]);
+      .sort((a, b) => GROUPS.findIndex((g) => g.id === a.status.attention) - GROUPS.findIndex((g) => g.id === b.status.attention) || lastTouched(b) - lastTouched(a));
+  }, [cases, filter, search, showEmpty]);
 
   const selected = visible.find((c) => c._id === selectedId) ?? null;
-
   const select = (id: string) => router.replace(`/review?case=${id}`, { scroll: false });
   const open = (id: string) => router.push(`/review/${id}`);
 
-  // Keep the selected option in view when it changes by keyboard.
   useEffect(() => {
     if (selectedId) document.getElementById(`q-${selectedId}`)?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
@@ -111,92 +101,75 @@ export function ClaimsQueue() {
   const counts = Object.fromEntries(GROUPS.map((g) => [g.id, cases.filter((c) => c.status.attention === g.id).length])) as Record<CaseAttention, number>;
 
   return (
-    <main className="ws-main ws-queue-page">
-      <div className="ws-pagehead">
-        <div>
-          <h1>Claims queue</h1>
-          <p className="ws-summary">
-            {cases.length === 0 ? (
-              "No cases yet."
-            ) : (
-              <>
-                {cases.length} {cases.length === 1 ? "case" : "cases"}. Needs a reviewer: <strong>{counts.reviewer}</strong> · waiting on the customer:{" "}
-                <strong>{counts.customer}</strong> · investigating: <strong>{counts.system}</strong> · decided: <strong>{counts.decided}</strong>.
-              </>
-            )}{" "}
-            <span className="ws-muted">Live from Convex. Synthetic data.</span>
-          </p>
-        </div>
-        <Link href="/review/demo" className="ws-demo-link">
-          <span className="ws-demo-tag">Synthetic demo</span> Product demo →
-          <span className="ws-small ws-muted">Scripted replay, separate from these cases</span>
-        </Link>
+    <main className="page">
+      <div className="page-head">
+        <h1>Claims queue</h1>
       </div>
 
-      <div className="ws-toolbar" role="search">
-        <label className="ws-search">
-          <span className="ws-visually-hidden">Search cases</span>
-          <input type="search" placeholder="Search reference, merchant, amount, next step…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="q-stats" role="group" aria-label="Filter by who needs to act">
+        {GROUPS.filter((g) => g.id !== "no_report").map((g) => (
+          <button key={g.id} type="button" className="q-stat" aria-pressed={filter === g.id} onClick={() => setFilter(filter === g.id ? "all" : g.id)}>
+            <span className="q-stat-n">{counts[g.id]}</span>
+            <span>{g.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="q-toolbar" role="search">
+        <label className="q-search">
+          <span className="visually-hidden">Search cases</span>
+          <input type="search" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
         </label>
-        <div className="ws-segmented" role="group" aria-label="Filter by who needs to act">
-          {FILTERS.map((f) => (
-            <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>
-              {f.label}
-              {f.id !== "all" && <span className="ws-count">{counts[f.id]}</span>}
-            </button>
-          ))}
-        </div>
+        <label className="q-toggle">
+          <input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} /> Cases with no report ({counts.no_report})
+        </label>
       </div>
 
       {cases.length === 0 ? (
-        <div className="ws-empty">
-          <p><strong>No claims have been reported.</strong></p>
-          <p className="ws-muted">
-            Cases appear here when a customer calls the <Link href="/call">customer line</Link> or a case is created in the <Link href="/">developer console</Link>.
+        <div className="empty">
+          <p>
+            <strong>No claims yet.</strong>
           </p>
         </div>
       ) : (
-        <div className="ws-queue">
-          <div
-            ref={listRef}
-            className="ws-list"
-            role="listbox"
-            tabIndex={0}
-            aria-label="Cases"
-            aria-activedescendant={selected ? `q-${selected._id}` : undefined}
-            onKeyDown={onKeyDown}
-          >
-            {visible.length === 0 && <p className="ws-muted ws-pad">No cases match this search or filter.</p>}
-            {GROUPS.map((g) => {
-              const rows = visible.filter((c) => c.status.attention === g.id);
-              if (rows.length === 0) return null;
-              return (
-                <div key={g.id} role="group" aria-labelledby={`grp-${g.id}`} className="ws-group">
-                  <div className="ws-group-head" id={`grp-${g.id}`}>
-                    <AttentionGlyph attention={g.id} />
-                    {g.label} <span className="ws-count">{rows.length}</span>
-                    <span className="ws-muted"> · {g.hint}</span>
-                  </div>
-                  {rows.map((c) => (
-                    <QueueRow
-                      key={c._id}
-                      c={c}
-                      now={now}
-                      selected={c._id === selected?._id}
-                      onSelect={() => {
-                        if (window.matchMedia("(max-width: 900px)").matches) open(c._id);
-                        else select(c._id);
-                        listRef.current?.focus({ preventScroll: true });
-                      }}
-                      onOpen={() => open(c._id)}
-                    />
-                  ))}
-                </div>
-              );
-            })}
+        <div className="q-layout">
+          <div ref={listRef} className="q-list" role="listbox" tabIndex={0} aria-label="Cases" aria-activedescendant={selected ? `q-${selected._id}` : undefined} onKeyDown={onKeyDown}>
+            {visible.length === 0 && <p className="muted ins-pad">No matching cases.</p>}
+            <LayoutGroup>
+              {GROUPS.map((g) => {
+                const rows = visible.filter((c) => c.status.attention === g.id);
+                if (rows.length === 0) return null;
+                return (
+                  <motion.div key={g.id} role="group" aria-labelledby={`grp-${g.id}`} className="q-group" layout={!reduce}>
+                    <div className="q-group-head" id={`grp-${g.id}`}>
+                      <Mark kind={g.mark} labelled={false} />
+                      {g.label} <span className="count">{rows.length}</span>
+                    </div>
+                    <AnimatePresence initial={false}>
+                      {rows.map((c) => (
+                        <motion.div key={c._id} layout={!reduce} initial={reduce ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={reduce ? undefined : { opacity: 0 }} transition={{ duration: 0.2 }}>
+                          <QueueRow
+                            c={c}
+                            now={now}
+                            tone={g.tone}
+                            selected={c._id === selected?._id}
+                            onSelect={() => {
+                              if (window.matchMedia("(max-width: 900px)").matches) open(c._id);
+                              else select(c._id);
+                              listRef.current?.focus({ preventScroll: true });
+                            }}
+                            onOpen={() => open(c._id)}
+                          />
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </LayoutGroup>
           </div>
-          <aside className="ws-preview" aria-label="Selected case">
-            {selected ? <Preview c={selected} /> : <p className="ws-muted ws-pad">Select a case to preview it. Use ↑ ↓ to move and Enter to open.</p>}
+          <aside className="q-preview card" aria-label="Selected case">
+            {selected ? <Preview c={selected} /> : <p className="muted">Select a case.</p>}
           </aside>
         </div>
       )}
@@ -204,89 +177,129 @@ export function ClaimsQueue() {
   );
 }
 
-function QueueRow({ c, now, selected, onSelect, onOpen }: { c: QueueCase; now: number; selected: boolean; onSelect: () => void; onOpen: () => void }) {
-  const p = paymentSummary(c);
-  const active = c.status.work.find((w) => w.status !== "done" && w.status !== "not_needed");
-  const done = c.status.work.filter((w) => w.status === "done").length;
+function QueueRow({ c, now, tone, selected, onSelect, onOpen }: { c: QueueCase; now: number; tone: Tone; selected: boolean; onSelect: () => void; onOpen: () => void }) {
+  const p = paymentOf(c);
+  const who = customerName(c);
   return (
-    <div id={`q-${c._id}`} role="option" aria-selected={selected} className="ws-row" onClick={onSelect} onDoubleClick={onOpen}>
-      <div className="ws-row-main">
-        <span className="ws-row-ref">{caseRef(c._id)}</span>
-        <span className="ws-row-payment">{p.text}</span>
-        {p.note && <span className="ws-row-note">{p.note}</span>}
+    <div id={`q-${c._id}`} role="option" aria-selected={selected} className="q-row" onClick={onSelect} onDoubleClick={onOpen}>
+      <div className="q-case">
+        <span className="q-ref">{caseRef(c._id)}</span>
+        <span className="q-name" title={who.name}>
+          {who.name}
+        </span>
       </div>
-      <div className="ws-row-next">{c.status.headline}</div>
-      <div className="ws-row-meta">
-        {active && <span>{active.title} · {WORK_STATE[active.status] ?? active.status}</span>}
-        {c.status.work.length > 0 && <span>{done}/{c.status.work.length} work done</span>}
-        {c.status.disposition && !c.status.outcome && <span className="ws-tag ws-tag-live">Proposed: {DECISION_LABEL[c.status.disposition.decision].toLowerCase()}{c.status.disposition.amount !== null ? ` ${usd(c.status.disposition.amount)}` : ""}</span>}
-        {c.status.blockers.length > 0 && <span className="ws-block"><span aria-hidden="true">■</span> {c.status.blockers.length} blocking</span>}
+      <div className="q-pay">
+        <span className="q-amt">{p.amount ?? "—"}</span>
+        <span className="q-merchant">{p.sub}</span>
+      </div>
+      <div className="q-next">
+        <span>
+          <Pill tone={tone}>{c.status.statusLabel}</Pill>
+          {c.status.disposition && !c.status.outcome && (
+            <Pill tone="quiet">
+              {DECISION_SHORT[c.status.disposition.decision]}
+              {c.status.disposition.amount !== null ? ` ${usd(c.status.disposition.amount)}` : ""}
+            </Pill>
+          )}
+        </span>
+        <span className="q-next-text" title={c.status.headline}>
+          {c.status.headline}
+        </span>
+      </div>
+      <div className="q-meta">
         <span title={c.lastActivity ? exactTime(c.lastActivity.at) : undefined}>{relativeTime(lastTouched(c), now)}</span>
+        {c.status.blockers.length > 0 && (
+          <span className="q-block">
+            <Mark kind="blocking" labelled={false} /> {c.status.blockers.length} blocking
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
 function Preview({ c }: { c: QueueCase }) {
-  const p = paymentSummary(c);
+  const p = paymentOf(c);
   const s = c.status;
+  const who = customerName(c);
+  const g = GROUPS.find((x) => x.id === s.attention)!;
   const active = s.work.filter((w) => w.status !== "done" && w.status !== "not_needed");
   const done = s.work.filter((w) => w.status === "done");
   return (
-    <div className="ws-preview-body">
-      <div className="ws-preview-head">
-        <h2>{caseRef(c._id)}</h2>
-        <span className="ws-stage">{s.statusLabel}</span>
+    <div>
+      <div className="q-preview-head">
+        <div>
+          <span className="q-ref">{caseRef(c._id)}</span>
+          <h2>{who.name}</h2>
+        </div>
+        <Pill tone={g.tone}>{s.statusLabel}</Pill>
       </div>
-      {s.summary && <p className="ws-preview-summary">{s.summary}</p>}
-      <dl className="ws-facts">
+      {s.summary && <p className="q-preview-sum">{s.summary}</p>}
+      <dl className="q-facts">
         <dt>Payment</dt>
-        <dd>{p.text}{p.note && <span className="ws-muted"> · {p.note}</span>}</dd>
+        <dd>
+          {p.amount ?? "—"} <span className="muted">· {p.sub}</span>
+        </dd>
         <dt>Next</dt>
-        <dd><strong>{s.headline}</strong></dd>
+        <dd>
+          <strong>{s.headline}</strong>
+        </dd>
         {s.disposition && (
           <>
             <dt>Proposed</dt>
-            <dd>{DECISION_LABEL[s.disposition.decision]}{s.disposition.amount !== null ? ` · ${usd(s.disposition.amount)}` : ""}{s.disposition.awaitingPerson && <span className="ws-muted"> · needs a person</span>}</dd>
+            <dd>
+              {DECISION_SHORT[s.disposition.decision]}
+              {s.disposition.amount !== null ? ` · ${usd(s.disposition.amount)}` : ""}
+              {!s.disposition.current && <span className="muted"> · case changed since</span>}
+            </dd>
           </>
         )}
         {s.outcome && (
           <>
-            <dt>Outcome</dt>
-            <dd>{s.outcome.label}{s.outcome.needsReview && <span className="ws-warn-text"> · needs review: {s.outcome.needsReview}</span>}</dd>
+            <dt>Authorized</dt>
+            <dd>
+              {s.outcome.label}
+              {s.outcome.needsReview && <span className="error"> · flagged</span>}
+            </dd>
           </>
         )}
-        {s.blockers.length > 0 && (
-          <>
-            <dt>Blocking</dt>
-            <dd>{s.blockers.join(" · ")}</dd>
-          </>
-        )}
-        <dt>Report received</dt>
-        <dd>{c.reportedAt ? exactTime(c.reportedAt) : <span className="ws-muted">No statement yet (case opened {exactTime(c.createdAt)})</span>}</dd>
+        <dt>Reported</dt>
+        <dd>{c.reportedAt ? exactTime(c.reportedAt) : <span className="muted">—</span>}</dd>
       </dl>
-      <h3 className="ws-h3">Investigation <span className="ws-tag">{s.source === "model" ? "model" : "rule-based"}</span></h3>
-      {s.work.length === 0 ? (
-        <p className="ws-muted">No investigative work yet.</p>
-      ) : (
-        <ol className="ws-steps-mini">
-          {active.map((w) => <li key={w.key}><span className="ws-clamp-2"><strong>{w.title}</strong> · {WORK_STATE[w.status] ?? w.status}</span></li>)}
-          {done.map((w) => <li key={w.key} className="ws-muted"><span className="ws-clamp-2">✓ {w.doneTitle ?? w.title}</span></li>)}
+      {s.work.length > 0 && (
+        <ol className="q-steps">
+          {active.map((w) => (
+            <li key={w.key}>
+              <strong>{w.title}</strong>
+            </li>
+          ))}
+          {done.map((w) => (
+            <li key={w.key} className="muted">
+              ✓ {w.doneTitle ?? w.title}
+            </li>
+          ))}
         </ol>
       )}
-      <p className="ws-small ws-muted">{s.findingCount} finding{s.findingCount === 1 ? "" : "s"} · {s.uncertaintyCount} open point{s.uncertaintyCount === 1 ? "" : "s"}</p>
-      <Link className="ws-btn ws-btn-primary" href={`/review/${c._id}`}>Open case →</Link>
+      <Link className="btn btn-primary" href={`/review/${c._id}`}>
+        Open
+      </Link>
     </div>
   );
 }
 
 function QueueSkeleton() {
   return (
-    <main className="ws-main ws-queue-page" aria-busy="true">
-      <div className="ws-pagehead"><h1>Claims queue</h1><p className="ws-summary ws-muted">Loading cases…</p></div>
-      <div className="ws-queue">
-        <div className="ws-list">{[0, 1, 2, 3].map((i) => <div key={i} className="ws-row ws-skel" />)}</div>
-        <aside className="ws-preview" />
+    <main className="page" aria-busy="true">
+      <div className="page-head">
+        <h1>Claims queue</h1>
+      </div>
+      <div className="q-layout">
+        <div className="q-list">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="skel" style={{ height: 56, margin: 8 }} />
+          ))}
+        </div>
+        <aside className="q-preview card" />
       </div>
     </main>
   );

@@ -30,3 +30,10 @@ Thumbs.db
 
 # Factory / developer-agent scratch output
 .factory-runs/
+
+# Playwright (npm run test:e2e)
+test-results/
+playwright-report/
+
+# Reference recordings are too large for the repo; the stills stay.
+visualReferences/*.mp4

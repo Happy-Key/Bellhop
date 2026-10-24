@@ -55,7 +55,7 @@ export function EvidenceTrail({ analysis, payment, paymentCount }: { analysis: S
     return (
       <section id="trail" className="ws-section" aria-labelledby="trail-h">
         <h2 id="trail-h">Payments and evidence</h2>
-        <p className="ws-muted">No analysis yet.</p>
+        <p className="ws-muted">Nothing yet.</p>
       </section>
     );
   }
@@ -120,12 +120,8 @@ export function EvidenceTrail({ analysis, payment, paymentCount }: { analysis: S
   return (
     <section id="trail" className="ws-section" aria-labelledby="trail-h">
       <div className="ws-section-head">
-        <h2 id="trail-h">Payments and evidence {rec && <span className={`ws-tag ws-recon-${rec}`}>{RECONCILIATION_LABEL[rec]}</span>}</h2>
-        <p className="ws-muted ws-small">
-          What the customer reported, where they said it, and how it compares with{" "}
-          {payment ? <>bank record <RefChip refId={payment.ref} /></> : "a bank record (none selected)"}
-          {paymentCount > 1 && " — switch payments in the left column"}. Hover or focus a reference to highlight its source.
-        </p>
+        <h2 id="trail-h">Reported against the record {rec && <span className={`ws-tag ws-recon-${rec}`}>{RECONCILIATION_LABEL[rec]}</span>}</h2>
+        {paymentCount > 1 && <p className="ws-muted ws-small">{paymentCount} candidate records.</p>}
       </div>
       <div className="ws-table-wrap">
         <table className="ws-table ws-trail">
@@ -186,7 +182,7 @@ export function EvidenceTrail({ analysis, payment, paymentCount }: { analysis: S
       )}
       {facts.uninterpretedRefs.length > 0 && (
         <p className="ws-small ws-warn-text">
-          Not yet interpreted: {facts.uninterpretedRefs.map((r) => <RefChip key={r} refId={r} />)} — facts from these statements are missing above.
+          Not yet interpreted: {facts.uninterpretedRefs.map((r) => <RefChip key={r} refId={r} />)}
         </p>
       )}
     </section>

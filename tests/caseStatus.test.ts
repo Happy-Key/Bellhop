@@ -77,3 +77,52 @@ describe("case status (investigation first)", () => {
     expect(s.headline).toBe("Retrieve bank records");
   });
 });
+
+describe("case status: review actions and flagged approvals", () => {
+  const later = (p: CaseProposal, plan: AssessmentRow["plan"]) => row(p, plan, { completedAt: 2 });
+
+  it("a proposal stored before the investigation format falls back to the rules, labelled, without crashing", () => {
+    const s = caseStatus(base({ assessment: row(proposal("approve", { investigation: EMPTY_INVESTIGATION }), { kind: "needs_person_to_approve", note: "" }, { legacy: true }) }));
+    expect(s.source).toBe("rules");
+    expect(s.sourceLabel).toMatch(/predates/);
+    expect(s.work.length).toBeGreaterThan(0);
+    expect(s.disposition?.decision).toBe("approve");
+  });
+
+  it("an override to ask the customer puts the reviewer's question first and ends the wait for a person", () => {
+    const s = caseStatus(base({ assessment: later(proposal("deny"), { kind: "needs_person_to_confirm_denial", note: "" }), reviewActions: [{ kind: "override", decision: "request_information", reason: "Too early to deny", question: "Did you still have your card that day?", at: 5 }] }));
+    expect(s).toMatchObject({ attention: "customer", headline: "Customer to answer: Did you still have your card that day?", nextQuestionBy: "reviewer" });
+    expect(s.disposition).toMatchObject({ overridden: true, awaitingPerson: false });
+    expect(s.outcome).toBeNull();
+  });
+
+  it("an override to deny is a person's outcome; an override to escalate puts the case with a specialist", () => {
+    const denied = caseStatus(base({ assessment: later(proposal("escalate"), { kind: "automatic", note: "" }), reviewActions: [{ kind: "override", decision: "deny", reason: "Chip-and-PIN at home", at: 5 }] }));
+    expect(denied).toMatchObject({ attention: "decided", outcome: { kind: "denied", by: "person" } });
+    const esc = caseStatus(base({ assessment: later(proposal("deny"), { kind: "needs_person_to_confirm_denial", note: "" }), reviewActions: [{ kind: "override", decision: "escalate", reason: "Wire desk", at: 5 }] }));
+    expect(esc).toMatchObject({ attention: "reviewer", statusLabel: "Escalated by a person" });
+  });
+
+  it("a return waits for the model when live reasoning is on, and is superseded by a newer assessment", () => {
+    const returned = caseStatus(base({ assessment: later(proposal("escalate"), { kind: "automatic", note: "" }), reviewActions: [{ kind: "return", reason: "Check the card balance", at: 5 }] }));
+    expect(returned).toMatchObject({ attention: "system", statusLabel: "Returned for more work" });
+    expect(returned.returned?.reason).toBe("Check the card balance");
+    const off = caseStatus(base({ modelEnabled: false, assessment: later(proposal("escalate"), { kind: "automatic", note: "" }), reviewActions: [{ kind: "return", reason: "Check the card balance", at: 5 }] }));
+    expect(off.attention).toBe("reviewer");
+    const superseded = caseStatus(base({ assessment: row(proposal("escalate"), { kind: "automatic", note: "" }, { completedAt: 9 }), reviewActions: [{ kind: "return", reason: "Check the card balance", at: 5 }] }));
+    expect(superseded.returned).toBeNull();
+    expect(superseded.headline).toBe("Specialist review");
+  });
+
+  it("a flagged approval is decided once a person affirms it, and stays flagged with a note otherwise", () => {
+    const outcome = (review: { at: number; affirmed: boolean; note: string } | undefined) => [{ outcome: "auto_approved" as const, amount: 49, txnRef: "T:p-1", policy: "AUTO-1@v", decidedAt: 3, payoutStatus: "deposited" as const, needsReview: { at: 4, reason: "now failing: no_conflicts", failedChecks: ["no_conflicts"], review } }];
+    const flagged = caseStatus(base({ outcomes: outcome(undefined) }));
+    expect(flagged).toMatchObject({ attention: "reviewer", headline: "Review the automatic approval: 1 check no longer passes", flag: { failedChecks: ["no_conflicts"] } });
+    const noted = caseStatus(base({ outcomes: outcome({ at: 5, affirmed: false, note: "waiting" }) }));
+    expect(noted.flag?.review?.note).toBe("waiting");
+    expect(noted.attention).toBe("reviewer");
+    const affirmed = caseStatus(base({ outcomes: outcome({ at: 5, affirmed: true, note: "" }) }));
+    expect(affirmed).toMatchObject({ attention: "decided", flag: null, outcome: { by: "person", kind: "approved" } });
+    expect(affirmed.outcome?.label).toMatch(/affirmed by a person/);
+  });
+});
