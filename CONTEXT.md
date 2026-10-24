@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (intake questions tailored to automatic approval)_
+_Last updated: 2026-10-24 (demo personas on /call)_
 
 ## What this is
 
@@ -34,18 +34,19 @@ Rules that always hold:
 
 | Area | State |
 |---|---|
-| Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call`, **bank claims workstation `/review`** (queue + investigation workspace) and **synthetic guided-intake demo `/review/demo`** (merged from `bank-dashboard` 2026-10-24). The workstation does not yet show AUTO-1 results or payouts; use the case page for those |
-| Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. **Latest code is deployed** (pushed with `npx convex dev --once`) |
+| Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call` (with a **demo persona picker**), **bank claims workstation `/review`** (queue + investigation workspace) and **synthetic guided-intake demo `/review/demo`** (merged from `bank-dashboard` 2026-10-24). The workstation does not yet show AUTO-1 results or payouts; use the case page for those |
+| Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. **Latest code is deployed**, including the uncommitted demo personas (pushed with `npx convex dev --once`). Env `NESSIE_PERSONA_ACCOUNTS` set |
 | Bank records (Nessie) | ✅ Live: purchases **and deposits** (deposits drive the refund check; never matched as the disputed payment) |
 | Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ⚠️ **Credits not approved ($0.00 balance); may be refused at any moment.** Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
 | Voice (Cartesia) | ✅ Live: one question per turn (`question_id`), **tailored to what AUTO-1 needs** (mostly a yes or no about one named bank record); waits up to 8 s for extraction; at most one "anything else?" in a row; a display error can't end a call |
 | CRS | ✅ Identity check and **Fraud Finder** live (persona bodies only; Fraud Finder verified on P01, score 11) |
 | Case decisions (Bitdeer) | 🟡 **Built, mock-tested, not run live** (committed on `foundation`): the model proposes approve / deny / request information / escalate with cited reasons, a legal reading and draft letters. Info requests and escalations are automatic; approvals pay out automatically only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Validated before use. Off switch: `CASE_REASONING=off`. The personal review deployment has no Bitdeer key (scripted) |
-| Automatic reimbursement | ✅ Built: AUTO-1 v2, 14 checks, SIMULATED deposit that can't be paid twice. ⚠️ **The first live deposit hasn't been made yet** |
-| Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown) |
+| Automatic reimbursement | ✅ Built: AUTO-1 v2, 14 checks, SIMULATED deposit that can't be paid twice. ✅ **First live deposit made** 2026-10-24 (persona Margaret, $58, Nessie deposit `96ead8f0…`) |
+| Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown); persona cases attach their own automatically |
+| Demo personas | ✅ `/call` picker: Margaret (P01, auto-approve), Grace (P19, own device → person), Victor (P12, identity fail → person), Samuel (P16, scam → specialist). Each has its own seeded Nessie account; its case sets itself up. Margaret verified live end to end. Committed and pushed (rebased onto `936dea4`) |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
 | Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify` (with the `bank-dashboard` merge): typecheck, lint, **152 tests**, build pass |
+| Checks | ✅ `npm run verify` (personas rebased onto the case-decision commits): typecheck, lint, **170 tests**, build pass |
 
 ## Branch and git
 
@@ -55,9 +56,17 @@ Rules that always hold:
 
 ## Demo plan (user decisions)
 
-- A **prepared bank record and script**. The customer is framed as already logged in to their bank, so
-  **no automatic bank-record pull** when a call starts.
-- **Run-through for an automatic approval:**
+- **Demo personas on `/call`** (decided 2026-10-24). Pick one before starting the call. Each persona is hardwired to
+  its own seeded Nessie account (`NESSIE_PERSONA_ACCOUNTS`), a CRS test identity and payment-origin records per
+  purchase (`lib/fixtures/demoPersonas.ts`). Its case **sets itself up**: records retrieved, origins attached, CRS
+  identity check and Fraud Finder run (`convex/personaSetup.ts`). The presenter notes on the page show the
+  ledger, expected outcome and suggested lines. Say the amount and merchant (purchase dates are fixed at the seed
+  date). Re-seed with `npm run seed:personas -- --confirm [--only=<id>]`, then update the env var.
+- **No persona** = the old behaviour: a prepared bank record and script, the customer framed as already logged
+  in, and **no automatic bank-record pull** when a call starts.
+- Bitdeer tags a plain denial ("a charge I didn't make") as a scam indicator, so AUTO-1 waits for the
+  credentials answer: always say the "No, I never gave anyone a code…" line.
+- **Manual run-through (no persona) for an automatic approval:**
   1. Open the case page and click **Retrieve bank records**.
   2. Set the demo payment's "How it was made" to **New device, no two-factor, out of state**.
   3. Link persona **P01** (or P19) and click **Run CRS checks**.
@@ -70,9 +79,9 @@ Rules that always hold:
 
 ## What needs to be done next (priority order)
 
-1. **A full demo rehearsal on dev**, including the **first live SIMULATED deposit**. The code follows
-   Nessie's spec (`medium: "balance"`, `status: "completed"`, integer amount), but nothing has run live
-   yet. A rejection shows on the case, with Retry payout.
+1. **A full voice rehearsal of each persona** on dev. Margaret was verified end to end by text (setup, Bitdeer,
+   14 checks, SIMULATED deposit); Grace, Victor and Samuel are verified offline only (`tests/personas.test.ts`).
+   Consider fixing the Bitdeer prompt so a plain denial isn't a scam indicator.
 2. **A voice re-test with Bitdeer on**, including the new tailored questions (not yet heard live). Check the pacing with the 8 s wait, and that varied acknowledgements
    follow the updated agent instructions (paste them from `docs/integrations.md` into the Cartesia Playground).
 3. **Buttons for a person:** approve or reverse claims outside AUTO-1. Today only the checklist is shown.
@@ -178,3 +187,7 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Switching the working copy to `foundation` means the running `npx convex dev` watcher pushes foundation's schema and functions (AUTO-1, payouts, payment origins) to the personal review deployment `friendly-grouse-183`. It has no Bitdeer key, so extraction there stays scripted |
 | 2026-10-24 | **Intake questions tailored to automatic approval (AUTO-1).** Fixed four ways a legitimate claim got stuck: (1) two amounts in one statement blocked the claim for good (the question returned after being answered, and the reply created an amount conflict); it now confirms the one matched record by name. (2) "They asked for a code but I didn't give it" was read as *shared*; the question now asks what the customer *gave*, and refusals parse as not shared. (3) "No." / "I don't recognize it" in reply to "did you make it?" didn't parse; now read as someone else. (4) Missing details were one three-part question; now one at a time, exact amount (with cents) first, skipping a detail the customer doesn't know. Also: two possible records → yes/no about the likelier one ("no" leaves the other as the match); the initiation question names the matched payment; "I sent it" read from a free-form account gets one read-back (`confirm:authorization`) so a misread denial isn't lost; replies to which-payment questions that restate the amount or date supersede the earlier value (`settles()` in `lib/domain/facts.ts`). `autoApproval.ts` unchanged. 8 new tests. Rebased onto the `bank-dashboard` merge (`e8f06d2`); its triage and guided-intake demo tests updated to the new key (`tentative:<ref>` for two possible records) and the named initiation question. 152 tests pass. Pushed to `origin/foundation`; not run live; not pushed to Convex |
 | 2026-10-24 | Bitdeer whole-case decision proposals (user decision: Bitdeer, no Claude API; model may propose denials; not every decision needs a person). New `caseProposals` table and `approved_by_person` outcome; voice uses the model's question as a fallback; decision panel in `/review/<id>`; `CLAUDE.md` updated. 11 new tests (155 total); verify passes. Not run live. Committed and pushed to `foundation`, merged with the intake-question commit `c858e1b`. The running `convex dev` watcher pushed the new functions to `friendly-grouse-183` (scripted there, so no model calls) |
+| 2026-10-24 | **Intake questions tailored to automatic approval (AUTO-1).** Fixed four ways a legitimate claim got stuck: (1) two amounts in one statement blocked the claim for good (the question returned after being answered, and the reply created an amount conflict); it now confirms the one matched record by name. (2) "They asked for a code but I didn't give it" was read as *shared*; the question now asks what the customer *gave*, and refusals parse as not shared. (3) "No." / "I don't recognize it" in reply to "did you make it?" didn't parse; now read as someone else. (4) Missing details were one three-part question; now one at a time, exact amount (with cents) first, skipping a detail the customer doesn't know. Also: two possible records → yes/no about the likelier one ("no" leaves the other as the match); the initiation question names the matched payment; "I sent it" read from a free-form account gets one read-back (`confirm:authorization`) so a misread denial isn't lost; replies to which-payment questions that restate the amount or date supersede the earlier value (`settles()` in `lib/domain/facts.ts`). `autoApproval.ts` unchanged. 8 new tests. Rebased onto the `bank-dashboard` merge (`e8f06d2`); its triage and guided-intake demo tests updated to the new key (`tentative:<ref>` for two possible records) and the named initiation question. 152 tests pass. Pushed to `origin/foundation`; not run live |
+| 2026-10-24 | Pushed `foundation` `c858e1b` (tailored questions plus the `bank-dashboard` workstation) to the main dev deployment `dynamic-chihuahua-120` with `npx convex dev --once`; `review:queue` is registered there |
+| 2026-10-24 | **Demo personas on `/call`** (user decisions: full automatic setup for personas, none without one; four scenarios; seeding approved). `lib/fixtures/demoPersonas.ts` (Margaret/P01, Grace/P19, Victor/P12, Samuel/P16, each with merchants, purchases, per-purchase SYNTHETIC origins, expected outcome and script); `convex/personas.ts` (`createForPersona`: the backend maps persona → account via `NESSIE_PERSONA_ACCOUNTS`, never from the client; origins attached on retrieval without overwriting); `convex/personaSetup.ts` (retrieve → CRS identity → Fraud Finder); the Nessie and CRS action bodies became shared helpers; `cases.demoPersonaId`; persona home state used for AUTO-1; `/call` picker with presenter notes, locked during a call; `npm run seed:personas` (shared seed helpers). Seeded all four in the Nessie sandbox (read-back verified), set the env var, deployed. **Live check (Margaret, by text):** setup 3 records + 3 origins + CRS clean + score 11; Bitdeer read S1 correctly but tagged it as a scam indicator; after the credentials line, all 14 checks passed and **the first live SIMULATED deposit** went through ($58). 159 tests pass (7 new). Not committed |
+| 2026-10-24 | User couldn't click other personas on `/call`. Not reproduced: in headless Chrome the picker switches personas, and it unlocks after a failed call start; likely a stale tab, a Next.js error overlay, or the deliberate lock during a call. Removed the CRS-persona import from `lib/fixtures/demoPersonas.ts` so the browser bundle no longer carries CRS test identity bodies (check kept in `tests/personas.test.ts`); redeployed |

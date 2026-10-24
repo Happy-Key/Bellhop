@@ -12,6 +12,7 @@ import { redactSensitive } from "../lib/domain/redact";
 import { evaluateAutoApproval, type AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 import { DEMO_CUSTOMER } from "../lib/fixtures/demo";
 import { maybeRequestProposal } from "./proposals";
+import { getDemoPersona } from "../lib/fixtures/demoPersonas";
 import type { AskedQuestion, Statement, StatementInterpretation, TransactionEvidence, ProviderEvidence } from "../lib/domain/schemas";
 
 export const MAX_STATEMENT_CHARS = 4000;
@@ -104,8 +105,8 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
     paymentOrigin: matched && originRow
       ? { txnRef: matched.ref, channel: originRow.channel, device: originRow.device, twoFactor: originRow.twoFactor, city: originRow.city, state: originRow.state, synthetic: true }
       : null,
-    // The bank's customer profile; every case is the synthetic demo customer for now.
-    homeState: DEMO_CUSTOMER.address.state,
+    // The bank's customer profile: the demo persona's, or the synthetic demo customer's.
+    homeState: getDemoPersona(c.demoPersonaId)?.home.state ?? DEMO_CUSTOMER.address.state,
   });
   await ctx.db.patch(caseId, { analysis: JSON.parse(JSON.stringify(stored)), analysisVersion: c.analysisVersion + 1, autoApproval: evaluation });
   if (analysis.rejectedFindings.length > 0) {

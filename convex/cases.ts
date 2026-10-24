@@ -4,6 +4,7 @@ import type { Doc } from "./_generated/dataModel";
 import { currentEvidence, logActivity, recomputeAnalysis, recordStatement } from "./model";
 import { transactionFields } from "./validators";
 import { DEMO_CUSTOMER_LABEL } from "../lib/fixtures/demo";
+import { applyPersonaOrigins } from "./personas";
 
 export const list = query({
   args: {},
@@ -139,6 +140,7 @@ export const storeTransactions = internalMutation({
     await ctx.db.patch(caseId, { bankFetch: { status: "ok", at: now, count: transactions.length } });
     await logActivity(ctx, caseId, "nessie:live", "bank_records_retrieved", `LIVE Nessie retrieval: ${transactions.filter((t) => t.kind !== "deposit").length} purchase(s) and ${transactions.filter((t) => t.kind === "deposit").length} deposit(s), ${added} new, ${changed} changed (earlier versions kept).`);
     for (const w of warnings) await logActivity(ctx, caseId, "nessie:live", "warning", w);
+    await applyPersonaOrigins(ctx, caseId);
     await recomputeAnalysis(ctx, caseId);
   },
 });

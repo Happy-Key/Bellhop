@@ -419,3 +419,51 @@ describe("CRS persona re-linking", () => {
     expect((view?.case.analysis as { findings: { category: string }[] }).findings.some((f) => f.category === "external_provider")).toBe(false);
   });
 });
+
+describe("demo personas (SYNTHETIC)", () => {
+  const purchase = (externalId: string, amount: number, merchantName: string) => ({
+    ref: `T:${externalId}`, externalId, provider: "nessie" as const, kind: "purchase" as const, amount, date: "2026-10-23",
+    description: null, merchantId: `m-${externalId}`, merchantName, status: "completed", medium: "balance",
+  });
+
+  it("binds the persona's account and CRS identity on the backend, and refuses unknown or unconfigured personas", async () => {
+    const t = convexTest(schema, modules);
+    vi.stubEnv("NESSIE_PERSONA_ACCOUNTS", "");
+    await expect(t.mutation(api.personas.createForPersona, { personaId: "margaret" })).rejects.toThrow(/no Nessie account configured/);
+    vi.stubEnv("NESSIE_PERSONA_ACCOUNTS", JSON.stringify({ margaret: "acct-margaret" }));
+    try {
+      await expect(t.mutation(api.personas.createForPersona, { personaId: "nobody" })).rejects.toThrow(/unknown demo persona/);
+      const caseId = await t.mutation(api.personas.createForPersona, { personaId: "margaret" });
+      const view = await t.query(api.cases.view, { caseId });
+      expect(view?.case).toMatchObject({ nessieAccountId: "acct-margaret", crsPersonaId: "P01", demoPersonaId: "margaret", bankFetch: { status: "never" } });
+      expect(view?.case.customerLabel).toMatch(/Margaret Okafor \(SYNTHETIC demo persona/);
+      expect(view?.activity.some((a) => a.kind === "case_created" && /Expected outcome/.test(a.message))).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("attaches the persona's payment-origin records on retrieval, without overwriting one already set", async () => {
+    const t = convexTest(schema, modules);
+    vi.stubEnv("NESSIE_PERSONA_ACCOUNTS", JSON.stringify({ margaret: "acct-margaret" }));
+    try {
+      const caseId = await t.mutation(api.personas.createForPersona, { personaId: "margaret" });
+      // A reviewer already set the coffee purchase's origin on another case: it stays.
+      await t.run((ctx) => ctx.db.insert("paymentOrigins", { txnExternalId: "coffee-1", channel: "online_banking", device: "new_device", twoFactor: "failed", city: "X", state: "TX", synthetic: true, preset: "new_device_far_away", setAt: 1 }));
+      const transactions = [purchase("games-1", 58, "FCI Demo PixelPlay Games"), purchase("coffee-1", 7, "FCI Demo Daybreak Coffee"), purchase("other-1", 999, "Someone Else")];
+      await t.mutation(internal.cases.storeTransactions, { caseId, transactions, warnings: [] });
+      const view = await t.query(api.cases.view, { caseId });
+      const byRef = new Map(view?.paymentOrigins.map((o) => [o.txnRef, o]));
+      expect(byRef.get("T:games-1")).toMatchObject({ device: "new_device", twoFactor: "not_used", city: "Las Vegas", state: "NV", preset: "persona:margaret:games", synthetic: true });
+      expect(byRef.get("T:coffee-1")?.preset).toBe("new_device_far_away");
+      expect(byRef.has("T:other-1")).toBe(false);
+
+      // A plain case gets no automatic origins.
+      const plain = await t.mutation(api.cases.createSynthetic, {});
+      await t.mutation(internal.cases.storeTransactions, { caseId: plain, transactions: [purchase("plain-1", 58, "FCI Demo PixelPlay Games")], warnings: [] });
+      expect((await t.query(api.cases.view, { caseId: plain }))?.paymentOrigins).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});

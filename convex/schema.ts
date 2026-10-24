@@ -12,6 +12,8 @@ export default defineSchema({
     nessieAccountId: v.union(v.string(), v.null()),
     /** CRS test persona linked by a reviewer. SYNTHETIC association: CRS and Nessie are separate datasets. */
     crsPersonaId: v.optional(v.string()),
+    /** SYNTHETIC demo persona (lib/fixtures/demoPersonas.ts) the case was opened for on /call; its records are set up automatically. */
+    demoPersonaId: v.optional(v.string()),
     nextStatementNumber: v.number(),
     bankFetch,
     /** Derived CaseAnalysis (lib/domain/workflow.ts), recomputed after every evidence change. */
