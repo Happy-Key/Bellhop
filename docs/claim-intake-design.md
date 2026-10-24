@@ -74,7 +74,7 @@ Baseline: `npx vitest run` gives **74/74 passing** (run 2026-10-24).
 | `convex/schema.ts:7-21` `cases` | No tenant, no owner, `synthetic: v.literal(true)` | No access control (A.4) | Add `tenantId`, `environment`, `caseMembers` |
 | `components/VoiceCall.tsx:20` | `MAX_CALL_SECONDS = 180` | An adaptive intake cannot finish in 3 minutes | Raise the cap after a budget decision (§I). Intake must be resumable across calls and text |
 | `lib/domain/regulatory.ts` | 8 curated sources, scenario-scoped, no deadlines | Narrow. CLAUDE.md forbids automatic edits | Keep it as the citable-excerpt store. Add a separate, human-reviewed **rule registry** (§F) |
-| `legislative-reference/` (untracked) | Overview plus a 35-rule CSV (`R-RT01` … `R-V02`) citing facts `F01`–`F42` and sources `S01`–`S67` | **The fact checklist (tab C), source register (tab A), form field map (D), deadline tables (E) and gray areas (F) are not in the repo**, so `F`/`S` IDs cannot be resolved | Import the CSV as the starting rule registry. Ask for the missing tabs (§I) |
+| `legislative-reference/` | Overview plus a 35-rule CSV (`R-RT01` … `R-V02`) citing facts `F01`–`F42` and sources `S01`–`S67` | **The fact checklist (tab C), source register (tab A), form field map (D), deadline tables (E) and gray areas (F) are not in the repo**, so `F`/`S` IDs cannot be resolved | Import the CSV as the starting rule registry. Ask for the missing tabs (§I) |
 
 ### A.4 Access control today [Code]
 

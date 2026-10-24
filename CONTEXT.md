@@ -52,7 +52,7 @@ Rules that always hold:
 ## Branch and git
 
 - Branch `foundation`. **Local commits are not pushed** (see `git log origin/foundation..foundation`). Push only when the user asks.
-- `legislative-reference/` is untracked and must stay uncommitted (the user didn't recognise it).
+- `legislative-reference/` (research pack: Overview.md and the rule-registry CSV) is committed (user approved, 2026-10-24).
 - Commit as `maximozhang <145702814+maximozhang@users.noreply.github.com>`.
 
 ## Demo plan (user decisions)
