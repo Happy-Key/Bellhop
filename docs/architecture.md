@@ -100,8 +100,15 @@ Rejected findings are shown in the UI and logged.
   else" / "yes, that one" / "I don't know". `unknown` and `declined` are answers: the question is not
   asked again, and a blocking one goes to a reviewer.
 - **Questions** have a stable `key`, an `audience` (customer or reviewer) and a `priority`. Customer
-  wording asks about actions ("Did you personally enter and send this payment, or did someone else
-  do that?"), never for a legal classification.
+  wording asks about actions ("Did you make the $23.00 payment to Corner Grocer on 2026-10-22
+  yourself, or did someone else make it?"), never for a legal classification.
+- **Questions are tailored to policy AUTO-1** (2026-10-24): they gather exactly what a legitimate
+  claim needs to be approved automatically. Bank records do the identifying, so most answers are a
+  yes or no about one named record (two possible records, or two amounts in one statement). Missing
+  details are asked one at a time, exact amount first. The credential question asks what the
+  customer *gave*, not what they were asked for. "I sent it" read from a free-form account is read
+  back once (`confirm:authorization`). A reply that restates an amount or date settles it instead of
+  creating a conflict (`settles()` in `lib/domain/facts.ts`).
 - **Auto-linked corrections** point at the latest earlier statement that gave a value for the same
   field, not blindly at the previous one.
 - **Live interpretation attempts** carry an `attemptId`. Only the statement's current attempt may

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { analyzeCase, type CaseInput } from "@/lib/domain/workflow";
 import { RecommendedAction } from "@/lib/domain/schemas";
-import { LEDGER, NOW, resetStatements, stmt } from "./helpers/build";
+import { LEDGER, NOW, replyTo, resetStatements, stmt } from "./helpers/build";
 
 const ok = { status: "ok", at: NOW, count: LEDGER.length } as const;
 const input = (over: Partial<CaseInput>): CaseInput => ({ statements: [], transactions: LEDGER, providerEvidence: [], bankFetch: ok, ...over });
@@ -77,8 +77,14 @@ describe("workflow analysis", () => {
   });
 
   it("a customer-initiated scam payment escalates and is not treated as reimbursable", () => {
-    const a = analyzeCase(input({ statements: [stmt("Someone pretending to be the bank called and I sent $389 because they told me to")] }));
+    const s1 = stmt("Someone pretending to be the bank called and I sent $389 because they told me to");
+    const first = analyzeCase(input({ statements: [s1] }));
+    // "I sent it" read from the account itself is read back once before the claim leaves automatic handling.
+    const readBack = first.questions.find((q) => q.key === "confirm:authorization");
+    expect(readBack).toMatchObject({ kind: "initiation", blocking: true });
+    const a = analyzeCase(input({ statements: [s1, stmt("Yes, I did", { replyTo: replyTo(readBack) })] }));
     expect(a.facts.authorization?.value).toBe("authorized_induced");
+    expect(a.questions.some((q) => q.key === "confirm:authorization")).toBe(false);
     expect(a.recommendation.action).toBe("escalate");
     const def = a.considerations.find((c) => c.sourceRef === "R:reg-e.1005.2m");
     expect(def?.conditions.some((k) => k.status === "contradicted")).toBe(true);

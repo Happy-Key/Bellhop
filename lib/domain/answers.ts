@@ -16,10 +16,17 @@ const NO = /^\s*(?:no|nope|nah|not\s+that\s+one|that'?s\s+not\s+(?:it|the\s+one|
 
 const OTHER_PERSON = /\b(?:someone\s+else|somebody\s+else|they\s+did|he\s+did|she\s+did|the\s+(?:scammer|caller|fraudster|other\s+person)|not\s+me|i\s+did\s*n[o']?t(?:\s+(?:send|make|do))?|wasn'?t\s+me)\b/i;
 const CUSTOMER =
-  /^\s*(?:yes,?\s+)?(?:me|myself|it\s+was\s+me|i\s+did(?!\s*n))\b|\bi\s+(?:sent|entered|made|typed|pressed|did)\s+(?:it|that|them|the\s+(?:payment|transfer)|it\s+myself)\b|\bi\s+(?:personally|myself)\b/i;
+  /^\s*(?:yes,?\s+)?(?:me|myself|it\s+was\s+me|i\s+did(?!\s*n))\b|\bi\s+(?:sent|entered|made|typed|pressed|did)\s+(?:it|that|them|the\s+(?:payment|transfer)|it\s+myself)\b|\bi\s+(?:personally|myself)\b|\bit\s+was\s+me\b/i;
+
+// "I don't recognize it" / "No, I've never shopped there" reply to "did you make it yourself?" with a denial.
+const NOT_RECOGNIZED = /\b(?:do\s*n[o']?t|did\s*n[o']?t|dont|didnt)\s+recogni[sz]e\b|\bnever\s+(?:seen|heard\s+of|shopped|been|bought|used|made|sent)\b|^\s*(?:no|nope|nah|never)\b/i;
 
 const SHARED = /\b(?:codes?|passwords?|pins?|card\s+(?:number|details)|one[- ]time|verification|login|security\s+(?:code|answers?))\b/i;
 const NOTHING_SHARED = /^\s*(?:no|nope|nobody|no\s+one|none|nothing)\b/i;
+// "They asked for a code but I didn't give it": being asked is not sharing.
+const REFUSED = /\b(?:did\s*n[o']?t|didnt|never|refused\s+to|would\s*n[o']?t|wouldnt)\s+(?:give|gave|share|shared|tell|told|read|send|sent|say)\b|\bhung\s+up\b/gi;
+// A positive act of sharing outside the refusal outweighs it ("I never gave the password, but I read them the code").
+const GAVE = /\b(?:gave|shared|read\s+(?:out|them|him|her|it)|told\s+(?:them|him|her))\b/i;
 
 /** Returns undefined when the statement was not a reply to a known question. */
 export function interpretAnswer(text: string, asked: AskedQuestion | undefined, relatedRef?: string): StatementAnswer | undefined {
@@ -35,15 +42,23 @@ export function interpretAnswer(text: string, asked: AskedQuestion | undefined, 
       // "someone else" is checked first: "not me" contains "me".
       if (OTHER_PERSON.test(text)) return { ...base, state: "answered", derived: { authorization: "denies_authorization" } };
       if (CUSTOMER.test(text)) return { ...base, state: "answered", derived: { authorization: "authorized" } };
+      // The read-back ("did you make it yourself?") is a yes/no question; the open one is not.
+      if (asked.key === "confirm:authorization" && YES.test(text)) return { ...base, state: "answered", derived: { authorization: "authorized" } };
+      if (NOT_RECOGNIZED.test(text)) return { ...base, state: "answered", derived: { authorization: "denies_authorization" } };
       break;
     }
-    case "tentative_match": {
+    // Questions that ask about one specific bank record (its ref is in the key) take a yes or no.
+    case "tentative_match":
+    case "ambiguous_match":
+    case "multiple_amounts": {
       if (!relatedRef) break;
       if (NO.test(text)) return { ...base, state: "answered", derived: { rejectsTxnRef: relatedRef } };
       if (YES.test(text)) return { ...base, state: "answered", derived: { confirmsTxnRef: relatedRef } };
       break;
     }
     case "credential_sharing": {
+      const withoutRefusals = text.replace(REFUSED, "");
+      if (withoutRefusals !== text && !GAVE.test(withoutRefusals)) return { ...base, state: "answered", derived: { credentialSharing: "not_shared" } };
       if (NOTHING_SHARED.test(text) && !/\b(?:but|except)\b/i.test(text)) return { ...base, state: "answered", derived: { credentialSharing: "not_shared" } };
       if (YES.test(text) || SHARED.test(text)) return { ...base, state: "answered", derived: { credentialSharing: "shared" } };
       break;

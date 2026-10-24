@@ -67,6 +67,20 @@ export interface CaseAnalysis {
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
+/** "the $389.00 payment to FCI Demo Volt Electronics Online on 2026-10-17", as read to the customer. */
+function describeTxn(t: TransactionEvidence): string {
+  const to = t.merchantName ?? t.description;
+  return `the ${usd(t.amount)} payment${to ? ` to ${to}` : ""}${t.date ? ` on ${t.date}` : ""}`;
+}
+
+/** Asks who made the payment (an action), never whether it was "authorized" (a legal classification). */
+const INITIATION_TEXT = (t: TransactionEvidence | null) =>
+  t ? `Did you make ${describeTxn(t)} yourself, or did someone else make it?` : "Did you personally enter and send this payment, or did someone else do that?";
+
+/** Asks what the customer gave (the fact AUTO-1 checks), not what they were asked for: being asked and refusing isn't sharing. */
+const CREDENTIALS_TEXT =
+  "Before this payment, did you give anyone a code, a password, or card details, for example by reading out a code that was texted to you? Please don't tell me the code or number itself, just what kind it was.";
+
 /** Lower is asked first. Safety and missing evidence come before detail. */
 export const QUESTION_PRIORITY: Record<OpenQuestion["kind"], number> = {
   narrative: 0,
@@ -189,36 +203,64 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
     const text = {
       amount: `I have more than one amount noted: ${values.map((x) => usd(Number(x))).join(" and ")}. Which is the amount of the payment you're disputing, or were these different payments?`,
       date: `I have more than one date noted: ${values.join(" and ")}. Which date is right?`,
-      authorization: "I want to make sure I have this right. Did you personally enter and send this payment, or did someone else do that?",
-      credentialSharing: "I want to make sure I have this right. Before this payment, did anyone ask you for a code, a password, or card details? Please don't tell me the code or number itself.",
+      authorization: `I want to make sure I have this right. ${INITIATION_TEXT(matchedTxn)}`,
+      credentialSharing: `I want to make sure I have this right. ${CREDENTIALS_TEXT}`,
     }[c.field];
     q("conflict", `conflict:${c.field}`, text, refs);
   }
+  // Questions are tailored to what automatic approval (policy AUTO-1) needs from the customer: one
+  // clearly matched bank record, who made the payment, and whether anything was given away. Bank
+  // records do the identifying wherever they can, so most answers are a yes or no about one record.
   if (input.statements.length > 0) {
-    const multiAmount = input.statements.find((s) => (s.interpretation?.amounts.length ?? 0) > 1);
-    if (multiAmount) q("multiple_amounts", `multiple_amounts:${multiAmount.ref}`, `You mentioned more than one amount (${multiAmount.interpretation!.amounts.map(usd).join(", ")}). Which single payment are you disputing?`, [multiAmount.ref]);
+    const confirmedMatch = !!match.matchedRef && facts.txnDecisions.some((d) => d.txnRef === match.matchedRef && d.decision === "confirmed");
+    const multiAmount = input.statements.find(
+      (s) => (s.interpretation?.amounts.length ?? 0) > 1 && !facts.superseded.some((x) => x.ref === s.ref && x.fields.includes("amounts")),
+    );
+    if (multiAmount && !confirmedMatch) {
+      const amounts = multiAmount.interpretation!.amounts.map(usd).join(", ");
+      // When the records already single out one payment, confirm it instead of asking an open question.
+      if (matchedTxn) q("multiple_amounts", `tentative:${matchedTxn.ref}`, `You mentioned more than one amount (${amounts}). Is the payment you're disputing ${describeTxn(matchedTxn)}?`, [multiAmount.ref, matchedTxn.ref]);
+      else q("multiple_amounts", `multiple_amounts:${multiAmount.ref}`, `You mentioned more than one amount (${amounts}). Which single payment are you disputing?`, [multiAmount.ref]);
+    }
 
     if (input.bankFetch.status === "ok") {
       switch (match.outcome) {
-        case "insufficient_facts":
-          q("missing_transaction_details", "details", "What was the amount and date of the payment, and who was it to?", input.statements.map((s) => s.ref));
+        case "insufficient_facts": {
+          // One detail at a time, the exact amount first: a clear match needs the amount to the cent.
+          // A detail the customer doesn't know is skipped for the next one.
+          const details = [
+            { key: "details:amount", text: "What's the exact amount of the payment, including cents? Your statement or banking app will show it." },
+            { key: "details:merchant", text: "Who was the payment to? The name exactly as it appears on your statement is best." },
+            { key: "details:date", text: "When did the payment happen? An approximate date is fine." },
+          ];
+          const settled = (key: string) => ["unknown", "declined"].includes(answerFor.get(key)?.state ?? "");
+          const next = details.find((d) => !settled(d.key)) ?? details.at(-1)!;
+          q("missing_transaction_details", next.key, next.text, input.statements.map((s) => s.ref));
           break;
-        case "no_match":
-          q("no_match", "no_match", "I couldn't find a payment on the account with those details. Could you double-check the amount and the date?", facts.amounts.map((a) => a.statementRef));
+        }
+        case "no_match": {
+          const reported = [...new Set(facts.amounts.map((a) => usd(a.value)))].join(" or ");
+          q(
+            "no_match",
+            "no_match",
+            reported
+              ? `I couldn't find a payment of ${reported} on the account. Could you check the exact amount, including cents, on your statement or banking app?`
+              : "I couldn't find a payment on the account with those details. What's the exact amount of the payment, including cents?",
+            facts.amounts.map((a) => a.statementRef),
+          );
           break;
+        }
         case "ambiguous": {
-          const refs = match.candidates.map((c) => c.txnRef);
-          const list = match.candidates.map((c) => {
-            const t = txnByRef.get(c.txnRef);
-            return t ? `${t.date ?? "?"} ${usd(t.amount)} ${t.merchantName ?? t.description ?? ""}`.trim() : c.txnRef;
-          });
-          q("ambiguous_match", `ambiguous:${[...refs].sort().join(",")}`, `I see more than one payment that could match: ${list.join("; ")}. Which one are you disputing?`, refs);
+          // Ask about the most likely record by name; a "no" excludes it and the next one is asked.
+          const top = txnByRef.get(match.candidates[0]!.txnRef);
+          const n = match.candidates.length;
+          if (top) q("ambiguous_match", `tentative:${top.ref}`, `I found ${n} payments that could match. Is it ${describeTxn(top)}?`, match.candidates.map((c) => c.txnRef));
           break;
         }
         case "tentative": {
           const c = match.candidates[0]!;
           const t = txnByRef.get(c.txnRef);
-          q("tentative_match", `tentative:${c.txnRef}`, `Is this the payment you mean: ${t ? `${usd(t.amount)} on ${t.date ?? "an unknown date"}${t.merchantName ? ` at ${t.merchantName}` : ""}` : c.txnRef}?`, [c.txnRef]);
+          q("tentative_match", `tentative:${c.txnRef}`, `Is this the payment you mean: ${t ? describeTxn(t) : c.txnRef}?`, [c.txnRef]);
           break;
         }
         default:
@@ -226,10 +268,18 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
       }
     }
     if (!facts.authorization && !facts.conflicts.some((c) => c.field === "authorization")) {
-      q("initiation", "initiation", "Did you personally enter and send this payment, or did someone else do that?", input.statements.map((s) => s.ref));
+      q("initiation", "initiation", INITIATION_TEXT(matchedTxn), input.statements.map((s) => s.ref));
+    }
+    // "I sent it" read from a free-form account (not from an answer about who sent it) is read back
+    // before the claim leaves automatic handling: a misread denial ("I do not believe I authorized
+    // it") would otherwise send a legitimate claim to scam review.
+    const authSource = facts.authorization ? input.statements.find((s) => s.ref === facts.authorization!.statementRef) : undefined;
+    const fromDirectAnswer = !!authSource?.inResponseTo && ["initiation", "conflict:authorization", "confirm:authorization"].includes(authSource.inResponseTo.key);
+    if ((facts.authorization?.value === "authorized" || facts.authorization?.value === "authorized_induced") && !fromDirectAnswer && !answered("confirm:authorization")) {
+      q("initiation", "confirm:authorization", `Just to check I have this right: did you make ${matchedTxn ? describeTxn(matchedTxn) : "this payment"} yourself? If someone else made it, please say so.`, [facts.authorization.statementRef]);
     }
     if (facts.authorization?.value === "denies_authorization" && !facts.credentialSharing && !facts.conflicts.some((c) => c.field === "credentialSharing")) {
-      q("credential_sharing", "credentials", "Before this payment, did anyone ask you for a code, a password, or card details? Please don't tell me the code or number itself, just what kind it was.", [facts.authorization.statementRef], { blocking: false });
+      q("credential_sharing", "credentials", CREDENTIALS_TEXT, [facts.authorization.statementRef], { blocking: false });
     }
     if (facts.credentialSharing?.value === "shared" && !answered("code_purpose")) {
       q("code_purpose", "code_purpose", "What did they tell you the code or details would be used for?", [facts.credentialSharing.statementRef], { blocking: false });

@@ -23,7 +23,9 @@ describe("guided-intake demo (synthetic, scripted)", () => {
     expect(s.view.statements[0]!.inResponseTo).toBeUndefined();
     expect(s.view.statements[1]!.inResponseTo?.key).toBe("tentative:T:demo-giftcard-49");
     expect(s.view.statements[1]!.answer).toMatchObject({ state: "answered", derived: { confirmsTxnRef: "T:demo-giftcard-49" } });
-    expect(confirm!.next).toMatchObject({ key: "initiation", text: "Did you personally enter and send this payment, or did someone else do that?" });
+    expect(confirm!.next).toMatchObject({ key: "initiation" });
+    // Once matched, the question names the payment.
+    expect(confirm!.next!.text).toMatch(/^Did you make the \$49\.00 payment to .*GiftCard Hub.* yourself, or did someone else make it\?$/);
     expect(analysisOf(s).match).toMatchObject({ outcome: "clear", matchedRef: "T:demo-giftcard-49" });
   });
 

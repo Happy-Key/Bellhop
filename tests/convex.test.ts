@@ -134,11 +134,11 @@ describe("Convex case workflow", () => {
         })).json() as Promise<{ recorded: string; duplicate: boolean; question_id: string | null; question: string | null; next_questions: string[] }>;
 
       const r1 = await say("There's a $49 charge I don't recognize");
-      expect(r1.question).toMatch(/more than one payment/);
+      expect(r1.question).toMatch(/I found 2 payments that could match/);
       expect(r1.next_questions).toEqual([r1.question]);
 
       const r2 = await say("The gift card one, at GiftCard Hub", r1.question_id);
-      expect(r2.question).toMatch(/did anyone ask you for a code/);
+      expect(r2.question).toMatch(/did you give anyone a code/);
 
       const r3 = await say("Yes.", r2.question_id);
       expect(r3.recorded).toBe("S3");
@@ -159,7 +159,7 @@ describe("Convex case workflow", () => {
 
       const view = await t.query(api.cases.view, { caseId });
       const byRef = new Map(view!.statements.map((s) => [s.ref, s]));
-      expect(byRef.get("S2")?.inResponseTo?.key).toBe("ambiguous:T:c-1,T:g-1");
+      expect(byRef.get("S2")?.inResponseTo?.key).toBe("tentative:T:c-1");
       expect(byRef.get("S3")?.answer).toMatchObject({ key: "credentials", state: "answered", derived: { credentialSharing: "shared" } });
       expect(byRef.get("S4")?.inResponseTo?.key).toBe("code_purpose");
       expect((view?.case.analysis as { match: { matchedRef: string } }).match.matchedRef).toBe("T:g-1");
