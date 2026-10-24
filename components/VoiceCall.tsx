@@ -46,7 +46,14 @@ interface CallResources {
 
 const emptyResources = (): CallResources => ({ sessionToken: null, ws: null, ctx: null, stream: null, nodes: [], sources: new Set(), nextPlayTime: 0, timer: null });
 
-export function VoiceCall({ caseId }: { caseId: Id<"cases"> }) {
+interface VoiceCallProps {
+  /** The case to bind the call to, or a resolver run when the call starts (the customer view creates its case lazily). */
+  caseId: Id<"cases"> | (() => Promise<Id<"cases">>);
+  /** "staff" (default) shows call internals; "customer" shows only the call controls and transcript. */
+  variant?: "staff" | "customer";
+}
+
+export function VoiceCall({ caseId, variant = "staff" }: VoiceCallProps) {
   const createSession = useMutation(api.voice.createVoiceSession);
   const mintToken = useAction(api.voice.createCartesiaAccessToken);
   const bindCall = useMutation(api.voice.bindVoiceCall);
@@ -215,7 +222,7 @@ export function VoiceCall({ caseId }: { caseId: Id<"cases"> }) {
         URL.revokeObjectURL(url);
       }
       setDetail("Starting voice session…");
-      const session = await createSession({ caseId });
+      const session = await createSession({ caseId: typeof caseId === "function" ? await caseId() : caseId });
       res.current.sessionToken = session.token;
       const token = await mintToken({});
       if (!token.ok) return fail(token.error);
@@ -247,6 +254,9 @@ export function VoiceCall({ caseId }: { caseId: Id<"cases"> }) {
   useEffect(() => () => teardown(), []);
 
   const inCall = status === "connecting" || status === "live";
+  if (variant === "customer") {
+    return <CustomerCallView status={status} detail={detail} turns={turns} elapsed={elapsed} agentSpeaking={agentSpeaking} onStart={start} onHangUp={hangUp} />;
+  }
   return (
     <div style={{ marginTop: 12 }}>
       <h3>Voice call <span className="muted">(Cartesia agent; billed per minute, max {MAX_CALL_SECONDS / 60} min)</span></h3>
@@ -266,6 +276,50 @@ export function VoiceCall({ caseId }: { caseId: Id<"cases"> }) {
         </div>
       )}
       <p className="muted">Use headphones: without them the agent may hear itself and keep interrupting.</p>
+    </div>
+  );
+}
+
+const CUSTOMER_STATUS: Record<Status, string> = {
+  idle: "Tap the button to talk to our fraud support assistant.",
+  connecting: "Connecting you…",
+  live: "",
+  ended: "Your call has ended. Thank you — a member of our team will review your report.",
+  error: "We couldn't complete the call. Please try again.",
+};
+
+const formatClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+/** Customer-facing presentation: no case data, costs or call internals. */
+function CustomerCallView(props: { status: Status; detail: string | null; turns: Turn[]; elapsed: number; agentSpeaking: boolean; onStart: () => void; onHangUp: () => void }) {
+  const { status, detail, turns, elapsed, agentSpeaking, onStart, onHangUp } = props;
+  const inCall = status === "connecting" || status === "live";
+  const transcriptEnd = useRef<HTMLDivElement>(null);
+  useEffect(() => transcriptEnd.current?.scrollIntoView({ block: "nearest" }), [turns.length]);
+  const message = status === "live" ? (agentSpeaking ? "Assistant is speaking…" : "Listening — go ahead and speak.") : CUSTOMER_STATUS[status];
+  return (
+    <div className="cc-call">
+      <button className={`cc-call-button${inCall ? " cc-hang-up" : ""}`} onClick={inCall ? onHangUp : onStart}>
+        {inCall ? "End call" : status === "idle" ? "Start call" : "Call again"}
+      </button>
+      <p className="cc-status" aria-live="polite">
+        {message}
+        {status === "live" && <span className="cc-clock"> {formatClock(elapsed)} / {formatClock(MAX_CALL_SECONDS)}</span>}
+      </p>
+      {status === "error" && detail && <p className="cc-detail error">{detail}</p>}
+      {turns.length > 0 && (
+        <div className="cc-transcript">
+          {turns.map((t) => (
+            <div key={`${t.role}-${t.turn}`} className={`cc-bubble ${t.role === "user" ? "cc-user" : "cc-agent"}`}>
+              <span className="cc-speaker">{t.role === "user" ? "You" : "Assistant"}</span>
+              {t.text}
+              {t.interrupted && <span className="muted"> …</span>}
+            </div>
+          ))}
+          <div ref={transcriptEnd} />
+        </div>
+      )}
+      {!inCall && <p className="muted">For the best experience, use headphones. Calls last up to {MAX_CALL_SECONDS / 60} minutes.</p>}
     </div>
   );
 }
