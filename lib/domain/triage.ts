@@ -4,11 +4,39 @@
  * workspace. It only re-reads the stored CaseAnalysis: it never decides a claim, assigns work,
  * or invents deadlines.
  */
-import type { CaseAnalysis, EvidenceFetchState } from "./workflow";
+import { QUESTION_PRIORITY, type CaseAnalysis, type EvidenceFetchState } from "./workflow";
 import type { OpenQuestion, RecommendedAction, WorkflowStage } from "./schemas";
 
 /** CaseAnalysis as stored on the case document (rejected findings are serialized). */
 export type StoredAnalysis = Omit<CaseAnalysis, "rejectedFindings"> & { rejectedFindings: { finding: string; reasons: string[] }[] };
+
+/** Question kinds that were reviewer-only before questions carried an `audience`. */
+const LEGACY_REVIEWER_KINDS = new Set<string>(["identity_review", "evidence_unavailable"]);
+
+/**
+ * Reads a case's stored analysis, filling in fields added after it was stored. An analysis is
+ * recomputed only when the case's evidence changes, so cases from early 2026-10-24 keep an older
+ * shape: no `facts.txnDecisions` or `facts.answers`, and questions without `key`, `audience` or
+ * `priority`. That crashed the claims queue (live 2026-10-24). Recomputing old cases instead would
+ * re-run AUTO-1 (and could pay them) and the reasoning model, so every reader goes through this.
+ */
+export function readStoredAnalysis<T extends Pick<CaseAnalysis, "facts" | "questions"> = StoredAnalysis>(raw: unknown): T | null {
+  if (!raw || typeof raw !== "object") return null;
+  const a = raw as T;
+  const facts = a.facts as Partial<CaseAnalysis["facts"]> & CaseAnalysis["facts"];
+  return {
+    ...a,
+    facts: { ...facts, txnDecisions: facts.txnDecisions ?? [], answers: facts.answers ?? [] },
+    questions: (a.questions ?? []).map((q: Partial<OpenQuestion> & Pick<OpenQuestion, "id" | "kind" | "text">) => ({
+      ...q,
+      key: q.key ?? `legacy:${q.id}`,
+      audience: q.audience ?? (LEGACY_REVIEWER_KINDS.has(q.kind) ? "reviewer" : "customer"),
+      priority: q.priority ?? QUESTION_PRIORITY[q.kind] ?? 9,
+      relatedRefs: q.relatedRefs ?? [],
+      blocking: q.blocking ?? true,
+    })),
+  } as T;
+}
 
 export type Attention = "reviewer" | "customer" | "no_report";
 

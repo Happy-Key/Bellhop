@@ -61,3 +61,24 @@ describe("reviewer triage", () => {
     expect(t.customerOpen + t.reviewerOpen).toBe(t.steps.length);
   });
 });
+
+describe("readStoredAnalysis", () => {
+  it("fills fields added after an analysis was stored, and leaves current ones alone", async () => {
+    const { readStoredAnalysis } = await import("@/lib/domain/triage");
+    const legacy = {
+      facts: { amounts: [], dates: [], merchantTerms: [], authorization: null, credentialSharing: null, scamIndicators: [], conflicts: [], superseded: [], uninterpretedRefs: [] },
+      questions: [
+        { id: "Q1", kind: "identity_review", text: "Check identity", relatedRefs: [], blocking: false },
+        { id: "Q2", kind: "initiation", text: "Who sent it?", relatedRefs: ["S1"], blocking: true },
+      ],
+    };
+    const a = readStoredAnalysis(legacy)!;
+    expect(a.facts.txnDecisions).toEqual([]);
+    expect(a.facts.answers).toEqual([]);
+    expect(a.questions.map((q) => [q.key, q.audience])).toEqual([["legacy:Q1", "reviewer"], ["legacy:Q2", "customer"]]);
+    expect(a.questions[1]!.priority).toBe(5);
+    const current = { facts: { ...legacy.facts, txnDecisions: [{ txnRef: "T:x", decision: "confirmed", statementRef: "S2" }], answers: [] }, questions: [{ ...legacy.questions[1], key: "initiation", audience: "customer", priority: 5 }] };
+    expect(readStoredAnalysis(current)).toEqual(current);
+    expect(readStoredAnalysis(null)).toBeNull();
+  });
+});

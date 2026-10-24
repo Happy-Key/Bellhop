@@ -3,7 +3,7 @@
  * stored; nothing here changes a case. Triage logic lives in lib/domain/triage.ts.
  */
 import { query } from "./_generated/server";
-import { triageCase, type StoredAnalysis } from "../lib/domain/triage";
+import { readStoredAnalysis, triageCase } from "../lib/domain/triage";
 import type { EvidenceFetchState } from "../lib/domain/workflow";
 import type { CaseProposal } from "../lib/domain/caseDecision";
 import { caseStatus } from "../lib/review/caseStatus";
@@ -22,7 +22,7 @@ export const queue = query({
           ctx.db.query("statements").withIndex("by_case", (q) => q.eq("caseId", c._id)).collect(),
           ctx.db.query("activity").withIndex("by_case", (q) => q.eq("caseId", c._id)).order("desc").first(),
         ]);
-        const analysis = c.analysis as StoredAnalysis | null;
+        const analysis = readStoredAnalysis(c.analysis);
         const bankFetch = c.bankFetch as EvidenceFetchState;
         const matchedRef = analysis?.match.matchedRef ?? null;
         const matched = matchedRef

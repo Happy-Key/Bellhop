@@ -624,3 +624,32 @@ describe("call-backs (live 2026-10-24)", () => {
     }
   });
 });
+
+describe("cases stored with an older analysis shape (live 2026-10-24)", () => {
+  it("still load in the claims queue: missing facts.txnDecisions/answers and question keys are filled in", async () => {
+    const t = newTest();
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(internal.cases.storeTransactions, {
+      caseId,
+      transactions: [{ ref: "T:old-1", externalId: "old-1", provider: "nessie", kind: "purchase", amount: 389, date: "2026-10-17", description: null, merchantId: "m-old", merchantName: "FCI Demo Volt Electronics Online", status: "completed", medium: "balance" }],
+      warnings: [],
+    });
+    await t.mutation(api.cases.submitStatement, { caseId, text: "I did not make the $389 purchase at Volt Electronics", clientEventId: "evt-old-0001" });
+    // Strip what was added to the stored analysis during 2026-10-24, as on the oldest dev cases.
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get(caseId))!;
+      const a = JSON.parse(JSON.stringify(c.analysis));
+      expect(a.match.matchedRef).toBe("T:old-1"); // the crash needs a matched payment
+      delete a.facts.txnDecisions;
+      delete a.facts.answers;
+      for (const q of a.questions) {
+        delete q.key;
+        delete q.audience;
+        delete q.priority;
+      }
+      await ctx.db.patch(caseId, { analysis: a });
+    });
+    const rows = await t.query(api.review.queue, {});
+    expect(rows.map((r) => r._id)).toContain(caseId);
+  });
+});

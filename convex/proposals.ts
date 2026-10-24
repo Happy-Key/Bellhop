@@ -18,6 +18,7 @@ import { buildCaseReasoningInput, executionPlan, inputSignature, readyForAssessm
 import { diffInvestigations } from "../lib/domain/investigation";
 import type { AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 import type { CaseAnalysis } from "../lib/domain/workflow";
+import { readStoredAnalysis } from "../lib/domain/triage";
 import { loadCaseInput, logActivity, reasoningConfig, toDomainProviderEvidence, toDomainStatement, toDomainTransaction } from "./model";
 
 /** Case reasoning runs when live reasoning is configured, unless CASE_REASONING=off. */
@@ -31,7 +32,7 @@ const lastAccepted = (ctx: QueryCtx, caseId: Id<"cases">) =>
 
 async function currentInput(ctx: QueryCtx, caseId: Id<"cases">): Promise<{ input: CaseReasoningInput; analysis: CaseAnalysis; c: Doc<"cases"> } | null> {
   const { c, statements, transactions, providerEvidence } = await loadCaseInput(ctx, caseId);
-  const analysis = c.analysis as CaseAnalysis | null;
+  const analysis = readStoredAnalysis<CaseAnalysis>(c.analysis);
   if (!analysis) return null;
   const prev = (await lastAccepted(ctx, caseId))?.proposal as CaseProposal | undefined;
   const input = buildCaseReasoningInput({
