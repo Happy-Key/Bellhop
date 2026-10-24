@@ -18,13 +18,14 @@ import type { EvidenceFetchState } from "@/lib/domain/workflow";
 import { caseStatus } from "@/lib/review/caseStatus";
 import type { CaseView } from "@/lib/review/types";
 import { CaseWorkspace } from "./CaseWorkspace";
-import type { Workspace, WorkspaceMode } from "./WorkspaceContext";
+import type { ReviewerQuestionRow, Workspace, WorkspaceMode } from "./WorkspaceContext";
 
 export type ModelState = FunctionReturnType<typeof api.proposals.latest>;
 
 export function CaseReview({ caseId }: { caseId: string }) {
   const data = useQuery(api.cases.view, { caseId: caseId as Id<"cases"> });
   const model = useQuery(api.proposals.latest, { caseId: caseId as Id<"cases"> });
+  const asked = useQuery(api.reviewerQuestions.forCase, { caseId: caseId as Id<"cases"> });
   if (data === undefined) return <CaseSkeleton />;
   if (data === null)
     return (
@@ -40,16 +41,16 @@ export function CaseReview({ caseId }: { caseId: string }) {
         </div>
       </main>
     );
-  return <LiveWorkspace data={data} model={model ?? null} />;
+  return <LiveWorkspace data={data} model={model ?? null} asked={asked ?? []} />;
 }
 
-function LiveWorkspace({ data, model }: { data: CaseView; model: ModelState | null }) {
-  const ws = useMemo(() => buildWorkspace({ data, model, mode: "live" }), [data, model]);
+function LiveWorkspace({ data, model, asked }: { data: CaseView; model: ModelState | null; asked: ReviewerQuestionRow[] }) {
+  const ws = useMemo(() => buildWorkspace({ data, model, mode: "live", asked }), [data, model, asked]);
   return <CaseWorkspace ws={ws} />;
 }
 
 /** One place turns stored rows into what every panel reads. */
-export function buildWorkspace({ data, model, mode }: { data: CaseView; model: ModelState | null; mode: WorkspaceMode }): Workspace {
+export function buildWorkspace({ data, model, mode, asked = [] }: { data: CaseView; model: ModelState | null; mode: WorkspaceMode; asked?: ReviewerQuestionRow[] }): Workspace {
   const analysis = readStoredAnalysis(data.case.analysis);
   const bankFetch = data.case.bankFetch as EvidenceFetchState;
   const acceptedRow = model?.accepted ?? null;
@@ -81,6 +82,7 @@ export function buildWorkspace({ data, model, mode }: { data: CaseView; model: M
     outcomes: data.decisions.map((d) => ({ id: d._id, outcome: d.outcome, amount: d.amount, txnRef: d.txnRef, policy: d.policy, decidedAt: d.decidedAt, payoutStatus: d.payout.status, needsReview: d.needsReview ?? null })),
     matchedAmount: matched?.amount ?? null,
     reviewActions: data.reviewActions.map((a) => ({ id: a._id, kind: a.kind, decision: a.decision, reason: a.reason, question: a.question, at: a.at })),
+    reviewerQuestions: asked.filter((q) => !q.answeredByRef && !q.withdrawnAt).sort((a, b) => a.askedAt - b.askedAt).map((q) => q.text),
   });
   return {
     mode,
@@ -95,6 +97,7 @@ export function buildWorkspace({ data, model, mode }: { data: CaseView; model: M
     reassessing,
     problem,
     modelEnabled: model?.enabled ?? false,
+    asked,
   };
 }
 

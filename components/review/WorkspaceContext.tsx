@@ -33,6 +33,16 @@ export interface HistoryRow {
   current: boolean;
 }
 
+/** A question a reviewer put to the customer (convex/reviewerQuestions.ts). */
+export interface ReviewerQuestionRow {
+  _id: Id<"reviewerQuestions">;
+  text: string;
+  askedAt: number;
+  answeredByRef?: string;
+  answeredAt?: number;
+  withdrawnAt?: number;
+}
+
 export interface Workspace {
   mode: WorkspaceMode;
   data: CaseView;
@@ -47,6 +57,8 @@ export interface Workspace {
   reassessing: boolean;
   problem: string | null;
   modelEnabled: boolean;
+  /** Questions reviewers put to the customer, newest first; asked first on the next call or chat. */
+  asked: ReviewerQuestionRow[];
 }
 
 /** What a reviewer control asks to record. In live mode these map to Convex mutations; in demo mode to local state. */

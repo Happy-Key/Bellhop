@@ -9,7 +9,7 @@ import { caseRef, exactTime, POSITION_LABEL, usd } from "./format";
 import { Pill, type Tone } from "./ui";
 import { useWorkspace } from "./WorkspaceContext";
 
-export const ATTENTION_TONE: Record<CaseAttention, Tone> = { reviewer: "accent", customer: "warn", system: "neutral", no_report: "quiet", decided: "ok" };
+export const ATTENTION_TONE: Record<CaseAttention, Tone> = { reviewer: "accent", customer: "warn", system: "neutral", no_report: "quiet", auto_approved: "ok", decided: "ok" };
 
 export function allegationLine(ws: ReturnType<typeof useWorkspace>["ws"]): string {
   const { data, analysis } = ws;

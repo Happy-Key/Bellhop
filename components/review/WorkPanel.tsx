@@ -6,7 +6,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { WorkItem } from "@/lib/domain/investigation";
 import { WORK_STATUS_LABEL } from "@/lib/review/labels";
-import { RefChips } from "./EvidenceRef";
+import { RefChip, RefChips } from "./EvidenceRef";
 import { SourceTag } from "./FindingsPanel";
 import { Mark, Row, errorText } from "./ui";
 import { useWorkspace } from "./WorkspaceContext";
@@ -105,10 +105,64 @@ export function WorkPanel() {
             </>
           )}
           {status.blockers.length === 0 && !status.nextQuestion && <p className="muted">Nothing blocking.</p>}
+          {ws.asked.length > 0 && <AskedList />}
           {mode === "live" && modelEnabled && data.statements.length > 0 && <Reassess reassessing={reassessing} />}
         </div>
       </div>
     </section>
+  );
+}
+
+/** Questions reviewers put to the customer: waiting, answered (with the reply's ref) or withdrawn. */
+function AskedList() {
+  const { ws } = useWorkspace();
+  const withdraw = useMutation(api.reviewerQuestions.withdraw);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <h3 className="mt">
+        Asked of the customer <span className="count">{ws.asked.length}</span>
+      </h3>
+      <ul className="rows">
+        {ws.asked.map((q) => (
+          <Row key={q._id} lead={<Mark kind="person" labelled={false} />} chips={q.answeredByRef ? <RefChip refId={q.answeredByRef} /> : undefined}>
+            “{q.text}”
+            <span className="row-note">
+              {q.answeredByRef ? "Answered" : q.withdrawnAt ? "Withdrawn" : "Waiting · asked first on the next call or chat"}
+              {!q.answeredByRef && !q.withdrawnAt && ws.mode === "live" && (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="link"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      setError(null);
+                      try {
+                        await withdraw({ questionId: q._id });
+                      } catch (e) {
+                        setError(errorText(e));
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    Withdraw
+                  </button>
+                </>
+              )}
+            </span>
+          </Row>
+        ))}
+      </ul>
+      {error && (
+        <p className="small error" role="status">
+          {error}
+        </p>
+      )}
+    </>
   );
 }
 

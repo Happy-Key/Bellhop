@@ -82,6 +82,8 @@ export interface CaseReasoningInput {
     matchOutcome: string;
     conflicts: string[];
     openQuestions: { key: string; audience: string; blocking: boolean; text: string }[];
+    /** Questions a bank reviewer has put to the customer that are still unanswered. */
+    reviewerQuestions: string[];
   };
   statements: { ref: string; receivedAt: string; text: string; inReplyTo: string | null }[];
   bankRecords: { ref: string; kind: string; amount: number; date: string | null; payee: string | null; status: string | null }[];
@@ -112,6 +114,7 @@ export function buildCaseReasoningInput(a: {
   autoApproval: AutoApprovalEvaluation | null;
   previous?: { decision: string; investigation: Investigation } | null;
   reviewerRequests?: ReviewerRequest[];
+  reviewerQuestions?: string[];
 }): CaseReasoningInput {
   const { analysis } = a;
   const refs = [...a.statements.map((s) => s.ref), ...a.transactions.map((t) => t.ref), ...a.providerEvidence.map((p) => p.ref), ...REGULATORY_SOURCES.map((s) => s.ref)];
@@ -123,6 +126,7 @@ export function buildCaseReasoningInput(a: {
       matchOutcome: analysis.match.outcome,
       conflicts: analysis.facts.conflicts.map((c) => `${c.field}: ${c.values.map((v) => `${v.statementRef}=${v.value}`).join(" vs ")}`),
       openQuestions: analysis.questions.map((q) => ({ key: q.key, audience: q.audience, blocking: q.blocking, text: q.text })),
+      reviewerQuestions: a.reviewerQuestions ?? [],
     },
     statements: a.statements.map((s) => ({ ref: s.ref, receivedAt: new Date(s.receivedAt).toISOString(), text: s.text, inReplyTo: s.inResponseTo?.text ?? null })),
     bankRecords: a.transactions.map((t) => ({ ref: t.ref, kind: t.kind, amount: t.amount, date: t.date, payee: t.merchantName ?? t.description, status: t.status })),

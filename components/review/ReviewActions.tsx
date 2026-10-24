@@ -17,7 +17,7 @@ import { RetrieveButton } from "./RetrieveButton";
 import { ActionDialog, errorText } from "./ui";
 import { useWorkspace } from "./WorkspaceContext";
 
-type Dialog = "approve" | "confirm_denial" | "reject" | "override" | "return" | "affirm" | "keep_flag" | null;
+type Dialog = "approve" | "confirm_denial" | "reject" | "override" | "return" | "affirm" | "keep_flag" | "ask" | null;
 
 export function ReviewControls() {
   const { ws, onDemoAction } = useWorkspace();
@@ -35,8 +35,9 @@ export function ReviewControls() {
   const canReviewFlag = !demo && !!flag && !!flag.decisionId;
   const canRetryPayout = !demo && decision?.payout.status === "failed";
   const needsRecords = !demo && data.statements.length > 0 && data.case.bankFetch.status !== "ok";
+  const canAsk = !demo && !status.outcome;
 
-  if (!canResolve && !canOverride && !canReturn && !canReviewFlag && !canRetryPayout && !needsRecords) return null;
+  if (!canResolve && !canOverride && !canReturn && !canReviewFlag && !canRetryPayout && !needsRecords && !canAsk) return null;
 
   return (
     <div className="dec-controls" aria-label="Reviewer controls">
@@ -71,6 +72,11 @@ export function ReviewControls() {
           Return to investigator
         </button>
       )}
+      {canAsk && (
+        <button type="button" className="btn" onClick={() => setDialog("ask")}>
+          Ask the customer
+        </button>
+      )}
       {canRetryPayout && <RetryPayout decisionId={decision!._id} />}
 
       {accepted?.id && (dialog === "approve" || dialog === "confirm_denial" || dialog === "reject") && (
@@ -78,6 +84,7 @@ export function ReviewControls() {
       )}
       {dialog === "override" && <OverrideDialog proposalId={accepted?.id ?? null} proposed={d?.decision ?? "request_information"} onClose={() => setDialog(null)} />}
       {dialog === "return" && <ReturnDialog caseId={data.case._id} proposalId={accepted?.id ?? null} onClose={() => setDialog(null)} />}
+      {dialog === "ask" && <AskDialog caseId={data.case._id} onClose={() => setDialog(null)} />}
       {flag?.decisionId && (dialog === "affirm" || dialog === "keep_flag") && <FlagDialog affirm={dialog === "affirm"} decisionId={flag.decisionId as Id<"reimbursementDecisions">} onClose={() => setDialog(null)} />}
     </div>
   );
@@ -170,6 +177,24 @@ function ReturnDialog({ caseId, proposalId, onClose }: { caseId: Id<"cases">; pr
       <label className="field">
         <span>What to look into</span>
         <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} autoFocus />
+      </label>
+    </ActionDialog>
+  );
+}
+
+/** A reviewer's question for the customer: asked first on their next call or text chat. */
+function AskDialog({ caseId, onClose }: { caseId: Id<"cases">; onClose: () => void }) {
+  const ask = useMutation(api.reviewerQuestions.ask);
+  const [text, setText] = useState("");
+  const { busy, error, act } = useAction(() => {
+    if (!text.trim()) throw new Error("Write the question");
+    return ask({ caseId, text });
+  }, onClose);
+  return (
+    <ActionDialog open title="Ask the customer" intro="Asked first on their next call or chat." confirm="Ask" onConfirm={() => act(undefined)} onClose={onClose} busy={busy} error={error}>
+      <label className="field">
+        <span>Question</span>
+        <textarea rows={2} maxLength={300} value={text} onChange={(e) => setText(e.target.value)} autoFocus />
       </label>
     </ActionDialog>
   );

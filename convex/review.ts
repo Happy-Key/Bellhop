@@ -8,6 +8,7 @@ import type { EvidenceFetchState } from "../lib/domain/workflow";
 import { readStoredProposal } from "../lib/domain/caseDecision";
 import { caseStatus } from "../lib/review/caseStatus";
 import { caseReasoningEnabled } from "./proposals";
+import { openReviewerQuestions } from "./reviewerQuestions";
 
 /** Most recent cases shown in the queue. */
 export const QUEUE_LIMIT = 100;
@@ -58,6 +59,7 @@ export const queue = query({
           outcomes: decisions.map((d) => ({ id: d._id, outcome: d.outcome, amount: d.amount, txnRef: d.txnRef, policy: d.policy, decidedAt: d.decidedAt, payoutStatus: d.payout.status, needsReview: d.needsReview ?? null })),
           matchedAmount: matched?.amount ?? null,
           reviewActions: lastAction ? [{ id: lastAction._id, kind: lastAction.kind, decision: lastAction.decision, reason: lastAction.reason, question: lastAction.question, at: lastAction.at }] : [],
+          reviewerQuestions: (await openReviewerQuestions(ctx, c._id)).map((q) => q.text),
         });
         const firstStatement = statements.reduce<(typeof statements)[number] | null>((a, s) => (!a || s.receivedAt < a.receivedAt ? s : a), null);
         return {

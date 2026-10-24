@@ -76,6 +76,18 @@ describe("case status (investigation first)", () => {
     expect(s.blockers).toEqual(["Bank records haven't been retrieved.", "Was the card lost?"]);
     expect(s.headline).toBe("Retrieve bank records");
   });
+
+  it("an open reviewer question puts the case with the customer", () => {
+    const s = caseStatus(base({ assessment: row(proposal("escalate"), { kind: "automatic", note: "" }), reviewerQuestions: ["Do you still have the card?"] }));
+    expect(s).toMatchObject({ attention: "customer", headline: "Customer to answer (asked by a reviewer): Do you still have the card?" });
+  });
+
+  it("an automatic approval has its own category; a flagged one goes back to a reviewer; a person's approval is 'decided'", () => {
+    const auto = { outcome: "auto_approved" as const, amount: 49, txnRef: "T:p-1", policy: "AUTO-1", decidedAt: 3, payoutStatus: "deposited" as const, needsReview: null };
+    expect(caseStatus(base({ outcomes: [auto] }))).toMatchObject({ attention: "auto_approved", statusLabel: "Approved automatically" });
+    expect(caseStatus(base({ outcomes: [{ ...auto, needsReview: { at: 4, reason: "New statement" } }] })).attention).toBe("reviewer");
+    expect(caseStatus(base({ outcomes: [{ ...auto, outcome: "approved_by_person" }] }))).toMatchObject({ attention: "decided", statusLabel: "Decided" });
+  });
 });
 
 describe("case status: review actions and flagged approvals", () => {

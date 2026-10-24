@@ -20,7 +20,12 @@ import { DECISION_LABEL } from "./labels";
 
 export { DECISION_LABEL };
 
-export type CaseAttention = "reviewer" | "customer" | "system" | "no_report" | "decided";
+/**
+ * Who acts on a case. "auto_approved": approved and paid (SIMULATED) under policy AUTO-1 with no
+ * person needed, kept apart from cases a person decided and from the review queue. An automatic
+ * approval that later facts call into question is flagged and goes back to "reviewer".
+ */
+export type CaseAttention = "reviewer" | "customer" | "system" | "no_report" | "auto_approved" | "decided";
 
 export interface AssessmentRow {
   id?: string;
@@ -80,6 +85,8 @@ export interface CaseStatusInput {
   matchedAmount: number | null;
   /** Overrides, returns and notes by a person, newest first. */
   reviewActions?: ReviewActionRow[];
+  /** Unanswered questions a reviewer put to the customer (asked first on the next call or chat). */
+  reviewerQuestions?: string[];
 }
 
 export interface Disposition {
@@ -203,7 +210,7 @@ export function caseStatus(i: CaseStatusInput): CaseStatus {
     const n = flag.failedChecks.length;
     headline = n ? `Review the automatic approval: ${n} check${n === 1 ? "" : "s"} no longer pass${n === 1 ? "es" : ""}` : `Review the automatic approval: ${flag.reason}`;
   } else if (outcome) {
-    attention = "decided";
+    attention = outcome.by === "policy" ? "auto_approved" : "decided";
     headline = outcome.label;
   } else if (i.bankFetch.status !== "ok") {
     attention = "reviewer";
@@ -226,6 +233,9 @@ export function caseStatus(i: CaseStatusInput): CaseStatus {
   } else if (disposition?.resolution) {
     attention = "decided";
     headline = disposition.resolution.accepted ? (disposition.decision === "deny" ? "Denial confirmed by a person" : "Approved by a person") : `Proposal rejected by a person: ${disposition.resolution.note}`;
+  } else if (i.reviewerQuestions?.length) {
+    attention = "customer";
+    headline = `Customer to answer (asked by a reviewer): ${i.reviewerQuestions[0]}`;
   } else if (disposition?.decision === "escalate") {
     attention = "reviewer";
     headline = "Specialist review";
@@ -246,7 +256,9 @@ export function caseStatus(i: CaseStatusInput): CaseStatus {
   const statusLabel = flag
     ? "Approval flagged for review"
     : outcome
-      ? "Decided"
+      ? outcome.by === "policy"
+        ? "Approved automatically"
+        : "Decided"
       : override?.decision === "escalate"
         ? "Escalated by a person"
         : returned && attention === "system"

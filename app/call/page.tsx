@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Customer view: the voice call, as the bank's consumer channel would show it. A new report opens a
- * new synthetic case on every call; "an existing case" continues one (DEMO ONLY: no customer logins).
+ * Customer view: a voice call or, as the typed alternative, a text chat, as the bank's consumer channel
+ * would show it. Both go through the same backend turn. A new report opens a new synthetic case on every
+ * call or chat; "an existing case" continues one (DEMO ONLY: no customer logins).
  *
  * DEMO ONLY: a presenter panel (closed by default, top right) chooses a SYNTHETIC demo persona
  * (lib/fixtures/demoPersonas.ts) whose case sets itself up with known bank records and CRS results,
@@ -13,6 +14,7 @@ import { useCallback, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { TextChat } from "@/components/TextChat";
 import { VoiceCall } from "@/components/VoiceCall";
 import { DEMO_PERSONAS, getDemoPersona } from "@/lib/fixtures/demoPersonas";
 
@@ -24,6 +26,7 @@ export default function CustomerCallPage() {
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [existingId, setExistingId] = useState<Id<"cases"> | null>(null);
   const [inCall, setInCall] = useState(false);
+  const [channel, setChannel] = useState<"voice" | "text">("voice");
   const persona = getDemoPersona(personaId);
   // A case deleted from the developer tools drops out of the list, and out of the selection.
   const existing = cases?.find((c) => c._id === existingId) ?? null;
@@ -132,11 +135,25 @@ export default function CustomerCallPage() {
         </details>
       </header>
       <hr className="cl-rule" />
+      <div className="cl-switch" role="radiogroup" aria-label="How to reach us">
+        {(
+          [
+            ["voice", "Call"],
+            ["text", "Chat"],
+          ] as const
+        ).map(([c, label]) => (
+          <button key={c} type="button" role="radio" aria-checked={channel === c} disabled={inCall} onClick={() => setChannel(c)}>
+            {label}
+          </button>
+        ))}
+      </div>
 
       {mode === "existing" && !existing ? (
         <p className="cl-choose">Choose a case to start.</p>
-      ) : (
+      ) : channel === "voice" ? (
         <VoiceCall key={mode === "existing" ? existing!._id : "new"} caseId={resolveCase} variant="customer" onInCallChange={onInCallChange} />
+      ) : (
+        <TextChat key={mode === "existing" ? existing!._id : "new"} caseId={resolveCase} existingCaseId={mode === "existing" ? existing!._id : null} onInChatChange={onInCallChange} />
       )}
       <p className="cl-foot">Live voice assistant · synthetic account</p>
     </main>

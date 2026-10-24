@@ -24,6 +24,13 @@ External: Nessie (read-only) · reasoning provider (OpenAI-compatible, optional)
 - **`lib/providers/`** holds typed clients behind interfaces (`BankingProvider`,
   `ReasoningProvider`). They take an injectable `fetch` so tests run on mocks. Errors are a
   typed `ProviderError` with secrets redacted.
+- **Customer turns (voice and text):** a call's utterance (webhook `convex/http.ts`) and a typed
+  chat message (`convex/chat.ts`, customer page "Chat by text") go through the same path: a session
+  bound to one case (`voiceSessions`, `channel` voice or text) → `recordVoiceUtterance` (statement
+  linked to the question it answers) → `takeTurn` in `convex/intakeTurn.ts` (wait for interpretation
+  and the model's reassessment) → `issueNextQuestion`: a reviewer's open question first
+  (`convex/reviewerQuestions.ts`, asked from the case page), then the model's, then the rules' as the
+  logged fallback. `chat.waitingQuestions` lists what the bank is still waiting on for a case.
 - **`convex/`** holds persistence, idempotency, the activity log, and external calls in
   actions. It recomputes `cases.analysis` after every evidence change, so the UI reacts
   automatically.

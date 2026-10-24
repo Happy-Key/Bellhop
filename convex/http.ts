@@ -12,6 +12,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { voiceUtteranceKey } from "../lib/domain/idempotency";
 import { CALL_ID_PATTERN } from "./voice";
+import { takeTurn } from "./intakeTurn";
 
 // Live calls send call_id (from Cartesia's system__conversation_id). session_token remains for
 // direct testing. Exactly one must be present.
@@ -26,28 +27,6 @@ const ToolBody = z
     question_id: z.string().min(1).max(64).nullish(),
   })
   .refine((b) => !!b.call_id !== !!b.session_token, "exactly one of call_id or session_token");
-
-/**
- * How long the tool call waits for a live interpretation before answering without it. Bitdeer
- * (GLM-5.3-Flash) measured 4.7–7.0 s per statement on a live call (2026-10-24). The agent tells the
- * customer to wait before every tool call, so the wait can cover slow statements; Cartesia's tool
- * timeout is 20 s (lib/providers/cartesia.ts), so the cap stays well under it.
- */
-const DEFAULT_INTERPRETATION_WAIT_MS = 12_000;
-const MAX_INTERPRETATION_WAIT_MS = 15_000;
-/**
- * Total time a tool call may wait, including the reasoning model's reassessment that chooses the
- * next question. If the reassessment isn't ready by then, the rule-based question is used (logged).
- * Stays under the tool's 20 s timeout; the agent has told the customer to wait.
- */
-const MAX_TOTAL_WAIT_MS = 16_000;
-const POLL_MS = 250;
-
-function interpretationWaitMs(): number {
-  const raw = process.env.VOICE_INTERPRETATION_WAIT_MS;
-  const n = raw === undefined || raw === "" ? NaN : Number(raw);
-  return Number.isFinite(n) && n >= 0 ? Math.min(n, MAX_INTERPRETATION_WAIT_MS) : DEFAULT_INTERPRETATION_WAIT_MS;
-}
 
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -83,42 +62,7 @@ http.route({
     // A retry gets exactly the response the first call got.
     if (result.storedResponse) return json(200, { ...result.storedResponse, duplicate: true });
 
-    // Live interpretation runs in the background. Wait for it so the next question reflects what the
-    // customer just said; if it still isn't ready, the next question comes from earlier statements.
-    let awaiting = result.pending;
-    const started = Date.now();
-    if (awaiting && "statementId" in result && result.statementId) {
-      const deadline = started + interpretationWaitMs();
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, POLL_MS));
-        const status = await ctx.runQuery(internal.voice.statementStatus, { statementId: result.statementId });
-        if (status !== "pending") {
-          // A failed interpretation (e.g. provider out of credits) must not stall the call: it is
-          // shown on the case, and the conversation continues with the next question.
-          awaiting = false;
-          break;
-        }
-      }
-    }
-    // Once the statement is interpreted, the reasoning model reassesses the case and picks the next
-    // question. The reassessment row is created in the same transaction that stores the
-    // interpretation, so "not pending" here means there is nothing to wait for.
-    if (!awaiting) {
-      const deadline = started + MAX_TOTAL_WAIT_MS;
-      while (Date.now() < deadline && (await ctx.runQuery(internal.voice.assessmentPending, { sessionId: result.sessionId }))) {
-        await new Promise((r) => setTimeout(r, POLL_MS));
-      }
-    }
-    // Questions come from the backend: the model's assessment, or the rules as the fallback. No
-    // recommendation or eligibility is sent to the agent.
-    const response = await ctx.runMutation(internal.voice.issueVoiceQuestion, {
-      sessionId: result.sessionId,
-      idempotencyKey: result.idempotencyKey,
-      ref: result.ref,
-      duplicate: result.duplicate,
-      awaitingInterpretation: awaiting,
-    });
-    return json(200, response);
+    return json(200, await takeTurn(ctx, result));
   }),
 });
 

@@ -218,6 +218,19 @@ export default defineSchema({
     loginLockReason: v.optional(v.string()),
   }).index("by_provider", ["provider"]),
 
+  /**
+   * Questions a bank reviewer put to the customer. Asked first on the customer's next call or text
+   * chat; answered when a customer reply to it is recorded (the statement ref is kept).
+   */
+  reviewerQuestions: defineTable({
+    caseId: v.id("cases"),
+    text: v.string(),
+    askedAt: v.number(),
+    answeredByRef: v.optional(v.string()),
+    answeredAt: v.optional(v.number()),
+    withdrawnAt: v.optional(v.number()),
+  }).index("by_case", ["caseId"]),
+
   /** Short-lived voice session tokens binding a voice call to exactly one case. */
   voiceSessions: defineTable({
     token: v.string(),
@@ -230,6 +243,8 @@ export default defineSchema({
     handedOffKeys: v.optional(v.array(v.string())),
     /** No longer written (the "anything else?" acknowledgement was removed 2026-10-24); kept so older rows still validate. */
     lastResponseWasAck: v.optional(v.boolean()),
+    /** "text" for the customer text chat (same turn logic as a call); absent or "voice" for calls. */
+    channel: v.optional(v.union(v.literal("voice"), v.literal("text"))),
     /** When the backend gave the agent the closing message (end_call: true); the customer page then hangs up. */
     closingAt: v.optional(v.number()),
   })

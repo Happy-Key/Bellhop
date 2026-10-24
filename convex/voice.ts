@@ -11,7 +11,8 @@
  *    2026-10-24: `dynamic_variables_not_allowed`).
  */
 import { v } from "convex/values";
-import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { logActivity, recordStatement } from "./model";
 import { modelQuestionFor } from "./proposals";
 import { redact } from "../lib/providers/errors";
@@ -19,6 +20,7 @@ import { CARTESIA_VERSION } from "../lib/providers/cartesia";
 import { voiceIdempotencyKey } from "../lib/domain/idempotency";
 import { CLOSING_MESSAGE, MAX_ASKS_PER_CALL, WRAP_UP_COMPLETE_PROMPT, WRAP_UP_KEY, WRAP_UP_PROMPT, selectVoiceQuestion } from "../lib/domain/voiceTurn";
 import type { OpenQuestion } from "../lib/domain/schemas";
+import { openReviewerQuestions } from "./reviewerQuestions";
 
 export { CARTESIA_VERSION };
 export const VOICE_SESSION_TTL_MS = 30 * 60 * 1000;
@@ -138,11 +140,17 @@ export const recordVoiceUtterance = internalMutation({
     const r = await recordStatement(ctx, {
       caseId: session.caseId,
       text: utterance,
-      channel: "voice",
+      channel: session.channel ?? "voice",
       idempotencyKey,
       ...(replyTo ? { inResponseTo: { key: replyTo.questionKey, kind: replyTo.kind, text: replyTo.text } } : {}),
     });
-    if (!r.duplicate && replyTo && !replyTo.answeredByRef) await ctx.db.patch(replyTo._id, { answeredByRef: r.ref });
+    if (!r.duplicate && replyTo && !replyTo.answeredByRef) {
+      await ctx.db.patch(replyTo._id, { answeredByRef: r.ref });
+      // A reply to a reviewer's question answers it (the reviewer reads the reply on the case).
+      const rq = replyTo.questionKey.startsWith("reviewer:") ? ctx.db.normalizeId("reviewerQuestions", replyTo.questionKey.slice("reviewer:".length)) : null;
+      const q = rq ? await ctx.db.get(rq) : null;
+      if (q && q.caseId === session.caseId && !q.answeredByRef) await ctx.db.patch(q._id, { answeredByRef: r.ref, answeredAt: Date.now() });
+    }
     const s = r.statementId ? await ctx.db.get(r.statementId) : null;
     // Short replies ("No, I'm done.", "me") carry no new facts, or the rule-based answer reader has
     // already read them against the question: don't make the caller wait for the live model.
@@ -194,61 +202,30 @@ export const issueVoiceQuestion = internalMutation({
 
     let response: VoiceToolResponse;
     // No "anything else?" acknowledgement while the model is slow: it invited a "no" and looped the
-    // call (live 2026-10-24). The agent tells the customer to wait before every tool call, the wait
-    // is long (convex/http.ts), and if the statement still isn't interpreted, the next question is
+    // call (live 2026-10-24). The customer is told to wait before every tool call, the wait is long
+    // (convex/intakeTurn.ts), and if the statement still isn't interpreted, the next question is
     // asked from what is.
     if (awaitingInterpretation) {
       await logActivity(ctx, session.caseId, "voice", "asked_without_waiting", `${ref} was still being interpreted when the wait ran out, so the next question was asked from the statements interpreted so far.`);
     }
-    const questions = ((c.analysis as { questions?: OpenQuestion[] } | null)?.questions ?? []).filter((q) => q.audience === "customer");
-    const counts = new Map<string, number>();
-    for (const q of questions) {
-      const asked = await ctx.db.query("intakeTurns").withIndex("by_session_key", (x) => x.eq("sessionId", sessionId).eq("questionKey", q.key)).collect();
-      counts.set(q.key, asked.length);
-    }
-    const choice = selectVoiceQuestion(questions, counts);
-    const handedOff = new Set(session.handedOffKeys ?? []);
-    const newlyHandedOff = choice.exhausted.filter((q) => !handedOff.has(q.key));
-    if (newlyHandedOff.length) {
-      await ctx.db.patch(sessionId, { handedOffKeys: [...handedOff, ...newlyHandedOff.map((q) => q.key)] });
-      await logActivity(ctx, session.caseId, "voice", "question_handed_to_reviewer", `Asked ${MAX_ASKS_PER_CALL} times on this call without being settled, so not asked again: ${newlyHandedOff.map((q) => `"${q.text}"`).join("; ")}. Needs reviewer follow-up.`);
-    }
-    // The reasoning model chooses the next question when its assessment of the case as it stands
-    // now asks for information. Otherwise (model off, still assessing, failed, or not asking) the
-    // rule-based question is the fallback, logged as such. The per-call repeat limit applies to both.
-    let next: { key: string; kind: string; text: string } | null = null;
-    const mq = await modelQuestionFor(ctx, session.caseId);
-    const mqAsked = mq ? (await ctx.db.query("intakeTurns").withIndex("by_session_key", (x) => x.eq("sessionId", sessionId).eq("questionKey", mq.key)).collect()).length : 0;
-    if (mq && mqAsked < MAX_ASKS_PER_CALL) next = { key: mq.key, kind: "model_question", text: mq.text };
-    else if (choice.question) {
-      next = choice.question;
-      await logActivity(ctx, session.caseId, "voice", "rule_question_fallback", `Asked the rule-based question "${choice.question.text}" because the reasoning model has no current question for this case state${mq ? " (its question was already asked twice on this call)" : ""}.`);
-    }
+    const what = session.channel === "text" ? "chat" : "call";
+    const next = await issueNextQuestion(ctx, session, c);
     if (next) {
-      const turnId = await ctx.db.insert("intakeTurns", {
-        caseId: session.caseId,
-        sessionId,
-        questionKey: next.key,
-        kind: next.kind,
-        text: next.text,
-        issuedAt: Date.now(),
-        analysisVersion: c.analysisVersion,
-      });
-      response = { recorded: ref, duplicate, question_id: turnId, question: next.text, next_questions: [next.text], awaiting_interpretation: awaitingInterpretation, end_call: false };
+      response = { recorded: ref, duplicate, question_id: next.turnId, question: next.text, next_questions: [next.text], awaiting_interpretation: awaitingInterpretation, end_call: false };
     } else {
-      // Nothing left to ask: one wrap-up question per call, then the closing and the hang-up.
+      // Nothing left to ask: one wrap-up question per session, then the closing and the end.
       const wrappedUp = await ctx.db.query("intakeTurns").withIndex("by_session_key", (x) => x.eq("sessionId", sessionId).eq("questionKey", WRAP_UP_KEY)).first();
       if (!wrappedUp) {
-        // Nothing asked yet on this call: the case already had what it needs (a call-back), so say so.
+        // Nothing asked yet in this session: the case already had what it needs (a call-back), so say so.
         const askedThisCall = await ctx.db.query("intakeTurns").withIndex("by_session", (x) => x.eq("sessionId", sessionId)).first();
         const text = askedThisCall ? WRAP_UP_PROMPT : WRAP_UP_COMPLETE_PROMPT;
         const turnId = await ctx.db.insert("intakeTurns", { caseId: session.caseId, sessionId, questionKey: WRAP_UP_KEY, kind: WRAP_UP_KEY, text, issuedAt: Date.now(), analysisVersion: c.analysisVersion });
         response = { recorded: ref, duplicate, question_id: turnId, question: text, next_questions: [text], awaiting_interpretation: awaitingInterpretation, end_call: false };
       } else {
         response = { recorded: ref, duplicate, question_id: null, question: CLOSING_MESSAGE, next_questions: [CLOSING_MESSAGE], awaiting_interpretation: awaitingInterpretation, end_call: true };
-        // The customer page watches this and hangs up once the closing has been spoken, in case the agent doesn't.
+        // The customer page watches this and ends the call once the closing has been spoken, in case the agent doesn't.
         await ctx.db.patch(sessionId, { closingAt: Date.now() });
-        await logActivity(ctx, session.caseId, "voice", "voice_intake_complete", "Nothing left to ask on this call: the agent was told to say the closing message and end the call.");
+        await logActivity(ctx, session.caseId, "voice", "voice_intake_complete", `Nothing left to ask on this ${what}: the closing message was given and the ${what} ends.`);
       }
     }
     if (event) await ctx.db.patch(event._id, { response: JSON.stringify(response) });
@@ -277,3 +254,41 @@ export const createCartesiaAccessToken = action({
     return { ok: true, token: json.token, agentId: process.env.CARTESIA_AGENT_ID ?? null };
   },
 });
+
+/**
+ * Chooses the next question for a call or chat and records it as issued on the session. A
+ * reviewer's open question is asked first. Then the reasoning model chooses the next question when
+ * its assessment of the case as it stands now asks for information. Otherwise (model off, still
+ * assessing, failed, or not asking) the rule-based question is the fallback, logged as such. The
+ * per-session repeat limit applies to all three; a rule question that hits it is handed to a reviewer.
+ */
+export async function issueNextQuestion(ctx: MutationCtx, session: Doc<"voiceSessions">, c: Doc<"cases">): Promise<{ turnId: Id<"intakeTurns">; text: string } | null> {
+  const sessionId = session._id;
+  const askedOnSession = async (key: string) => (await ctx.db.query("intakeTurns").withIndex("by_session_key", (x) => x.eq("sessionId", sessionId).eq("questionKey", key)).collect()).length;
+  const questions = ((c.analysis as { questions?: OpenQuestion[] } | null)?.questions ?? []).filter((q) => q.audience === "customer");
+  const counts = new Map<string, number>();
+  for (const q of questions) counts.set(q.key, await askedOnSession(q.key));
+  const choice = selectVoiceQuestion(questions, counts);
+  const handedOff = new Set(session.handedOffKeys ?? []);
+  const newlyHandedOff = choice.exhausted.filter((q) => !handedOff.has(q.key));
+  if (newlyHandedOff.length) {
+    await ctx.db.patch(sessionId, { handedOffKeys: [...handedOff, ...newlyHandedOff.map((q) => q.key)] });
+    await logActivity(ctx, session.caseId, "voice", "question_handed_to_reviewer", `Asked ${MAX_ASKS_PER_CALL} times on this ${session.channel === "text" ? "chat" : "call"} without being settled, so not asked again: ${newlyHandedOff.map((q) => `"${q.text}"`).join("; ")}. Needs reviewer follow-up.`);
+  }
+  let next: { key: string; kind: string; text: string } | null = null;
+  for (const rq of await openReviewerQuestions(ctx, session.caseId)) {
+    if ((await askedOnSession(`reviewer:${rq._id}`)) < MAX_ASKS_PER_CALL) {
+      next = { key: `reviewer:${rq._id}`, kind: "reviewer_question", text: rq.text };
+      break;
+    }
+  }
+  const mq = next ? null : await modelQuestionFor(ctx, session.caseId);
+  if (!next && mq && (await askedOnSession(mq.key)) < MAX_ASKS_PER_CALL) next = { key: mq.key, kind: "model_question", text: mq.text };
+  else if (!next && choice.question) {
+    next = choice.question;
+    await logActivity(ctx, session.caseId, "voice", "rule_question_fallback", `Asked the rule-based question "${choice.question.text}" because the reasoning model has no current question for this case state${mq ? " (its question was already asked twice in this session)" : ""}.`);
+  }
+  if (!next) return null;
+  const turnId = await ctx.db.insert("intakeTurns", { caseId: session.caseId, sessionId, questionKey: next.key, kind: next.kind, text: next.text, issuedAt: Date.now(), analysisVersion: c.analysisVersion });
+  return { turnId, text: next.text };
+}

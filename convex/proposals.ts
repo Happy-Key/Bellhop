@@ -16,6 +16,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { buildCaseReasoningInput, executionPlan, inputSignature, readyForAssessment, validateProposal, CaseProposalOutput, type CaseProposal, type CaseReasoningInput } from "../lib/domain/caseDecision";
 import { diffInvestigations } from "../lib/domain/investigation";
+import { openReviewerQuestions } from "./reviewerQuestions";
 import type { AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 import type { CaseAnalysis } from "../lib/domain/workflow";
 import { readStoredAnalysis } from "../lib/domain/triage";
@@ -37,6 +38,7 @@ async function currentInput(ctx: QueryCtx, caseId: Id<"cases">): Promise<{ input
   const prev = (await lastAccepted(ctx, caseId))?.proposal as CaseProposal | undefined;
   const actions = await ctx.db.query("reviewActions").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect();
   const input = buildCaseReasoningInput({
+    reviewerQuestions: (await openReviewerQuestions(ctx, caseId)).map((q) => q.text),
     previous: prev?.investigation ? { decision: prev.decision, investigation: prev.investigation } : null,
     // What the bank's reviewer asked for, oldest first. Part of the signature, so a return triggers a reassessment.
     reviewerRequests: actions

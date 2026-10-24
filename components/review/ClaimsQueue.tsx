@@ -24,7 +24,8 @@ const GROUPS: { id: CaseAttention; label: string; mark: MarkKind; tone: Tone }[]
   { id: "reviewer", label: "Needs a reviewer", mark: "bank", tone: "accent" },
   { id: "customer", label: "Waiting on the customer", mark: "customer", tone: "warn" },
   { id: "system", label: "Investigating", mark: "model", tone: "neutral" },
-  { id: "decided", label: "Decided", mark: "person", tone: "ok" },
+  { id: "auto_approved", label: "Approved automatically", mark: "policy", tone: "ok" },
+  { id: "decided", label: "Decided by a person", mark: "person", tone: "ok" },
   { id: "no_report", label: "No report", mark: "customer", tone: "quiet" },
 ];
 
