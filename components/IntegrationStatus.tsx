@@ -43,7 +43,6 @@ export function IntegrationStatus() {
               Credentials {yes(s.crs.credentials)}. TransUnion basic identity check on published test personas only.
             </td>
           </tr>
-          <tr><td>Factory Droid (reviewed improvements)</td><td><span className="label notimpl">not implemented</span></td></tr>
           <tr><td>Simulated reimbursement</td><td><span className="label notimpl">not implemented</span></td></tr>
         </tbody>
       </table>

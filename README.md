@@ -55,7 +55,6 @@ Copy names from `.env.example`. Never commit `.env.local` and never paste keys i
 | `.env.local` (auto) | `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL` |
 | **Convex env** (`npx convex env set NAME value`) | `NESSIE_API_KEY`, `NESSIE_DEMO_ACCOUNT_ID`, `REASONING_*`, `CARTESIA_API_KEY`, `CARTESIA_AGENT_ID`, `VOICE_TOOL_SECRET`, later `CRS_*` |
 | `.env.local` (scripts only) | `NESSIE_API_KEY`, `NESSIE_DEMO_ACCOUNT_ID` for `seed:nessie` / `live:nessie` |
-| Developer shell only | `FACTORY_API_KEY` (future) |
 
 Convex functions read **only** the Convex deployment environment.
 
@@ -74,6 +73,23 @@ npm run verify       # typecheck + lint + unit tests (mocked) + production build
 npm test             # unit tests only
 npm run live:nessie  # explicit LIVE check (uses your key; not part of verify)
 ```
+
+## Claim suite and reset
+
+17 SYNTHETIC demo personas (`lib/fixtures/demoPersonas.ts`): the four core demo personas plus 13 niche
+cases that need a person (repeat merchant, family access, refund already received, late report, over
+the limit, card testing, changed story, tech-support scam, deceased indicator, medium fraud score,
+phished code, synthetic identity with an instruction in the statement) and one ambiguous match.
+
+1. Seed their Nessie accounts: `npm run seed:personas -- --confirm`, then set the printed
+   `NESSIE_PERSONA_ACCOUNTS` with `npx convex env set`.
+2. Open **/review/suite** and click **Run all**. Each persona's script is played as a customer text chat
+   on a new case, and the result is compared with the expected outcome (matched record, failing AUTO-1
+   checks, route). The model's proposal is shown alongside it as advisory.
+3. `npm test` checks every script deterministically with the scripted extractor (`tests/personas.test.ts`).
+
+To start a demo from an empty database: `npm run reset:convex -- --confirm`. It deletes every row on
+the deployment in `.env.local` except the CRS login lock. It doesn't touch Nessie or Cartesia.
 
 ## Demo flow
 

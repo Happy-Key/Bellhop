@@ -43,6 +43,15 @@ describe("scripted interpretation", () => {
     expect(classifyCredentialSharing("nothing about it")).toBe("unspecified");
   });
 
+  it("reads shared access, a customer's own order, and remote-access scams (claim suite)", () => {
+    expect(classifyCredentialSharing("I never gave anyone a code, but my brother knows my laptop password.")).toBe("shared");
+    expect(classifyCredentialSharing("I let my roommate use my card once")).toBe("shared");
+    expect(classifyAuthorization("Well, actually I did order from them myself, but it never arrived.").authorization).toBe("authorized");
+    expect(classifyAuthorization("I ordered it and it never came").authorization).toBe("authorized");
+    expect(classifyAuthorization("A message popped up saying my computer had a virus").scamIndicators).not.toEqual([]);
+    expect(classifyAuthorization("The man took control of my computer").scamIndicators).not.toEqual([]);
+  });
+
   it("detects correction phrasing", () => {
     expect(looksLikeCorrection("Actually, it was $40")).toBe(true);
     expect(looksLikeCorrection("Correction: the date was Oct 2")).toBe(true);

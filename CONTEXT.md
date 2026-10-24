@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (automatic approvals get their own queue category)_
+_Last updated: 2026-10-24 (claim suite of 17 personas, suite runner, deployment reset, Bitdeer config on the review deployment)_
 
 ## What this is
 
@@ -37,7 +37,7 @@ Rules that always hold:
 |---|---|
 | Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call` (with a **demo persona picker**), **bank claims workstation `/review`** (queue grouped by who acts + conclusion-first case workspace with a collapsed decision record, including AUTO-1 checks and payouts) and **pitch demo `/review/demo`** (five-act scripted replay; rebuilt 2026-10-24) |
 | Case control | ✅ **Delete** on the developer tab `/` (`cases.remove`: the case and every row recorded for it, batched for big cases; payment origins and Nessie records stay; late writes from in-flight work are dropped). **Call back** on `/call`: "An existing case" continues any case (DEMO ONLY, no logins) |
-| Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. ⚠️ **Two `npx convex dev` watchers are running** on the dev machine and push every saved change, so dev tracks the working copy (including uncommitted work), not a chosen commit. With `REASONING_PROVIDER=openai-compatible` and `CASE_REASONING` unset, **Bitdeer whole-case decisions are ON on dev**. Env `NESSIE_PERSONA_ACCOUNTS` set. Those watchers aren't on this machine. **This machine** runs one `npx convex dev` watcher (since 07:23) against the personal review deployment `friendly-grouse-183` (no Bitdeer key, so the rule fallback shows there); it already has the investigation restructure |
+| Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. ⚠️ **Two `npx convex dev` watchers are running** on the dev machine and push every saved change, so dev tracks the working copy (including uncommitted work), not a chosen commit. With `REASONING_PROVIDER=openai-compatible` and `CASE_REASONING` unset, **Bitdeer whole-case decisions are ON on dev**. Env `NESSIE_PERSONA_ACCOUNTS` set. Those watchers aren't on this machine. **This machine** runs one `npx convex dev` watcher (since 07:23) against the personal review deployment `friendly-grouse-183`. There, `REASONING_PROVIDER=openai-compatible` (Bitdeer, `zai-org/GLM-5.3-Flash`) and `NESSIE_PERSONA_ACCOUNTS` (all 17 personas, seeded 2026-10-24) are set, but **`REASONING_API_KEY` is not**, so every interpretation fails visibly until the user sets it (see Waiting on the user) |
 | Bank records (Nessie) | ✅ Live: purchases **and deposits** (deposits drive the refund check; never matched as the disputed payment) |
 | Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ✅ **CalHacks promo active** (2026-10-24, per user); the $0.00 balance shown is a Bitdeer display bug. Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
 | Voice (Cartesia) | ✅ Live: one question per turn (`question_id`). Waits up to **12 s** for extraction, then (with case reasoning on) up to **16 s in total** for the model's reassessment, which **chooses the next question** (rule question as the logged fallback). No "anything else?" acknowledgement turns; the agent says a wait line before every tool call (`pre_tool_speech: force`); **calls end properly**: one wrap-up question, then the closing with `end_call: true`, and `/call` hangs up itself once the closing is heard. Tool updated live on Cartesia; **agent instructions and Playground settings still need pasting** (see Waiting on the user) |
@@ -49,8 +49,10 @@ Rules that always hold:
 | Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown); persona cases attach their own automatically |
 | Demo personas | ✅ `/call` picker: Margaret (P01, auto-approve), Grace (P19, own device → person), Victor (P12, identity fail → person), Samuel (P16, scam → specialist). Each has its own seeded Nessie account; its case sets itself up. Margaret verified live end to end. Committed and pushed (rebased onto `936dea4`) |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
-| Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, **204 tests**, build pass |
+| Claim suite | ✅ **17 SYNTHETIC personas** (4 core + 13 niche: repeat merchant, family access, refund already received, late report, over $100, card testing, changed story, tech-support scam, deceased indicator, medium Fraud Finder score, phished code, synthetic identity + instruction in the statement, ambiguous match). Each has a machine-checkable expected outcome. `tests/personas.test.ts` plays every script deterministically; **`/review/suite`** plays them live as text chats (Run all / core / suite / one) and compares matched record, failing AUTO-1 checks and route; the model's proposal is shown as advisory. Runner plumbing verified live on `friendly-grouse-183` (Margaret run); not yet run with Bitdeer |
+| Reset | ✅ `npm run reset:convex -- --confirm` (internal `admin:resetAll`): deletes every row on the `.env.local` deployment except the CRS login lock; Nessie and Cartesia untouched. Verified on `friendly-grouse-183` |
+| Factory Droid | 🚫 Dropped (user decision 2026-10-24) |
+| Checks | ✅ `npm run verify`: typecheck, lint, **227 tests**, build pass |
 
 ## Branch and git
 
@@ -86,6 +88,8 @@ Rules that always hold:
 
 ## What needs to be done next (priority order)
 
+0. **Run the claim suite with Bitdeer on** (`/review/suite` → Run all) once the key is set on the review deployment, and fix
+   whatever differs. The scripted extractor already gets all 17 right offline.
 1. **A full voice rehearsal of each persona** on dev. Margaret was verified end to end by text (setup, Bitdeer,
    14 checks, SIMULATED deposit); Grace, Victor and Samuel are verified offline only (`tests/personas.test.ts`).
    Consider fixing the Bitdeer prompt so a plain denial isn't a scam indicator.
@@ -98,7 +102,6 @@ Rules that always hold:
 5. **The redesign phases** in `docs/claim-intake-design.md`: per-payment fact model, screening results,
    disputes and recovery events, deadline estimates, documents.
 6. **Regulatory:** verify the 1005.6 and 1005.11 excerpts word for word (the CFPB FAQ excerpt is done).
-7. **Factory Droid loop.**
 
 ## Claims workstation (`/review`)
 
@@ -151,7 +154,8 @@ Rules that always hold:
 
 - **Cartesia (Playground, by hand):** paste the updated agent instructions from `docs/integrations.md`; enable **end_call** (description in the doc, pre-tool speech Off); set the **inactivity check-in to 20 s**. Also check the retention settings so audio isn't kept. Balance about $0.86 before the promo code.
 - **Housekeeping:** rotate the CRS password (it was pasted in chat once).
-- **Factory:** API key and `droid` CLI, when we reach that step.
+- **Bitdeer key on the review deployment:** run `! npx convex env set REASONING_API_KEY` in this session (it prompts for the value; never paste it into chat). Until then `friendly-grouse-183` has Bitdeer selected but no key, so interpretations fail (shown, not hidden). To go back to scripted instead: `npx convex env set REASONING_PROVIDER scripted`.
+- **Main dev deployment (`dynamic-chihuahua-120`):** to use the 13 new personas there, its `NESSIE_PERSONA_ACCOUNTS` needs the new mapping (printed by the 2026-10-24 seed; the review deployment has it) and the new code deployed.
 
 ## How to run
 
@@ -227,3 +231,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | **Text chat alternative to the call** (user request). `/call` gets a Call / Chat by text switch. `convex/chat.ts`: `startChat` (a voice session with `channel: "text"`; on a reported case it issues the first waiting question so the reply links to it), `send` (action: same `recordVoiceUtterance` + new shared `takeTurn` in `convex/intakeTurn.ts`, which the webhook now also uses), `waitingQuestions`. `issueNextQuestion` extracted in `convex/voice.ts`. **Reviewer questions:** new `reviewerQuestions` table and `convex/reviewerQuestions.ts` (ask, withdraw), asked first on calls and chats, answered by the linked reply, passed to the model (`caseFacts.reviewerQuestions`), shown in `/review/<id>` and in case status. Schema: optional `voiceSessions.channel`, new table (already pushed to `friendly-grouse-183` by the watcher). 8 new tests, 199 pass; checked in headless Chrome (new chat and existing-case waiting list). Committed and pushed |
 | 2026-10-24 | Merged `origin/foundation` (voice loop/ending fixes `a742dfb`, queue crash fix `c0e064a`) into the text-chat commit. Conflicts resolved: `issueVoiceQuestion` keeps upstream's no-acknowledgement, wrap-up and closing (`end_call`) but chooses via the shared `issueNextQuestion` (reviewer → model → rules); the wait constants (12 s / 16 s) moved into `convex/intakeTurn.ts`, which both the webhook and the chat use; the chat ends on the closing message; `/call` keeps upstream's new-case-per-report plus the Call / Chat switch; schema keeps both `channel` and `closingAt`. 203 tests pass |
 | 2026-10-24 | **Automatic approvals get their own queue category** (user request): `CaseAttention` gains `auto_approved`; AUTO-1 approvals that aren't flagged show under "Approved automatically" (status "Approved automatically"), not with person-decided cases or the review queue; a flagged one stays in "Needs a bank reviewer". "Decided" renamed "Decided by a person". Also fixed the queue sorting by the old rule triage instead of the case status. 204 tests pass. Checked before pushing: the live-call fix files (`VoiceCall.tsx`, `cartesia.ts`, `voiceTurn.ts`, `model.ts`, `triage.ts`, `integrations.md`) are identical to upstream `c0e064a`; the voice turn differs only by asking open reviewer questions first. Committed and pushed |
+| 2026-10-24 | **Claim suite, runner and reset** (user request). 13 new SYNTHETIC personas (17 total) with their own CRS test identities (P02–P20 identity and Fraud Finder bodies copied verbatim from the CRS package; no credit, criminal or eviction products) and machine-checkable expectations (`expected`: route, failing AUTO-1 checks, match, reasonable model decisions, review focus). Personas can have deposits (refund case) and several disputed purchases. Scripted extractor learnt shared access ("my brother knows my password"), "I ordered it", and remote-access scam signs. Seed run against the Nessie sandbox (all 17; a second accidental run left duplicate synthetic accounts, unused). `convex/suite.ts` + `/review/suite` play scripts live as text chats and compare results (`lib/review/suite.ts`); `convex/admin.ts` + `npm run reset:convex` wipe a deployment. Bitdeer provider settings set on `friendly-grouse-183` (key still needed; the main deployment couldn't be read from this machine). Factory Droid dropped (user). 227 tests pass |

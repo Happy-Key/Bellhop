@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 export function WorkstationBar() {
   const pathname = usePathname();
   const inDemo = pathname === "/review/demo";
-  const inQueue = !inDemo && (pathname === "/review" || pathname.startsWith("/review/"));
+  const inSuite = pathname === "/review/suite";
+  const inQueue = !inDemo && !inSuite && (pathname === "/review" || pathname.startsWith("/review/"));
   return (
     <header className="ws-bar">
       <Link href="/review" className="ws-brand">
@@ -16,6 +17,7 @@ export function WorkstationBar() {
       <nav aria-label="Workstation" className="ws-nav">
         <Link href="/review" aria-current={inQueue ? "page" : undefined}>Claims queue</Link>
         <Link href="/review/demo" aria-current={inDemo ? "page" : undefined}>Demo</Link>
+        <Link href="/review/suite" aria-current={inSuite ? "page" : undefined}>Claim suite</Link>
         <Link href="/call">Customer line</Link>
         <Link href="/">Developer console</Link>
       </nav>

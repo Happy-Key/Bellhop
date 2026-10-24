@@ -1,6 +1,6 @@
 /**
  * Seeds the SYNTHETIC demo personas (lib/fixtures/demoPersonas.ts) in the Nessie sandbox: one
- * customer, account, set of merchants and purchases each.
+ * customer, account, set of merchants and purchases each, plus any deposits (e.g. a merchant refund).
  *
  *   npm run seed:personas -- --confirm                  # all personas
  *   npm run seed:personas -- --confirm --only=margaret  # re-seed some (comma-separated)
@@ -38,13 +38,18 @@ async function seed(p: DemoPersona): Promise<string> {
     });
   }
 
+  for (const d of p.deposits ?? []) {
+    await post(`/accounts/${accountId}/deposits`, { medium: "balance", transaction_date: daysAgo(d.daysAgo), status: "completed", amount: d.amount, description: d.description });
+  }
+
   // Read back: every fixture purchase must come back with its merchant name and amount, since that
   // is how the backend attaches the persona's payment-origin records.
   const { transactions, warnings } = await retrieveAccountTransactions(new NessieClient(key!, base), accountId);
   for (const t of transactions) console.log(`  ${t.ref} ${t.date} $${t.amount} ${t.merchantName ?? "?"} status=${t.status}`);
   for (const w of warnings) console.log(`  warning: ${w}`);
   const missing = p.purchases.filter((x) => !transactions.some((t) => personaPurchaseFor(p, t)?.key === x.key));
-  if (missing.length) throw new Error(`${p.id}: read-back is missing ${missing.map((x) => x.key).join(", ")}`);
+  const missingDeposits = (p.deposits ?? []).filter((d) => !transactions.some((t) => t.kind === "deposit" && t.amount === d.amount && t.description === d.description));
+  if (missing.length || missingDeposits.length) throw new Error(`${p.id}: read-back is missing ${[...missing, ...missingDeposits].map((x) => x.key).join(", ")}`);
   return accountId;
 }
 

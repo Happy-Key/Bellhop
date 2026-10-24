@@ -201,7 +201,7 @@ See `docs/integrations.md` and `docs/status.md`.
 - Nessie: live and verified.
 - Reasoning: scripted active; Bitdeer chosen for live extraction, not yet configured.
 - Cartesia: backend partial.
-- CRS: identity check live and verified. Factory: researched, not implemented.
+- CRS: identity check live and verified. Factory Droid: dropped (decided 2026-10-24).
 
 ## Testing requirements
 
@@ -214,7 +214,6 @@ See `docs/integrations.md` and `docs/status.md`.
 
 - Packets are drafts. Every recommendation is one of request_clarification,
   further_investigation, escalate or reimbursement_review.
-- Developer-agent (Factory) proposals need human review before merge.
 - Automatic approvals (policy AUTO-1) are listed with every check on the case page, and can
   be flagged for review. Denials are always made by a person.
 - **Never automatically modify** `lib/domain/regulatory.ts`, `lib/domain/autoApproval.ts`
@@ -223,4 +222,4 @@ See `docs/integrations.md` and `docs/status.md`.
 ## Remaining work
 
 See the checklist in `docs/status.md` (CRS evidence, the voice browser client, live reasoning,
-the Factory loop, and the simulated payout).
+and the simulated payout).

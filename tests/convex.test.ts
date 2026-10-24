@@ -653,3 +653,33 @@ describe("cases stored with an older analysis shape (live 2026-10-24)", () => {
     expect(rows.map((r) => r._id)).toContain(caseId);
   });
 });
+
+describe("Claim suite runner and deployment reset", () => {
+  it("queues one run per persona, skips personas already running, and refuses unknown personas", async () => {
+    const t = convexTest(schema, modules);
+    await expect(t.mutation(api.suite.start, { personaIds: ["nobody"] })).rejects.toThrow(/unknown demo persona/);
+    expect(await t.mutation(api.suite.start, { personaIds: ["margaret", "daniel"] })).toEqual({ queued: 2, skipped: 0 });
+    expect(await t.mutation(api.suite.start, { personaIds: ["margaret"] })).toEqual({ queued: 0, skipped: 1 });
+    const rows = await t.query(api.suite.results, {});
+    expect(rows.find((r) => r.persona.id === "margaret")?.run?.status).toBe("queued");
+    expect(rows.find((r) => r.persona.id === "grace")?.run).toBeNull();
+    expect(rows.find((r) => r.persona.id === "daniel")?.persona.expected.failingChecks).toEqual(["no_prior_payments_to_merchant"]);
+  });
+
+  it("reset deletes every row in every table except the CRS login state", async () => {
+    const { RESET_TABLES, KEPT_TABLES } = await import("../convex/admin");
+    expect([...RESET_TABLES, ...KEPT_TABLES].sort()).toEqual(Object.keys(schema.tables).sort());
+
+    const t = convexTest(schema, modules);
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(api.cases.submitStatement, { caseId, text: "I did not make the $58 charge", clientEventId: "evt-00000001" });
+    await t.mutation(api.suite.start, { personaIds: ["grace"] });
+    await t.run((ctx) => ctx.db.insert("providerAuth", { provider: "crs", loginLockedAt: 1, loginLockReason: "test" }));
+
+    const r = await t.mutation(internal.admin.resetAll, { confirm: "delete every row" });
+    expect(r.done).toBe(true);
+    const counts = await t.run(async (ctx) => Object.fromEntries(await Promise.all([...RESET_TABLES, ...KEPT_TABLES].map(async (n) => [n, (await ctx.db.query(n).collect()).length]))));
+    for (const n of RESET_TABLES) expect(counts[n], n).toBe(0);
+    expect(counts.providerAuth).toBe(1);
+  });
+});

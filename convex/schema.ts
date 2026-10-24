@@ -204,6 +204,22 @@ export default defineSchema({
     withdrawnAt: v.optional(v.number()),
   }).index("by_case", ["caseId"]),
 
+  /**
+   * Claim suite runs (convex/suite.ts, /review/suite): a SYNTHETIC demo persona's script played as a
+   * text chat on a new case, so the outcome can be compared with the persona's expected result.
+   */
+  suiteRuns: defineTable({
+    personaId: v.string(),
+    batchId: v.string(),
+    status: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error")),
+    queuedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    finishedAt: v.optional(v.number()),
+    caseId: v.optional(v.id("cases")),
+    transcript: v.array(v.object({ role: v.union(v.literal("customer"), v.literal("assistant")), text: v.string(), at: v.number() })),
+    error: v.optional(v.string()),
+  }).index("by_persona", ["personaId"]),
+
   /** Short-lived voice session tokens binding a voice call to exactly one case. */
   voiceSessions: defineTable({
     token: v.string(),

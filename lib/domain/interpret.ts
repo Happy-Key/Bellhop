@@ -131,13 +131,27 @@ const DENIAL = [
 ];
 const SELF_INITIATED = [
   /\bI\s+(?:sent|paid|transferred|wired|made|authori[sz]ed|approved)\b/i,
+  // "I ordered it", "I did order from them": the customer made the purchase (e.g. a non-delivery dispute).
+  /\bI\s+(?:did\s+)?(?:order(?:ed)?|bought|purchased)\b/i,
 ];
 const INDUCEMENT = [
   /\b(?:scam(?:med)?|tricked|deceived|fraudster|impersonat\w*|pretend(?:ed|ing) to be|posing as)\b/i,
   /\b(?:told|asked|instructed)\s+me\s+to\b/i,
+  // Remote-access / tech-support scams.
+  /\b(?:took|take|taken|got)\s+(?:control|over|remote access)\s+(?:of\s+)?(?:my\s+)?(?:computer|laptop|phone|screen)\b/i,
+  /\bpop[- ]?up\b[^.]*\b(?:virus|infected|call)\b|\bpopped up\b[^.]*\b(?:virus|infected)\b/i,
 ];
 const CREDENTIAL_SHARED = [
   /\b(?:gave|shared|told|read)\s+(?:them|him|her|the caller|someone)?\s*(?:my|the)\s+(?:codes?|passwords?|pin|otp|one[- ]time|login|card number|verification)\b/i,
+];
+/**
+ * Someone else has the customer's login or device (a relative who knows the password, a friend
+ * allowed to use the card). Checked before the denial patterns: "I never gave anyone a code, but my
+ * brother knows my password" reports shared access.
+ */
+const ACCESS_SHARED = [
+  /\b(?:knows|has|had)\s+my\s+(?:\w+\s+)?(?:passwords?|pin|passcode|login|card details|card number)\b/i,
+  /\b(?:let|lets|allowed|allow)\s+(?:him|her|them|my\s+\w+)\s+use\s+my\s+(?:card|phone|laptop|computer|account|login)\b/i,
 ];
 const CREDENTIAL_NOT_SHARED = [
   /\b(?:never|did ?n[o']?t|didnt)\s+(?:share|shared|give|gave|given|tell|told)\b[^.]*\b(?:codes?|passwords?|pin|card|login)\b/i,
@@ -161,6 +175,7 @@ export function classifyAuthorization(text: string): { authorization: Authorizat
 }
 
 export function classifyCredentialSharing(text: string): CredentialSharing {
+  if (anyMatch(ACCESS_SHARED, text).length) return "shared";
   if (anyMatch(CREDENTIAL_NOT_SHARED, text).length) return "not_shared";
   if (anyMatch(CREDENTIAL_SHARED, text).length) return "shared";
   return "unspecified";

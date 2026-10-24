@@ -9,6 +9,8 @@
  */
 import { v } from "convex/values";
 import { action, mutation, query } from "./_generated/server";
+import type { GenericActionCtx } from "convex/server";
+import type { DataModel } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { logActivity } from "./model";
 import { VOICE_SESSION_TTL_MS, issueNextQuestion, type VoiceToolResponse } from "./voice";
@@ -45,22 +47,28 @@ export const startChat = mutation({
  */
 export const send = action({
   args: { sessionToken: v.string(), text: v.string(), messageId: v.string(), questionId: v.optional(v.string()) },
-  handler: async (ctx, { sessionToken, text, messageId, questionId }): Promise<VoiceToolResponse> => {
-    if (!MESSAGE_ID.test(messageId)) throw new Error("invalid message id");
-    const t = text.trim();
-    if (!t) throw new Error("the message is empty");
-    if (t.length > MAX_MESSAGE_CHARS) throw new Error(`keep messages under ${MAX_MESSAGE_CHARS} characters`);
-    const result = await ctx.runMutation(internal.voice.recordVoiceUtterance, {
-      sessionToken,
-      utterance: t,
-      utteranceKey: `msg-${messageId}`,
-      ...(questionId ? { questionId } : {}),
-    });
-    if (!result.ok) throw new Error("This chat has expired. Start a new one.");
-    if (result.storedResponse) return { ...result.storedResponse, duplicate: true };
-    return await takeTurn(ctx, result);
-  },
+  handler: async (ctx, args): Promise<VoiceToolResponse> => sendChatMessage(ctx, args),
 });
+
+/** One chat message, as `send` handles it (also used by the claim suite runner, convex/suite.ts). */
+export async function sendChatMessage(
+  ctx: Pick<GenericActionCtx<DataModel>, "runQuery" | "runMutation">,
+  { sessionToken, text, messageId, questionId }: { sessionToken: string; text: string; messageId: string; questionId?: string },
+): Promise<VoiceToolResponse> {
+  if (!MESSAGE_ID.test(messageId)) throw new Error("invalid message id");
+  const t = text.trim();
+  if (!t) throw new Error("the message is empty");
+  if (t.length > MAX_MESSAGE_CHARS) throw new Error(`keep messages under ${MAX_MESSAGE_CHARS} characters`);
+  const result = await ctx.runMutation(internal.voice.recordVoiceUtterance, {
+    sessionToken,
+    utterance: t,
+    utteranceKey: `msg-${messageId}`,
+    ...(questionId ? { questionId } : {}),
+  });
+  if (!result.ok) throw new Error("This chat has expired. Start a new one.");
+  if (result.storedResponse) return { ...result.storedResponse, duplicate: true };
+  return await takeTurn(ctx, result);
+}
 
 export type WaitingQuestion = { key: string; text: string; source: "reviewer" | "model" | "rules"; askedAt: number | null };
 

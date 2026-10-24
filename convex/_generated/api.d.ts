@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as admin from "../admin.js";
 import type * as caseReasoning from "../caseReasoning.js";
 import type * as cases from "../cases.js";
 import type * as chat from "../chat.js";
@@ -27,6 +28,7 @@ import type * as reasoning from "../reasoning.js";
 import type * as review from "../review.js";
 import type * as reviewerQuestions from "../reviewerQuestions.js";
 import type * as statements from "../statements.js";
+import type * as suite from "../suite.js";
 import type * as system from "../system.js";
 import type * as validators from "../validators.js";
 import type * as voice from "../voice.js";
@@ -39,6 +41,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  admin: typeof admin;
   caseReasoning: typeof caseReasoning;
   cases: typeof cases;
   chat: typeof chat;
@@ -58,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   review: typeof review;
   reviewerQuestions: typeof reviewerQuestions;
   statements: typeof statements;
+  suite: typeof suite;
   system: typeof system;
   validators: typeof validators;
   voice: typeof voice;

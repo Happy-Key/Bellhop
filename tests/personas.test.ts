@@ -10,15 +10,23 @@ import { NOW, replyTo, resetStatements, stmt, txn } from "./helpers/build";
 const DAY = 86_400_000;
 const ok = { status: "ok", at: NOW, count: 0 } as const;
 
-/** The persona's account as Nessie returns it. */
-const ledger = (p: DemoPersona): TransactionEvidence[] =>
-  p.purchases.map((x) => txn(`${p.id}-${x.key}`, x.amount, new Date(NOW - x.daysAgo * DAY).toISOString().slice(0, 10), x.merchant));
+const dateAgo = (days: number) => new Date(NOW - days * DAY).toISOString().slice(0, 10);
+
+/** The persona's account as Nessie returns it: purchases (one merchant id per merchant) and deposits. */
+const ledger = (p: DemoPersona): TransactionEvidence[] => [
+  ...p.purchases.map((x) => ({ ...txn(`${p.id}-${x.key}`, x.amount, dateAgo(x.daysAgo), x.merchant), merchantId: `m-${p.id}-${x.merchant}` })),
+  ...(p.deposits ?? []).map((d) => ({ ...txn(`${p.id}-${d.key}`, d.amount, dateAgo(d.daysAgo), ""), kind: "deposit" as const, merchantId: null, merchantName: null, description: d.description })),
+];
 
 /** CRS results as the sandbox documents them for each test identity (lib/fixtures/crsPersonas.ts). */
 function crsEvidence(crsId: string): ProviderEvidence[] {
+  const crs = getCrsPersona(crsId)!;
   const row = (product: string, field: string, value: string, suffix: string): ProviderEvidence => ({ ref: `X:crs:${crsId}:k1:${suffix}`, provider: "crs", product, field, value, syntheticAssociation: true });
-  const score = { P01: "11", P19: "9", P12: "85", P16: "50" }[crsId]!;
-  const issues = crsId === "P12" ? [row(IDENTITY_PRODUCT, "message_1", "SSN issued to a different name", "msg1"), row(IDENTITY_PRODUCT, "message_2", "DOB mismatch", "msg2")] : [];
+  const score = /risk\.score (\d+)/.exec(crs.fraudFinderExpected)![1]!;
+  // "result FAIL. <issue>; <issue>" → one message row per issue. PASS and KBA_REQUIRED return none.
+  const issues = crs.expected.startsWith("result FAIL")
+    ? crs.expected.replace(/^result FAIL\.\s*/, "").split(";").map((m, i) => row(IDENTITY_PRODUCT, `message_${i + 1}`, m.trim(), `msg${i + 1}`))
+    : [];
   return [row(IDENTITY_PRODUCT, "verification_messages", issues.length ? "issues returned" : "none returned", "result"), ...issues, row(FRAUD_FINDER_PRODUCT, "risk_score", score, "ff-score")];
 }
 
@@ -33,7 +41,7 @@ function playScript(p: DemoPersona) {
     statements.push(stmt(line, i === 0 ? {} : { replyTo: replyTo(next) }));
   }
   const analysis = analyze();
-  const matched = analysis.match.matchedRef ? transactions.find((t) => t.ref === analysis.match.matchedRef) : undefined;
+  const matched = analysis.match.matchedRef ? transactions.find((t) => t.ref === analysis.match.matchedRef && t.kind === "purchase") : undefined;
   const purchase = matched ? personaPurchaseFor(p, matched) : undefined;
   const evaluation = evaluateAutoApproval({
     analysis,
@@ -55,7 +63,8 @@ describe("demo personas (SYNTHETIC)", () => {
       expect(getCrsPersona(p.crsPersonaId), p.id).toBeDefined();
       expect(getCrsPersona(p.crsPersonaId)!.identityBody.state).toBe(p.home.state);
       expect(new Set(p.purchases.map((x) => x.amount)).size, `${p.id} amounts`).toBe(p.purchases.length);
-      expect(p.purchases.some((x) => x.key === p.disputedKey), `${p.id} disputed`).toBe(true);
+      for (const key of [p.disputedKey, ...(p.alsoDisputedKeys ?? [])]) expect(p.purchases.some((x) => x.key === key), `${p.id} disputed ${key}`).toBe(true);
+      expect(p.expected.route === "auto_approve", `${p.id} route agrees with failing checks`).toBe(p.expected.failingChecks.length === 0);
       for (const x of p.purchases) {
         expect(Number.isInteger(x.amount) && x.amount > 0, `${p.id} ${x.key}`).toBe(true);
         expect(p.merchants.map((m) => m.name)).toContain(x.merchant);
@@ -63,6 +72,14 @@ describe("demo personas (SYNTHETIC)", () => {
     }
     expect(getDemoPersona("nobody")).toBeUndefined();
     expect(getDemoPersona(null)).toBeUndefined();
+  });
+
+  // Every persona, core and suite: the script ends with exactly the expected AUTO-1 result.
+  it.each(DEMO_PERSONAS.map((p) => [p.id, p] as const))("%s: ends with the expected AUTO-1 result", (_id, p) => {
+    const { evaluation, failed, purchase } = playScript(p);
+    expect(purchase?.key, "matched record").toBe(p.expected.match === "none" ? undefined : p.disputedKey);
+    expect(failed).toEqual(p.expected.failingChecks);
+    expect(evaluation.eligible).toBe(p.expected.route === "auto_approve");
   });
 
   it("Margaret: the script ends in an automatic approval of the disputed $58", () => {

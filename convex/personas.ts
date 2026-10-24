@@ -29,37 +29,40 @@ export function personaAccountId(personaId: string): string | null {
 
 export const createForPersona = mutation({
   args: { personaId: v.string() },
-  handler: async (ctx, { personaId }) => {
-    const persona = getDemoPersona(personaId);
-    if (!persona) throw new Error(`unknown demo persona ${personaId}`);
-    const accountId = personaAccountId(persona.id);
-    if (!accountId) throw new Error(`demo persona ${persona.id} has no Nessie account configured (run npm run seed:personas, then set NESSIE_PERSONA_ACCOUNTS)`);
-    const now = Date.now();
-    const caseId = await ctx.db.insert("cases", {
-      title: `Demo persona ${persona.name} ${new Date(now).toISOString().slice(0, 16).replace("T", " ")}Z`,
-      synthetic: true,
-      customerLabel: personaLabel(persona),
-      nessieAccountId: accountId,
-      crsPersonaId: persona.crsPersonaId,
-      demoPersonaId: persona.id,
-      nextStatementNumber: 1,
-      bankFetch: { status: "never" },
-      analysis: null,
-      analysisVersion: 0,
-      createdAt: now,
-    });
-    await logActivity(
-      ctx,
-      caseId,
-      `persona:${persona.id}`,
-      "case_created",
-      `Synthetic case created for SYNTHETIC demo persona ${persona.name}: Nessie account bound by backend configuration; CRS test persona ${persona.crsPersonaId} linked (SYNTHETIC association). Expected outcome: ${persona.expectedOutcome}`,
-    );
-    await recomputeAnalysis(ctx, caseId);
-    await ctx.scheduler.runAfter(0, internal.personaSetup.setUpCase, { caseId });
-    return caseId;
-  },
+  handler: async (ctx, { personaId }) => createPersonaCase(ctx, personaId),
 });
+
+/** Opens a case for a demo persona and schedules its setup (also used by the claim suite runner, convex/suite.ts). */
+export async function createPersonaCase(ctx: MutationCtx, personaId: string): Promise<Id<"cases">> {
+  const persona = getDemoPersona(personaId);
+  if (!persona) throw new Error(`unknown demo persona ${personaId}`);
+  const accountId = personaAccountId(persona.id);
+  if (!accountId) throw new Error(`demo persona ${persona.id} has no Nessie account configured (run npm run seed:personas, then set NESSIE_PERSONA_ACCOUNTS)`);
+  const now = Date.now();
+  const caseId = await ctx.db.insert("cases", {
+    title: `Demo persona ${persona.name} ${new Date(now).toISOString().slice(0, 16).replace("T", " ")}Z`,
+    synthetic: true,
+    customerLabel: personaLabel(persona),
+    nessieAccountId: accountId,
+    crsPersonaId: persona.crsPersonaId,
+    demoPersonaId: persona.id,
+    nextStatementNumber: 1,
+    bankFetch: { status: "never" },
+    analysis: null,
+    analysisVersion: 0,
+    createdAt: now,
+  });
+  await logActivity(
+    ctx,
+    caseId,
+    `persona:${persona.id}`,
+    "case_created",
+    `Synthetic case created for SYNTHETIC demo persona ${persona.name}: Nessie account bound by backend configuration; CRS test persona ${persona.crsPersonaId} linked (SYNTHETIC association). Expected outcome: ${persona.expectedOutcome}`,
+  );
+  await recomputeAnalysis(ctx, caseId);
+  await ctx.scheduler.runAfter(0, internal.personaSetup.setUpCase, { caseId });
+  return caseId;
+}
 
 /**
  * Attaches the persona's SYNTHETIC payment-origin records to the case's retrieved transactions.
