@@ -7,6 +7,7 @@ Browser (Next.js App Router, plain React)
 Convex (source of truth)
   ├─ mutations: cases.createSynthetic, cases.submitStatement, statements.*, voice.createVoiceSession
   ├─ actions:   nessie.retrieveBankEvidence (live HTTP), reasoning.interpretLive, voice.createCartesiaAccessToken
+  ├─ internal:  voiceSetup.registerVoiceTool (CLI only: registers and attaches the Cartesia webhook tool)
   ├─ http:      POST /voice/tools/record-statement  (Cartesia webhook tool)
   └─ tables:    cases, statements, transactions, providerEvidence, activity, processedEvents, voiceSessions
         │

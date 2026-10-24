@@ -31,11 +31,11 @@ Rules that always hold:
 | Bank records (Capital One Nessie) | ✅ **Live**: synthetic demo account seeded (5 purchases); retrieval verified |
 | Identity evidence (CRS sandbox) | ✅ **Live**: TransUnion identity check on test personas; verified with P12 (3 issues) and P01 (clean) |
 | Reasoning | ⚠️ **Scripted mode** (deterministic, labelled). Live model provider built but not configured |
-| Voice (Cartesia) | 🟡 **Partial**: key, agent ID and tool secret set in Convex; backend endpoint live and secured. Webhook tool not registered; browser call client not built |
+| Voice (Cartesia) | 🟡 **Partial**: key, agent ID and tool secret set in Convex; backend endpoint live and secured. `record_statement` tool registered and attached. **First live call worked** (Playground preview → Convex → dashboard). `end_call` not enabled yet; browser call client not built. Agent balance $0.91 |
 | Regulatory considerations | ✅ Curated official sources (Reg E and CFPB), scenario-scoped, no deadline math. 3 excerpts need word-for-word verification |
 | Developer agent (Factory Droid) | ❌ Not started |
 | Simulated reimbursement | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, 55 unit tests, production build all pass |
+| Checks | ✅ `npm run verify`: typecheck, lint, 63 unit tests, production build all pass |
 
 ## What works today (end to end)
 
@@ -89,8 +89,10 @@ Rules that always hold:
 ## What needs to be added (priority order)
 
 1. **Cartesia voice**
-   - Register the webhook tool with Cartesia and attach it to the agent (proposed: a backend
-     action, so the secret never leaves the server).
+   - Finish the agent in the Playground: welcome message (no `{{variables}}`) and the rest of
+     the instructions.
+   - Enable the `end_call` system tool, set the inactivity timeout to about 30 s, and add the
+     goodbye line to the instructions.
    - Pass the session token as a dynamic variable when a call starts: send it as
      `session_create.dynamic_variables.session_token` (confirmed in the docs, not yet tested live).
    - Build the browser microphone and agent WebSocket client.
@@ -108,13 +110,14 @@ Rules that always hold:
 
 ## Waiting on you
 
-- **Cartesia:** choose between registering the webhook tool from the backend (recommended)
-  and doing it manually in the playground.
+- **Cartesia:** in the Playground, enable End call, lower the inactivity timeout, and add the
+  goodbye line. Calls cost about $0.09 each from the $0.91 balance until the promo code is
+  applied, so keep tests short and hang up manually.
 - **Reasoning:** decide whether to claim Bitdeer credits.
 - **Factory:** API key and `droid` CLI install, when we reach that step.
 - **Housekeeping:**
   - Rotate the CRS password at some point; it was pasted in chat.
-  - Review and merge or push the `foundation` branch when ready (committed, not pushed).
+  - Review and merge the `foundation` branch when ready (pushed to `origin/foundation`; open a PR at https://github.com/Happy-Key/CalHacks/pull/new/foundation).
 
 ## How to run
 
@@ -142,3 +145,7 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-23 | First commit of the foundation on branch `foundation` (secret scan clean; not pushed) |
 | 2026-10-23 | Status updates now required on every prompt: rule in `CLAUDE.md` plus a `UserPromptSubmit` reminder hook in `.claude/settings.json` |
 | 2026-10-23 | Cartesia docs checked: dynamic variables go in `session_create`; agent WebSocket protocol corrected in `docs/integrations.md` |
+| 2026-10-23 | `foundation` commits re-authored as `maximozhang` and pushed to `origin/foundation` |
+| 2026-10-23 | Cartesia webhook-tool registration action (`voiceSetup:registerVoiceTool`) with 8 mocked tests; dry run verified on cloud dev; not run live |
+| 2026-10-24 | User ran tool registration live (created and attached) and pasted the instructions; clarified that `next_questions` is a response field, not a tool |
+| 2026-10-24 | First live voice test passed (Playground → webhook tool → Convex → dashboard). Found `end_call` not enabled; usage recorded |

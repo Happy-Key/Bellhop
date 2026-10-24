@@ -19,6 +19,7 @@ import type * as statements from "../statements.js";
 import type * as system from "../system.js";
 import type * as validators from "../validators.js";
 import type * as voice from "../voice.js";
+import type * as voiceSetup from "../voiceSetup.js";
 
 import type {
   ApiFromModules,
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   system: typeof system;
   validators: typeof validators;
   voice: typeof voice;
+  voiceSetup: typeof voiceSetup;
 }>;
 
 /**

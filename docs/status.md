@@ -20,7 +20,10 @@ Legend: [x] done and tested · [~] implemented, not yet verified live · [ ] not
 - [~] Cartesia webhook-tool endpoint (tested locally over HTTP; not yet called by Cartesia)
 - [~] Cartesia access-token minting (not run live)
 - [ ] Browser call client (agent WebSocket, microphone audio)
-- [ ] Configure the Managed Agent, webhook tool, and dynamic variable `session_token`
+- [x] Webhook tool registration: `voiceSetup:registerVoiceTool` (idempotent; mock-tested; run live by the user 2026-10-24, tool created and attached)
+- [~] Managed Agent instructions pasted into the Playground (welcome message and the rest of the prompt not done yet)
+- [x] First live call (Playground preview, 2026-10-24): `session_token` dynamic variable → webhook tool → Convex → dashboard
+- [ ] Enable the `end_call` system tool and lower the inactivity timeout
 - [~] OpenAI-compatible live reasoning provider (mock-tested; Bitdeer credits not claimed)
 
 ## Phase 4: CRS evidence

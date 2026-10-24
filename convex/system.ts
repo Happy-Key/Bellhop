@@ -14,7 +14,7 @@ export const integrationStatus = query({
         label: reasoning.mode === "live" ? reasoning.label : "scripted-pattern-extractor",
         complete: reasoning.mode === "scripted" || (set("REASONING_BASE_URL") && set("REASONING_API_KEY") && set("REASONING_MODEL")),
       },
-      cartesia: { apiKey: set("CARTESIA_API_KEY"), agentId: set("CARTESIA_AGENT_ID"), toolSecret: set("VOICE_TOOL_SECRET"), status: "partial: backend endpoints implemented, browser call client not implemented" },
+      cartesia: { apiKey: set("CARTESIA_API_KEY"), agentId: set("CARTESIA_AGENT_ID"), toolSecret: set("VOICE_TOOL_SECRET"), status: "partial: backend endpoints and tool registration implemented (not run live), browser call client not implemented" },
       crs: { credentials: set("CRS_USERNAME") && set("CRS_PASSWORD"), status: set("CRS_USERNAME") && set("CRS_PASSWORD") ? "configured" : "needs_configuration" },
       factory: { status: "not_implemented" },
       payout: { status: "not_implemented" },

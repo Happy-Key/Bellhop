@@ -11,9 +11,10 @@ import { v } from "convex/values";
 import { action, internalMutation, mutation } from "./_generated/server";
 import { logActivity, recordStatement } from "./model";
 import { redact } from "../lib/providers/errors";
+import { CARTESIA_VERSION } from "../lib/providers/cartesia";
 
+export { CARTESIA_VERSION };
 export const VOICE_SESSION_TTL_MS = 30 * 60 * 1000;
-export const CARTESIA_VERSION = "2026-08-14";
 
 /** Issue a voice session bound to one case. The token is passed to the agent as a dynamic variable. */
 export const createVoiceSession = mutation({
