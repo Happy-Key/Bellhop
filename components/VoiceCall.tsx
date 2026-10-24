@@ -9,7 +9,7 @@
  * Statements are recorded by the agent's record_statement webhook tool on the backend; the
  * transcript shown here is display only.
  */
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -255,7 +255,12 @@ export function VoiceCall({ caseId, variant = "staff" }: VoiceCallProps) {
 
   const inCall = status === "connecting" || status === "live";
   if (variant === "customer") {
-    return <CustomerCallView status={status} detail={detail} turns={turns} elapsed={elapsed} agentSpeaking={agentSpeaking} onStart={start} onHangUp={hangUp} />;
+    // The boundary keeps a display error from unmounting VoiceCall, whose cleanup would hang up the call.
+    return (
+      <CallDisplayBoundary inCall={inCall} onHangUp={hangUp}>
+        <CustomerCallView status={status} detail={detail} turns={turns} elapsed={elapsed} agentSpeaking={agentSpeaking} onStart={start} onHangUp={hangUp} />
+      </CallDisplayBoundary>
+    );
   }
   return (
     <div style={{ marginTop: 12 }}>
@@ -289,6 +294,37 @@ const CUSTOMER_STATUS: Record<Status, string> = {
 };
 
 const formatClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+/**
+ * Catches errors in the call display only. Without it, a rendering bug unmounts the whole call
+ * component, and its cleanup closes the agent socket: the call ends and the statement in
+ * progress is never recorded (seen live 2026-10-24). The call keeps running behind a minimal view.
+ */
+class CallDisplayBoundary extends Component<{ inCall: boolean; onHangUp: () => void; children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  override componentDidCatch(error: unknown) {
+    console.error("Call display error (call kept running):", error);
+  }
+
+  override render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="cc-call">
+        {this.props.inCall && (
+          <button className="cc-call-button cc-hang-up" onClick={this.props.onHangUp}>
+            End call
+          </button>
+        )}
+        <p className="cc-status">{this.props.inCall ? "Your call is still connected. Go ahead and speak." : "Please reload the page to start a new call."}</p>
+      </div>
+    );
+  }
+}
 
 /** Customer-facing presentation: no case data, costs or call internals. */
 function CustomerCallView(props: { status: Status; detail: string | null; turns: Turn[]; elapsed: number; agentSpeaking: boolean; onStart: () => void; onHangUp: () => void }) {
