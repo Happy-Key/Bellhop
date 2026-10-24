@@ -38,6 +38,9 @@ export const createVoiceSession = mutation({
 
 export const CALL_ID_PATTERN = /^ac_[A-Za-z0-9]{8,64}$/;
 
+/** Replies this short don't wait for the live model (see recordVoiceUtterance). */
+export const SHORT_REPLY_WORDS = 4;
+
 /**
  * Links a Cartesia call to the voice session (and so to one case). Browser access tokens may not
  * send dynamic variables, so the browser reports `session_ready.call_id` here, and the webhook
@@ -122,13 +125,17 @@ export const recordVoiceUtterance = internalMutation({
     });
     if (!r.duplicate && replyTo && !replyTo.answeredByRef) await ctx.db.patch(replyTo._id, { answeredByRef: r.ref });
     const s = r.statementId ? await ctx.db.get(r.statementId) : null;
+    // Short replies ("No, I'm done.", "me") carry no new facts, or the rule-based answer reader has
+    // already read them against the question: don't make the caller wait for the live model.
+    const settledByAnswer = !!s?.answer && s.answer.state !== "unparsed";
+    const shortReply = (s?.text.trim().split(/\s+/).length ?? 0) <= SHORT_REPLY_WORDS;
     return {
       ok: true as const,
       sessionId: session._id,
       idempotencyKey,
       ref: r.ref,
       duplicate: r.duplicate,
-      pending: s?.interpretationStatus === "pending",
+      pending: s?.interpretationStatus === "pending" && !settledByAnswer && !shortReply,
       statementId: r.statementId,
       storedResponse: null,
     };
@@ -156,7 +163,14 @@ export const issueVoiceQuestion = internalMutation({
     if (!c) throw new Error("case not found");
 
     let response: VoiceToolResponse;
-    if (awaitingInterpretation) {
+    // Acknowledge at most once in a row; otherwise a slow model loops the call on "anything else?"
+    // (seen live 2026-10-24: three acknowledgements, no question). The second time, ask the next
+    // question from what is already interpreted.
+    const acknowledge = awaitingInterpretation && !session.lastResponseWasAck;
+    if (awaitingInterpretation && !acknowledge) {
+      await logActivity(ctx, session.caseId, "voice", "asked_without_waiting", `${ref} was still being interpreted, but the previous turn was already an acknowledgement, so the next question was asked from the statements interpreted so far.`);
+    }
+    if (acknowledge) {
       // The newest statement isn't interpreted yet, so any case question could already be answered by it.
       response = { recorded: ref, duplicate, question_id: null, question: AWAITING_PROMPT, next_questions: [AWAITING_PROMPT], awaiting_interpretation: true };
       await logActivity(ctx, session.caseId, "voice", "awaiting_interpretation", `${ref} was not interpreted in time; the agent was told to acknowledge rather than ask a possibly stale question.`);
@@ -190,6 +204,7 @@ export const issueVoiceQuestion = internalMutation({
       }
     }
     if (event) await ctx.db.patch(event._id, { response: JSON.stringify(response) });
+    await ctx.db.patch(sessionId, { lastResponseWasAck: acknowledge });
     return response;
   },
 });

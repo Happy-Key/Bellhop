@@ -27,13 +27,19 @@ const ToolBody = z
   })
   .refine((b) => !!b.call_id !== !!b.session_token, "exactly one of call_id or session_token");
 
-/** How long the tool call waits for a live interpretation before answering without it. */
-const DEFAULT_INTERPRETATION_WAIT_MS = 4500;
+/**
+ * How long the tool call waits for a live interpretation before answering without it. Bitdeer
+ * (GLM-5.3-Flash) measured 4.7–7.0 s per statement on a live call (2026-10-24); Cartesia's tool
+ * timeout is 15 s (lib/providers/cartesia.ts), so the cap stays well under it.
+ */
+const DEFAULT_INTERPRETATION_WAIT_MS = 8000;
+const MAX_INTERPRETATION_WAIT_MS = 12_000;
 const POLL_MS = 250;
 
 function interpretationWaitMs(): number {
-  const n = Number(process.env.VOICE_INTERPRETATION_WAIT_MS);
-  return Number.isFinite(n) && n >= 0 ? Math.min(n, 10_000) : DEFAULT_INTERPRETATION_WAIT_MS;
+  const raw = process.env.VOICE_INTERPRETATION_WAIT_MS;
+  const n = raw === undefined || raw === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, MAX_INTERPRETATION_WAIT_MS) : DEFAULT_INTERPRETATION_WAIT_MS;
 }
 
 function safeEqual(a: string, b: string): boolean {

@@ -247,8 +247,9 @@ function FindingsAndQuestions({ analysis }: { analysis: StoredAnalysis }) {
       <table>
         <thead><tr><th>ID</th><th>Finding</th><th>Category</th><th>Evidence</th><th>Status</th><th>Contradictions</th></tr></thead>
         <tbody>
-          {analysis.findings.map((f) => (
-            <tr key={f.id}>
+          {analysis.findings.map((f, i) => (
+            // Index included: analyses stored before 2026-10-24 can repeat model finding IDs.
+            <tr key={`${i}-${f.id}`}>
               <td className="ref">{f.id}</td>
               <td>{f.text}</td>
               <td><span className={`label ${f.category === "model_inference" ? "live" : f.category === "rule_based_inference" ? "scripted" : ""}`}>{f.category}</span></td>

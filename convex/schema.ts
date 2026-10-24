@@ -124,6 +124,8 @@ export default defineSchema({
     callId: v.optional(v.string()),
     /** Question keys asked the maximum number of times on this call and handed to a reviewer. */
     handedOffKeys: v.optional(v.array(v.string())),
+    /** The previous tool response was an acknowledgement; the next one must ask a question. */
+    lastResponseWasAck: v.optional(v.boolean()),
   })
     .index("by_token", ["token"])
     .index("by_call", ["callId"]),

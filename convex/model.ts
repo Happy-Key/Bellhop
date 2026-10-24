@@ -78,7 +78,11 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
       (p): ProviderEvidence => ({ ref: p.ref, provider: p.provider, product: p.product, field: p.field, value: p.value, syntheticAssociation: p.syntheticAssociation }),
     ),
     bankFetch: c.bankFetch as EvidenceFetchState,
-    proposedFindings: statements.flatMap((s) => s.proposedFindings ?? []),
+    // Models number their findings F1, F2… for every statement, colliding with each other and with
+    // rule-based findings (duplicate React keys seen live). Re-key them by statement: S2-M1, S2-M2…
+    proposedFindings: statements.flatMap((s) =>
+      (s.proposedFindings ?? []).map((f, i) => (f && typeof f === "object" && !Array.isArray(f) ? { ...(f as object), id: `${s.ref}-M${i + 1}` } : f)),
+    ),
   });
   // Rejected model output is stored as a string so arbitrary keys can't break document storage.
   const stored = {

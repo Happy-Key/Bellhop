@@ -188,6 +188,61 @@ describe("Convex case workflow", () => {
     }
   });
 
+  it("acknowledges at most once in a row and doesn't make short replies wait for the model", async () => {
+    vi.useFakeTimers();
+    Object.assign(process.env, { VOICE_TOOL_SECRET: "test-secret", REASONING_PROVIDER: "openai-compatible", VOICE_INTERPRETATION_WAIT_MS: "0" });
+    try {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      const { token } = await t.mutation(api.voice.createVoiceSession, { caseId });
+      const say = async (utterance: string) =>
+        (await t.fetch("/voice/tools/record-statement", {
+          method: "POST",
+          headers: { Authorization: "Bearer test-secret", "Content-Type": "application/json" },
+          body: JSON.stringify({ session_token: token, utterance }),
+        })).json() as Promise<{ awaiting_interpretation: boolean; question_id: string | null; question: string | null }>;
+
+      // Live call 2026-10-24: every turn was an acknowledgement and no question was ever asked.
+      const r1 = await say("Okay, so I had a transaction that I believe was fraudulent because I did not authorize it");
+      expect(r1).toMatchObject({ awaiting_interpretation: true, question: AWAITING_PROMPT });
+      const r2 = await say("It happened yesterday and it was billed to my account in the evening");
+      expect(r2.awaiting_interpretation).toBe(false);
+      expect(r2.question_id).not.toBeNull();
+      const r3 = await say("No, I'm done.");
+      expect(r3.awaiting_interpretation).toBe(false);
+      const view = (await t.query(api.cases.view, { caseId }))!;
+      expect(view.activity.some((a) => a.kind === "asked_without_waiting")).toBe(true);
+    } finally {
+      for (const k of ["VOICE_TOOL_SECRET", "REASONING_PROVIDER", "VOICE_INTERPRETATION_WAIT_MS"]) delete process.env[k];
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives model-proposed findings IDs that can't collide with rule-based ones", async () => {
+    vi.useFakeTimers();
+    process.env.REASONING_PROVIDER = "openai-compatible";
+    try {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      await t.mutation(api.cases.submitStatement, { caseId, text: "I didn't make a $49 charge", clientEventId: "evt-00000001" });
+      const s = (await t.query(api.cases.view, { caseId }))!.statements[0]!;
+      const finding = (text: string) => ({ id: "F1", text, category: "model_inference", evidenceRefs: ["S1"], status: "tentative", contradictions: [] });
+      await t.mutation(internal.statements.applyInterpretation, {
+        statementId: s._id,
+        attemptId: s.currentAttemptId!,
+        interpretation: { mode: "live", provider: "m", amounts: [49], dates: [], merchantTerms: [], authorization: "denies_authorization", credentialSharing: "unspecified", scamIndicators: [] },
+        proposedFindings: [finding("first"), finding("second")],
+        followUpQuestion: null,
+      });
+      const ids = ((await t.query(api.cases.view, { caseId }))!.case.analysis as { findings: { id: string }[] }).findings.map((f) => f.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids).toEqual(expect.arrayContaining(["F1", "S1-M1", "S1-M2"]));
+    } finally {
+      delete process.env.REASONING_PROVIDER;
+      vi.useRealTimers();
+    }
+  });
+
   it("applies a live result only from the statement's current attempt", async () => {
     vi.useFakeTimers();
     process.env.REASONING_PROVIDER = "openai-compatible";
