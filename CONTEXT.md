@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (case reasoning timeouts fixed: REASONING_EFFORT + lenient investigation parsing)_
+_Last updated: 2026-10-24 (customer line case list shows the workstation status, not the analysis stage)_
 
 ## What this is
 
@@ -50,7 +50,7 @@ Rules that always hold:
 | Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown); persona cases attach their own automatically |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
 | Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, **220 tests**, build pass. ✅ `npm run test:e2e`: **4 Playwright smoke tests** (read-only, drive the installed Chrome) pass against a running dev server |
+| Checks | ✅ `npm run verify`: typecheck, lint, **221 tests**, build pass. ✅ `npm run test:e2e`: **4 Playwright smoke tests** (read-only, drive the installed Chrome) pass against a running dev server |
 
 ## Branch and git
 
@@ -255,3 +255,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Committed and pushed the hierarchy pass, dark rail, page bar, Title Case titles, demo ending and Bellhop mark cleanup on `foundation` (`npm run verify` passed first: 218 tests) |
 | 2026-10-24 | On the second machine: fetched the Bellhop push (`ebe589b`). Local `foundation` had 4 unpushed claim-suite commits; they were moved to a new local branch `claim-suite` (`ad7a191`), the personal review deployment `friendly-grouse-183` was emptied with that branch's reset (its schema had a `suiteRuns` table Bellhop lacks), and local `foundation` was reset to `origin/foundation`. Bellhop deployed to `friendly-grouse-183`; `npm run verify` passes (218 tests); `/review`, `/review/demo` and `/call` render |
 | 2026-10-24 | **Case reasoning timeouts fixed** (user report: every model call ended in a timeout). Diagnosis on `friendly-grouse-183`: statement reading 9/9 fine; case reviews 12/12 failed (10 timed out at exactly 60 s, 2 answered at ~54 s and were rejected over `investigation.findings` / `rulesConsulted`). Cause: Bellhop didn't send `reasoning_effort`, so GLM-5.3-Flash spent 8–9k thinking tokens. Ported from `claim-suite`: `REASONING_EFFORT` → `reasoning_effort` on both Bitdeer calls (`lib/providers/reasoning.ts`, `convex/reasoning.ts`, `convex/caseReasoning.ts`), and lenient investigation parsing (over-long lists cut to their caps, work-item extras defaulted, `rulesConsulted` normalized; `lib/domain/investigation.ts`). Pulled `5344872` first (rebased the CONTEXT note; revision-log conflict kept both). Live check: review done in 12.8 s with a model-chosen question. 220 tests pass. Pushed to `origin/foundation` (user request) |
+| 2026-10-24 | **Finished claims no longer read "human review" on the customer line** (user report). `/call`'s existing-case picker showed the rule analysis `stage`, which stays `human_review` after a case is approved or decided. `cases.list` now returns the workstation's `statusLabel` / `attention` (shared `loadCaseStatus` in `convex/review.ts`, also used by the queue), and a decided or auto-approved case has no "question(s) waiting". Live check on `friendly-grouse-183`: Margaret's case `human_review` → "Approved automatically". 221 tests pass. Pushed |

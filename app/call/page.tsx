@@ -81,7 +81,7 @@ export default function CustomerCallPage() {
                   <option value="">{cases === undefined ? "Loading…" : cases.length === 0 ? "No cases yet" : "Choose a case…"}</option>
                   {cases?.map((c) => (
                     <option key={c._id} value={c._id}>
-                      {getDemoPersona(c.demoPersonaId)?.name ?? "No persona"} · {new Date(c.createdAt).toLocaleString()} · {c.stage.replace(/_/g, " ")}
+                      {getDemoPersona(c.demoPersonaId)?.name ?? "No persona"} · {new Date(c.createdAt).toLocaleString()} · {c.statusLabel}
                       {c.openCustomerQuestions ? ` · ${c.openCustomerQuestions} question(s) waiting` : ""}
                     </option>
                   ))}
