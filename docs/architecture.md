@@ -27,6 +27,10 @@ External: Nessie (read-only) · reasoning provider (OpenAI-compatible, optional)
 - **`convex/`** holds persistence, idempotency, the activity log, and external calls in
   actions. It recomputes `cases.analysis` after every evidence change, so the UI reacts
   automatically.
+- **`lib/review/`** holds pure view models for the bank workstation (`/review`): guided-intake
+  progression, the timeline, findings groups, the decision trace, prepared-output states, and the
+  adapter that runs the synthetic guided-intake demo through the real rules. It only re-reads stored
+  data and decides nothing.
 - **`app/` and `components/`** are a plain dashboard. There is no backend logic in Next.js:
   no API routes, and no duplicated backend.
 

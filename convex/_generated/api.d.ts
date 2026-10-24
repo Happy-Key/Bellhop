@@ -18,6 +18,7 @@ import type * as paymentOrigins from "../paymentOrigins.js";
 import type * as payout from "../payout.js";
 import type * as payoutData from "../payoutData.js";
 import type * as reasoning from "../reasoning.js";
+import type * as review from "../review.js";
 import type * as statements from "../statements.js";
 import type * as system from "../system.js";
 import type * as validators from "../validators.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   payout: typeof payout;
   payoutData: typeof payoutData;
   reasoning: typeof reasoning;
+  review: typeof review;
   statements: typeof statements;
   system: typeof system;
   validators: typeof validators;

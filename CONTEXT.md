@@ -33,7 +33,7 @@ Rules that always hold:
 
 | Area | State |
 |---|---|
-| Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call` |
+| Web app (Next.js 16) | ✅ Staff dashboard `/`, case page `/cases/<id>`, customer call page `/call`, **bank claims workstation `/review`** (queue + investigation workspace) and **synthetic guided-intake demo `/review/demo`** (merged from `bank-dashboard` 2026-10-24). The workstation does not yet show AUTO-1 results or payouts; use the case page for those |
 | Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. **Latest code is deployed** (pushed with `npx convex dev --once`) |
 | Bank records (Nessie) | ✅ Live: purchases **and deposits** (deposits drive the refund check; never matched as the disputed payment) |
 | Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ⚠️ **Credits not approved ($0.00 balance); may be refused at any moment.** Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
@@ -43,7 +43,7 @@ Rules that always hold:
 | Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown) |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
 | Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, **122 tests**, build pass |
+| Checks | ✅ `npm run verify` on the `bank-dashboard` merge: see revision log |
 
 ## Branch and git
 
@@ -79,6 +79,19 @@ Rules that always hold:
    disputes and recovery events, deadline estimates, documents.
 6. **Regulatory:** verify the 1005.6 and 1005.11 excerpts word for word (the CFPB FAQ excerpt is done).
 7. **Factory Droid loop.**
+
+## Claims workstation (`/review`, merged from `bank-dashboard`)
+
+- **Queue** `/review`: cases grouped by who acts, search, filter, keyboard selection, blocked marker; read-only
+  `review:queue` query and pure `lib/domain/triage.ts`.
+- **Case workspace** `/review/<id>`: case brief (Reported / Observed / Inferred / Recommended), how the intake
+  progressed (each reply with the question it answered), payments and evidence with reconciliation states,
+  findings (supported / missing / conflicting / superseded), decision trace, prepared-output states, filterable
+  timeline. View models in `lib/review/`. Only live action: Retrieve bank records.
+- **Demo** `/review/demo`: scripted fixtures run through the real rules in the browser; two branches; demo-only
+  review controls labelled "demo, not saved". No AI, Convex or Nessie calls.
+- Not yet in the workstation: AUTO-1 checklist, payout state, payment-origin presets, Fraud Finder. Its wording
+  still says "a person decides", which predates AUTO-1.
 
 ## Known limitations
 
@@ -148,3 +161,5 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Separate personal Convex dev deployment for `client-view` review (user-created; own keys). `VOICE_TOOL_SECRET` generated and set there; `record_statement` tool registered live on a new, separate Cartesia agent |
 | 2026-10-24 | Merged `client-view` into `foundation` (no conflicts); `npm run verify` passes on the merge (100 tests) |
 | 2026-10-24 | End-of-session refresh before a context reset: status sections rewritten (approve-only automation, Bitdeer live, CRS Fraud Finder, AUTO-1 v2, demo run-through, next steps, known limitations); 122 tests. Revision log unchanged |
+| 2026-10-24 | Workstation rebuilt as an evidence-linked investigation workspace plus the synthetic guided-intake demo `/review/demo` (branch `bank-dashboard`, commit `0a59fbd`; 15 new tests) |
+| 2026-10-24 | Merged `bank-dashboard` into `foundation` (only conflict: CONTEXT.md, resolved by keeping foundation's rewrite and adding the workstation section) |
