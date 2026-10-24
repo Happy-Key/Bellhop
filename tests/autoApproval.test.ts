@@ -59,6 +59,22 @@ describe("automatic approval policy (approve-only)", () => {
     expect(failed(evaluate([pending]))).toContain("all_statements_interpreted");
   });
 
+  it("never approves a payment that isn't in the bank records, or before records are retrieved", () => {
+    const e = evaluate([stmt("I did not make the $57 purchase at Sushi Palace. I never shared my card or codes.")]);
+    expect(e).toMatchObject({ eligible: false, txnRef: null, amount: null });
+    expect(failed(e)).toEqual(expect.arrayContaining(["ready_for_reimbursement_review", "amount_within_limit", "electronic_debit", "payment_origin_supports_claim"]));
+    expect(e.checks.find((c) => c.id === "ready_for_reimbursement_review")?.detail).toMatch(/request clarification/);
+
+    resetStatements();
+    const s = [stmt(CLAIM)];
+    const notRetrieved = evaluateAutoApproval({
+      analysis: analyzeCase({ statements: s, transactions: [], providerEvidence: CLEAN_CRS, bankFetch: { status: "never" } }),
+      transactions: [], statements: s, providerEvidence: CLEAN_CRS, paymentOrigin: null, homeState: "CA",
+    });
+    expect(notRetrieved.eligible).toBe(false);
+    expect(notRetrieved.checks.find((c) => c.id === "ready_for_reimbursement_review")?.detail).toMatch(/further investigation.*not been retrieved/);
+  });
+
   it("requires the first report within 60 days of the transaction", () => {
     const late = stmt("I did not make the $23 purchase at Corner Grocer. I never shared my card or codes.", { at: Date.UTC(2027, 0, 5) });
     expect(failed(evaluate([late]))).toEqual(["reported_in_time"]);
