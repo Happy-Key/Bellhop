@@ -135,7 +135,8 @@ Rules that always hold:
    - **Still to do:** the welcome message and the rest of the Playground instructions. Lower the
      inactivity timeout. Add a login or rate limit before sharing the app URL (starting a call is
      public and billed).
-2. **Live extraction through Bitdeer.** Claim the credits and create a key. Run `npm run live:reasoning`
+2. **Live extraction through Bitdeer: PAUSED (2026-10-24, by the user).** Code and docs are ready but
+   nothing is configured; Convex stays in scripted mode. To resume: claim the credits and create a key. Run `npm run live:reasoning`
    to pick a model and check latency. Then set the `REASONING_*` Convex env vars (steps in
    `docs/integrations.md`).
 3. **Simulated reimbursement.** A Nessie deposit labelled SIMULATED, with explicit human
@@ -155,8 +156,8 @@ Rules that always hold:
   - Cases can hold several payments; labelled deadline estimates and both screens are allowed.
   - Credit cards get full support. Demo login now, bank SSO later. Keep the 3-minute cap.
   - Calls are transcribed only, with consent and an AI notice on every call. Extraction uses Bitdeer.
-- **Bitdeer:** claim the credits, create a key at https://www.bitdeer.ai/en/model/apikeys, then follow
-  "How to turn it on" in `docs/integrations.md`.
+- **Bitdeer (paused):** when resuming, claim the credits, create a key at
+  https://www.bitdeer.ai/en/model/apikeys, then follow "How to turn it on" in `docs/integrations.md`.
   - Still for you: check Cartesia's retention settings so audio isn't kept.
 - **Voice fixes go-live:** run `npx convex dev` (pushes the new schema and functions to cloud dev),
   then `npx convex run voiceSetup:registerVoiceTool`, then paste the updated agent instructions from
@@ -202,6 +203,7 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | First live voice test passed (Playground → webhook tool → Convex → dashboard). Found `end_call` not enabled; usage recorded |
 | 2026-10-24 | Committed and pushed tool registration (`ed41f61`). Browser call client built: `components/VoiceCall.tsx` + `lib/voice/`, 9 new tests; not run live |
 | 2026-10-24 | Live browser call failed: `dynamic_variables_not_allowed` for browser tokens. Switched to binding by call ID (`bindVoiceCall`, tool sends `system__conversation_id`); 74 tests pass; tool needs re-registering |
+| 2026-10-24 | Bitdeer integration paused by the user (nothing configured; scripted mode). `foundation` pushed so another agent's frontend changes can merge |
 | 2026-10-24 | **Bitdeer reinstated** as the extraction provider (user reversed the removal). Docs re-checked; the model now gets the question being answered; `npm run live:reasoning` check script added; integration steps in `docs/integrations.md` |
 | 2026-10-24 | Decisions on the 13 questions recorded. CLAUDE.md scope widened; Bitdeer removed from docs and code comments; CFPB FAQ excerpt in `regulatory.ts` replaced with word-for-word quotes (user-approved); Nessie deposits read probe (200, empty); consent and AI notice added to the agent instructions |
 | 2026-10-24 | Backend consistency fixes: question keys, audience and priority; answers linked to questions; `question_id` voice flow; no-repeat; stale-attempt guard; bounded interpretation wait; redaction on ingest; append-only evidence; correction targeting; spoken amounts; action-based initiation question. 99 tests pass; not pushed or run live |
