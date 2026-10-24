@@ -78,8 +78,14 @@ function Statements({ caseId, statements }: { caseId: Id<"cases">; statements: D
           <div>
             <span className="ref">{s.ref}</span> <span className="label">{s.channel}</span>
             {s.correctsRef && <span className="label">corrects {s.correctsRef}</span>}
+            {s.redactions && <span className="label">sensitive removed: {s.redactions.join(", ")}</span>}
             <span className="muted">{new Date(s.receivedAt).toLocaleTimeString()}</span>
           </div>
+          {s.inResponseTo && (
+            <div className="muted">
+              Reply to: “{s.inResponseTo.text}”{s.answer && s.answer.state !== "unparsed" && <> · read as <strong>{s.answer.state}</strong> (rule-based)</>}
+            </div>
+          )}
           <div>“{s.text}”</div>
           <Interpretation s={s} onRetry={() => retryLive({ statementId: s._id })} onScripted={() => scripted({ statementId: s._id })} />
           {s.followUpQuestion && <div className="muted">Model-suggested follow-up: {s.followUpQuestion}</div>}
@@ -263,7 +269,7 @@ function FindingsAndQuestions({ analysis }: { analysis: StoredAnalysis }) {
       {analysis.questions.length === 0 ? <p className="muted">None.</p> : (
         <ul>
           {analysis.questions.map((q) => (
-            <li key={q.id}><span className="ref">{q.id}</span> {q.blocking ? <span className="label error">blocking</span> : <span className="label">non-blocking</span>} {q.text} <span className="muted ref">{q.relatedRefs.join(", ")}</span></li>
+            <li key={q.id}><span className="ref">{q.id}</span> {q.blocking ? <span className="label error">blocking</span> : <span className="label">non-blocking</span>} {q.audience === "reviewer" && <span className="label">for reviewer</span>} {q.text} <span className="muted ref">{q.relatedRefs.join(", ")}</span></li>
           ))}
         </ul>
       )}

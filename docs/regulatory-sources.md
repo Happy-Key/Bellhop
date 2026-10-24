@@ -18,7 +18,7 @@ cited (refs `R:<id>`). A finding that cites any other `R:` reference is rejected
 | R:reg-e.1005.3c3 | law (regulation) | 12 CFR 1005.3(c)(3) | https://www.consumerfinance.gov/rules-policy/regulations/1005/3/ | 2026-10-23 | yes |
 | R:reg-e.1005.6b | law (regulation) | 12 CFR 1005.6(b) | https://www.consumerfinance.gov/rules-policy/regulations/1005/6/ | 2026-10-23 | **no (paraphrase)** |
 | R:reg-e.1005.11 | law (regulation) | 12 CFR 1005.11 | https://www.consumerfinance.gov/rules-policy/regulations/1005/11/ | 2026-10-23 | **no (paraphrase)** |
-| R:cfpb.eft-faq.induced-sharing | agency guidance | CFPB EFT FAQs, Error Resolution: Unauthorized EFTs | https://www.consumerfinance.gov/compliance/compliance-resources/deposit-accounts-resources/electronic-fund-transfers/electronic-fund-transfers-faqs/ | 2026-10-23 | **no (from a summarizing fetch; verify the question numbers and wording)** |
+| R:cfpb.eft-faq.induced-sharing | agency guidance | CFPB EFT FAQs, Error Resolution: Unauthorized EFTs | https://www.consumerfinance.gov/compliance/compliance-resources/deposit-accounts-resources/electronic-fund-transfers/electronic-fund-transfers-faqs/ | 2026-10-24 | yes (quoted fragments matched word for word against the live page; edited with the user's approval) |
 | R:policy.demo-scam-review | institution policy | **SYNTHETIC** demo policy DP-1 | this file | 2026-10-23 | n/a |
 
 ## Applicability rules encoded

@@ -11,10 +11,13 @@
  *    2026-10-24: `dynamic_variables_not_allowed`).
  */
 import { v } from "convex/values";
-import { action, internalMutation, mutation } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation } from "./_generated/server";
 import { logActivity, recordStatement } from "./model";
 import { redact } from "../lib/providers/errors";
 import { CARTESIA_VERSION } from "../lib/providers/cartesia";
+import { voiceIdempotencyKey } from "../lib/domain/idempotency";
+import { AWAITING_PROMPT, MAX_ASKS_PER_CALL, selectVoiceQuestion } from "../lib/domain/voiceTurn";
+import type { OpenQuestion } from "../lib/domain/schemas";
 
 export { CARTESIA_VERSION };
 export const VOICE_SESSION_TTL_MS = 30 * 60 * 1000;
@@ -57,26 +60,137 @@ export const bindVoiceCall = mutation({
   },
 });
 
-/** Called by the HTTP tool endpoint after authentication. The session is found by call ID (live calls) or token. */
+/** What the record_statement tool returns to the agent (and what a retry gets back unchanged). */
+export interface VoiceToolResponse {
+  recorded: string;
+  duplicate: boolean;
+  /** Echo this back as `question_id` on the next tool call. Null when no question was issued. */
+  question_id: string | null;
+  /** The one question to ask next, in the agent's own words. Null: ask whether there is anything else. */
+  question: string | null;
+  /** Kept for agents configured with the earlier instructions ("ask the first next_questions item"). */
+  next_questions: string[];
+  /** True when the statement is still being interpreted: acknowledge, don't move on to new topics. */
+  awaiting_interpretation: boolean;
+}
+
+/**
+ * Step 1 of a tool call (called by the HTTP endpoint after authentication). Finds the session by
+ * call ID (live calls) or token, works out which question the utterance answers, and records it.
+ *
+ * The idempotency key names that question, so "Yes." to two different questions is two
+ * statements, while a retried call (same question, same words) returns the stored response.
+ */
 export const recordVoiceUtterance = internalMutation({
-  args: { sessionToken: v.optional(v.string()), callId: v.optional(v.string()), utterance: v.string(), idempotencyKey: v.string() },
-  handler: async (ctx, { sessionToken, callId, utterance, idempotencyKey }) => {
+  args: {
+    sessionToken: v.optional(v.string()),
+    callId: v.optional(v.string()),
+    utterance: v.string(),
+    utteranceKey: v.string(),
+    /** question_id the agent echoed from the previous result. Accepted only if issued on this call. */
+    questionId: v.optional(v.string()),
+  },
+  handler: async (ctx, { sessionToken, callId, utterance, utteranceKey, questionId }) => {
     const session = callId
       ? await ctx.db.query("voiceSessions").withIndex("by_call", (q) => q.eq("callId", callId)).first()
       : sessionToken
         ? await ctx.db.query("voiceSessions").withIndex("by_token", (q) => q.eq("token", sessionToken)).unique()
         : null;
     if (!session || session.expiresAt < Date.now()) return { ok: false as const, error: callId ? "this call is not linked to a case (or its session expired)" : "unknown or expired voice session" };
-    const r = await recordStatement(ctx, { caseId: session.caseId, text: utterance, channel: "voice", idempotencyKey });
-    const c = await ctx.db.get(session.caseId);
-    const analysis = c?.analysis as { questions?: { text: string; blocking: boolean }[]; recommendation?: { action: string } } | null;
+
+    const echoedId = questionId ? ctx.db.normalizeId("intakeTurns", questionId) : null;
+    const echoed = echoedId ? await ctx.db.get(echoedId) : null;
+    const lastTurn = await ctx.db.query("intakeTurns").withIndex("by_session", (q) => q.eq("sessionId", session._id)).order("desc").first();
+    // An echoed ID from another session is ignored, never trusted.
+    const askedTurn = echoed && echoed.sessionId === session._id ? echoed : lastTurn;
+    const idempotencyKey = voiceIdempotencyKey(callId ?? sessionToken!, askedTurn?._id ?? null, utteranceKey);
+
+    const prior = await ctx.db.query("processedEvents").withIndex("by_key", (q) => q.eq("key", idempotencyKey)).unique();
+    if (prior?.response) {
+      if (prior.caseId !== session.caseId) throw new Error("idempotency key belongs to a different case");
+      return { ok: true as const, sessionId: session._id, idempotencyKey, ref: prior.resultRef ?? "", duplicate: true, pending: false, storedResponse: JSON.parse(prior.response) as VoiceToolResponse };
+    }
+
+    // The reply is context for the question only if the agent said so, or the last question is still unanswered.
+    const replyTo = askedTurn && (askedTurn === echoed || !askedTurn.answeredByRef) ? askedTurn : null;
+    const r = await recordStatement(ctx, {
+      caseId: session.caseId,
+      text: utterance,
+      channel: "voice",
+      idempotencyKey,
+      ...(replyTo ? { inResponseTo: { key: replyTo.questionKey, kind: replyTo.kind, text: replyTo.text } } : {}),
+    });
+    if (!r.duplicate && replyTo && !replyTo.answeredByRef) await ctx.db.patch(replyTo._id, { answeredByRef: r.ref });
+    const s = r.statementId ? await ctx.db.get(r.statementId) : null;
     return {
       ok: true as const,
+      sessionId: session._id,
+      idempotencyKey,
       ref: r.ref,
       duplicate: r.duplicate,
-      openQuestions: (analysis?.questions ?? []).filter((q) => q.blocking).slice(0, 2).map((q) => q.text),
-      recommendation: analysis?.recommendation?.action ?? null,
+      pending: s?.interpretationStatus === "pending",
+      statementId: r.statementId,
+      storedResponse: null,
     };
+  },
+});
+
+/** Polled by the HTTP endpoint while a live interpretation is in flight. */
+export const statementStatus = internalQuery({
+  args: { statementId: v.id("statements") },
+  handler: async (ctx, { statementId }) => (await ctx.db.get(statementId))?.interpretationStatus ?? null,
+});
+
+/**
+ * Step 2 of a tool call: chooses the next question from the (now current) analysis, logs it as
+ * issued on this call, and stores the response so a retry gets the same one.
+ */
+export const issueVoiceQuestion = internalMutation({
+  args: { sessionId: v.id("voiceSessions"), idempotencyKey: v.string(), ref: v.string(), duplicate: v.boolean(), awaitingInterpretation: v.boolean() },
+  handler: async (ctx, { sessionId, idempotencyKey, ref, duplicate, awaitingInterpretation }): Promise<VoiceToolResponse> => {
+    const event = await ctx.db.query("processedEvents").withIndex("by_key", (q) => q.eq("key", idempotencyKey)).unique();
+    if (event?.response) return JSON.parse(event.response) as VoiceToolResponse;
+    const session = await ctx.db.get(sessionId);
+    if (!session) throw new Error("voice session not found");
+    const c = await ctx.db.get(session.caseId);
+    if (!c) throw new Error("case not found");
+
+    let response: VoiceToolResponse;
+    if (awaitingInterpretation) {
+      // The newest statement isn't interpreted yet, so any case question could already be answered by it.
+      response = { recorded: ref, duplicate, question_id: null, question: AWAITING_PROMPT, next_questions: [AWAITING_PROMPT], awaiting_interpretation: true };
+      await logActivity(ctx, session.caseId, "voice", "awaiting_interpretation", `${ref} was not interpreted in time; the agent was told to acknowledge rather than ask a possibly stale question.`);
+    } else {
+      const questions = ((c.analysis as { questions?: OpenQuestion[] } | null)?.questions ?? []).filter((q) => q.audience === "customer");
+      const counts = new Map<string, number>();
+      for (const q of questions) {
+        const asked = await ctx.db.query("intakeTurns").withIndex("by_session_key", (x) => x.eq("sessionId", sessionId).eq("questionKey", q.key)).collect();
+        counts.set(q.key, asked.length);
+      }
+      const choice = selectVoiceQuestion(questions, counts);
+      const handedOff = new Set(session.handedOffKeys ?? []);
+      const newlyHandedOff = choice.exhausted.filter((q) => !handedOff.has(q.key));
+      if (newlyHandedOff.length) {
+        await ctx.db.patch(sessionId, { handedOffKeys: [...handedOff, ...newlyHandedOff.map((q) => q.key)] });
+        await logActivity(ctx, session.caseId, "voice", "question_handed_to_reviewer", `Asked ${MAX_ASKS_PER_CALL} times on this call without being settled, so not asked again: ${newlyHandedOff.map((q) => `"${q.text}"`).join("; ")}. Needs reviewer follow-up.`);
+      }
+      if (choice.question) {
+        const turnId = await ctx.db.insert("intakeTurns", {
+          caseId: session.caseId,
+          sessionId,
+          questionKey: choice.question.key,
+          kind: choice.question.kind,
+          text: choice.question.text,
+          issuedAt: Date.now(),
+          analysisVersion: c.analysisVersion,
+        });
+        response = { recorded: ref, duplicate, question_id: turnId, question: choice.question.text, next_questions: [choice.question.text], awaiting_interpretation: false };
+      } else {
+        response = { recorded: ref, duplicate, question_id: null, question: null, next_questions: [], awaiting_interpretation: false };
+      }
+    }
+    if (event) await ctx.db.patch(event._id, { response: JSON.stringify(response) });
+    return response;
   },
 });
 

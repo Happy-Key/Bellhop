@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { bankFetch, channel, interpretation, transactionFields } from "./validators";
+import { askedQuestion, bankFetch, channel, interpretation, statementAnswer, transactionFields } from "./validators";
 
 export default defineSchema({
   /** One investigation. All customer data is synthetic in this prototype. */
@@ -28,9 +28,17 @@ export default defineSchema({
     channel,
     receivedAt: v.number(),
     correctsRef: v.optional(v.string()),
+    /** The question this statement replied to (voice: the last question the backend issued on the call). */
+    inResponseTo: v.optional(askedQuestion),
+    /** Rule-based reading of a short reply against that question. */
+    answer: v.optional(statementAnswer),
+    /** Kinds of sensitive values removed from `text` before it was stored (values are never kept). */
+    redactions: v.optional(v.array(v.string())),
     interpretation: v.union(interpretation, v.null()),
     interpretationStatus: v.union(v.literal("done"), v.literal("pending"), v.literal("failed")),
     interpretationError: v.optional(v.string()),
+    /** Live interpretation attempt whose result may be applied. Results from any other attempt are discarded. */
+    currentAttemptId: v.optional(v.string()),
     /** Model-proposed findings (unvalidated); validated in analysis. */
     proposedFindings: v.optional(v.array(v.any())),
     followUpQuestion: v.optional(v.union(v.string(), v.null())),
@@ -38,12 +46,15 @@ export default defineSchema({
     .index("by_case", ["caseId"])
     .index("by_case_ref", ["caseId", "ref"]),
 
-  /** Bank transaction evidence retrieved live from Nessie. */
-  transactions: defineTable({ caseId: v.id("cases"), retrievedAt: v.number(), ...transactionFields })
+  /**
+   * Bank transaction evidence retrieved live from Nessie. Append-only: when a re-retrieval returns
+   * different values, the old row gets `supersededAt` and a new row is inserted with the same ref.
+   */
+  transactions: defineTable({ caseId: v.id("cases"), retrievedAt: v.number(), supersededAt: v.optional(v.number()), ...transactionFields })
     .index("by_case", ["caseId"])
     .index("by_case_ref", ["caseId", "ref"]),
 
-  /** Facts returned by external evidence providers (CRS — not yet implemented). */
+  /** Facts returned by external evidence providers (CRS). Superseded rows are kept for history. */
   providerEvidence: defineTable({
     caseId: v.id("cases"),
     ref: v.string(),
@@ -53,6 +64,8 @@ export default defineSchema({
     value: v.string(),
     syntheticAssociation: v.boolean(),
     retrievedAt: v.number(),
+    supersededAt: v.optional(v.number()),
+    supersededReason: v.optional(v.string()),
   }).index("by_case", ["caseId"]),
 
   activity: defineTable({
@@ -69,7 +82,24 @@ export default defineSchema({
     caseId: v.id("cases"),
     at: v.number(),
     resultRef: v.optional(v.string()),
+    /** JSON of the response first returned for this event; a retry gets exactly the same response. */
+    response: v.optional(v.string()),
   }).index("by_key", ["key"]),
+
+  /** Every question the backend put to the customer on a voice call, so it can avoid repeats. */
+  intakeTurns: defineTable({
+    caseId: v.id("cases"),
+    sessionId: v.id("voiceSessions"),
+    questionKey: v.string(),
+    kind: v.string(),
+    text: v.string(),
+    issuedAt: v.number(),
+    analysisVersion: v.number(),
+    /** Statement that replied to it, once one arrives. */
+    answeredByRef: v.optional(v.string()),
+  })
+    .index("by_session", ["sessionId"])
+    .index("by_session_key", ["sessionId", "questionKey"]),
 
   /**
    * Provider session state (server-only; never returned by a public function).
@@ -92,6 +122,8 @@ export default defineSchema({
     expiresAt: v.number(),
     /** Cartesia call ID (`session_ready.call_id`), bound once by the browser when the call starts. */
     callId: v.optional(v.string()),
+    /** Question keys asked the maximum number of times on this call and handed to a reviewer. */
+    handedOffKeys: v.optional(v.array(v.string())),
   })
     .index("by_token", ["token"])
     .index("by_call", ["callId"]),

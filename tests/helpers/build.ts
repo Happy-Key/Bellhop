@@ -1,12 +1,15 @@
 import { interpretStatementScripted } from "@/lib/domain/interpret";
-import type { Statement, TransactionEvidence } from "@/lib/domain/schemas";
+import { interpretAnswer, relatedRefFromKey } from "@/lib/domain/answers";
+import type { AskedQuestion, Statement, TransactionEvidence } from "@/lib/domain/schemas";
 
 export const NOW = Date.UTC(2026, 9, 23, 18, 0, 0); // 2026-10-23T18:00Z
 
 let n = 0;
-export function stmt(text: string, opts: { correctsRef?: string; at?: number } = {}): Statement {
+/** A scripted-interpreted statement; with `replyTo`, it is read as an answer to that question (as recordStatement does). */
+export function stmt(text: string, opts: { correctsRef?: string; at?: number; replyTo?: AskedQuestion } = {}): Statement {
   n++;
   const receivedAt = opts.at ?? NOW + n * 1000;
+  const answer = interpretAnswer(text, opts.replyTo, opts.replyTo ? relatedRefFromKey(opts.replyTo.key) : undefined);
   return {
     ref: `S${n}`,
     text,
@@ -14,8 +17,16 @@ export function stmt(text: string, opts: { correctsRef?: string; at?: number } =
     receivedAt,
     ...(opts.correctsRef ? { correctsRef: opts.correctsRef } : {}),
     interpretation: interpretStatementScripted(text, receivedAt),
+    ...(opts.replyTo ? { inResponseTo: opts.replyTo } : {}),
+    ...(answer ? { answer } : {}),
   };
 }
+
+/** The question a statement replies to, built from an analysis question. */
+export const replyTo = (q: { key: string; kind: string; text: string } | undefined): AskedQuestion => {
+  if (!q) throw new Error("expected the analysis to ask this question");
+  return { key: q.key, kind: q.kind, text: q.text };
+};
 export function resetStatements() {
   n = 0;
 }

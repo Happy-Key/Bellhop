@@ -29,6 +29,7 @@ credentials yet unless the status says so.
   - **Data is visible across all API users** through the enterprise endpoints. Synthetic data only.
   - Unknown routes return 403 "Missing Authentication Token" (API Gateway). That does not mean a bad key.
   - No rate limits are documented, and no data-wipe endpoint was found.
+- **Deposits read probe (2026-10-24, read-only, approved by the user):** `GET /accounts/{demo}/deposits` returns HTTP 200 with `[]`. The endpoint works, but the demo account has no deposits, so the read payload shape is still **UNVERIFIED**. Seeing it needs a seeded synthetic deposit, which is a write and needs approval. Needed to compare reported refunds and credits with records.
 - Simulated payout candidate: `POST /accounts/{id}/deposits` with `{medium, transaction_date, status, amount, description}` is fully defined in the spec. The transfer POST body is UNVERIFIED. Not implemented.
 - Credentials: `NESSIE_API_KEY` and `NESSIE_DEMO_ACCOUNT_ID` go in **both** the Convex env (`npx convex env set …`) and `.env.local` (for the scripts).
 
@@ -40,21 +41,17 @@ Claude Code is the development assistant only. **The app does not use the Anthro
    - Cartesia Managed Agents use a hosted LLM chosen from a catalog of "models from OpenAI, Anthropic and Google Gemini". "You do not need a provider account or API key" (https://docs.cartesia.ai/agents/models.md). `GET /v1/agents/models` lists the models available to your account, with token prices.
    - That LLM is reachable **only inside an agent call** (audio over WebSocket or telephony). There is no documented text chat-completions endpoint, so it cannot interpret text-channel statements.
    - **Whether event credits cover agent LLM tokens: UNVERIFIED.** The CalHacks page (https://docs.cartesia.ai/calhacks) documents no credit amount.
-2. **Bitdeer AI.**
-   - Starter pack: "API credits for all participants", amount not stated. Claim them by creating an account at https://www.bitdeer.ai/en, then submitting the credit form linked from the sponsor resources, then creating a key in Model Studio.
-   - OpenAI-compatible API: `POST https://api-inference.bitdeer.ai/v1/chat/completions` with Bearer auth. The docs say it supports "streaming, tools, and vision" (https://developers.bitdeer.ai/docs/api).
-   - Chat models listed include `deepseek-ai/DeepSeek-V4.1-Flash`, `zai-org/GLM-5.3` and `Qwen/Qwen3.8-27B` (https://developers.bitdeer.ai/docs/api/models-catalog). **Which models support tool calling: UNVERIFIED.**
-3. **CREAO.** An agent platform (`developer.creao.ai/v1`, runs/agents/webhooks). **No OpenAI-compatible inference was found.** Not suitable as a drop-in reasoning provider.
+2. **CREAO.** An agent platform (`developer.creao.ai/v1`, runs/agents/webhooks). **No OpenAI-compatible inference was found.** Not suitable as a drop-in reasoning provider.
 
-**Decision (pending your confirmation):**
+(Bitdeer was evaluated as an OpenAI-compatible candidate and **dropped from the stack on 2026-10-24**; its credits were never claimed and no code depended on it.)
+
+**Decision (2026-10-24):**
 - The Cartesia agent handles the *conversation* on the voice channel.
 - Case reasoning (statement interpretation) stays behind `ReasoningProvider` in Convex, so text and voice share one interpreter.
-- For live interpretation the candidate is **Bitdeer** through `OpenAICompatibleReasoningProvider`, once credits are claimed. Until then, `REASONING_PROVIDER=scripted`. This is labelled everywhere and never used as a silent fallback.
+- **No live interpretation provider is chosen.** `REASONING_PROVIDER=scripted`: the labelled pattern extractor plus the rule-based answer reader (`lib/domain/answers.ts`). The generic `OpenAICompatibleReasoningProvider` stays in the code, unconfigured and mock-tested, so a provider can be added later through env vars alone.
 - To avoid a second reasoning agent, the voice agent's prompt should only relay what the customer said and the backend's questions. It should not draw its own conclusions about the case.
 
-To enable live reasoning, set these in Convex env: `REASONING_PROVIDER=openai-compatible`, `REASONING_PROVIDER_LABEL=bitdeer`, `REASONING_BASE_URL=https://api-inference.bitdeer.ai/v1`, `REASONING_MODEL=<model id from catalog>`, `REASONING_API_KEY=…`.
-
-We do not yet know whether the chosen model honours JSON-only output. The provider rejects malformed output (tested with mocks).
+To enable live reasoning later, set these in Convex env: `REASONING_PROVIDER=openai-compatible`, `REASONING_PROVIDER_LABEL=<name>`, `REASONING_BASE_URL=<provider /v1 URL>`, `REASONING_MODEL=<model id>`, `REASONING_API_KEY=…`. The provider rejects malformed output (tested with mocks).
 
 ## Cartesia (voice)
 
@@ -75,7 +72,10 @@ We do not yet know whether the chosen model honours JSON-only output. The provid
   - **Live finding 2026-10-24:** browser access tokens **cannot** send `session_create.dynamic_variables`. Cartesia returns the fatal error `dynamic_variables_not_allowed`: "Browser access tokens cannot supply dynamic_variables; use a Cartesia API key." Our earlier reading of the docs was wrong; the guide's "from your server" wording is enforced.
   - **Current design (2026-10-24):** the tool sends `call_id` from the system variable `system__conversation_id` (documented as the "Cartesia call ID"). On `session_ready`, the browser binds `call_id` to its voice session with `voice:bindVoiceCall` and only then starts the microphone. **Verified live 2026-10-24:** `system__conversation_id` equals `session_ready.call_id`. A browser call recorded S1–S7 by call ID.
   - `session_token` in the body is kept for direct HTTP testing only. Playground previews can no longer record statements, because nothing binds their call ID.
-  - `turn_id` is never sent. Cartesia gives webhook tools no turn ID (there is no `system__` turn variable), so retries are deduplicated by utterance text. **Known limitation:** if a customer says exactly the same words twice in one session, the second statement is ignored as a duplicate.
+  - `turn_id` is never sent. Cartesia gives webhook tools no turn ID (there is no `system__` turn variable).
+  - **Since 2026-10-24 the key also names the question being answered.** The tool has an optional model-supplied `question_id` (an echo of the previous result's `question_id`). The backend accepts it only if it was issued on this call; otherwise it uses the last question issued. So "Yes." to two different questions is two statements, and a retried call (same question, same words) gets the stored response back. Remaining limitation: if the agent omits `question_id` and a call is retried *after* the next question was issued, the retry is filed against the newer question.
+  - **Response (2026-10-24):** `{recorded, duplicate, question_id, question, next_questions:[question], awaiting_interpretation}`. `recommended_action` was removed: the agent never needs eligibility information. With live reasoning, the endpoint waits up to `VOICE_INTERPRETATION_WAIT_MS` (default 4500 ms) for the statement's interpretation. If it isn't ready, it returns `awaiting_interpretation: true` with an acknowledgement instead of a possibly stale question. A question asked twice on one call without being settled is not asked again; it is logged for a reviewer.
+  - **Re-register the tool** (`npx convex run voiceSetup:registerVoiceTool`) after deploying these functions, so the agent gets the `question_id` parameter and the new description.
 - `next_questions` is **not** a Cartesia tool. It is a field in our endpoint's JSON response, which Cartesia hands to the LLM as the tool result.
 - **Tool registration (implemented 2026-10-23; the user ran the dry run and the live registration on 2026-10-24, and the output matched what was expected):** `npx convex run voiceSetup:registerVoiceTool`, an internal action in `convex/voiceSetup.ts` with its client in `lib/providers/cartesia.ts`.
   - Docs used: https://docs.cartesia.ai/api-reference/agents/tools/create.md and https://docs.cartesia.ai/api-reference/agents/update.md.
@@ -86,7 +86,11 @@ We do not yet know whether the chosen model honours JSON-only output. The provid
   - The secret is sent as a write-only `{"type":"secret","secret_value":…}`; Cartesia never returns it.
   - `{"dryRun": true}` makes no network calls and prints the definition with the secret redacted. Verified on the cloud dev deployment: the URL is `https://dynamic-chihuahua-120.convex.site/voice/tools/record-statement`, and the endpoint returns 401 without the bearer secret.
 - **Suggested agent instructions** (set in the Playground; not applied by the action):
-  > You help a bank customer report a suspected fraudulent transaction on their deposit account. After every complete statement the customer makes about the claim, including corrections, call `record_statement` with their words exactly as said. Its result is JSON; ask the customer the first item in the result's `next_questions` list, in plain language. If that list is empty, ask whether there is anything else about the transaction they want to add. Never decide whether fraud occurred, never promise a refund, and never give legal advice; a human reviewer makes every decision. If the tool returns an error, apologize and ask the customer to repeat the last point. When the customer says goodbye or asks to end the call, say a brief goodbye and end the call.
+  > At the start of every call, before any questions, say that you are an automated assistant for the bank, that the call is transcribed (not recorded) to prepare their claim, and ask whether that's okay. If they say no, tell them they can file their claim in writing instead or ask for a person, then end the call. Do not call `record_statement` until they agree.
+  >
+  > You help a bank customer report a suspected fraudulent payment. After everything the customer says about the claim, including short answers like "yes" and corrections, call `record_statement` with their words exactly as said, and pass the `question_id` from the previous result. Its result is JSON. Ask the customer the result's `question`, in plain, natural language, and only that question. If `question` is null, ask whether there is anything else they want to add. Never ask for passwords, full card numbers or security codes; if the customer starts to read one out, stop them politely. Never decide whether fraud occurred, never say whether a payment was "authorized", never promise a refund, and never give legal advice; a human reviewer makes every decision. If the tool returns an error, apologize and ask the customer to repeat the last point. If the customer asks for a person, say a reviewer will follow up. When the customer says goodbye or asks to end the call, say a brief goodbye and end the call.
+  >
+  > (Updated 2026-10-24 for the `question`/`question_id` response, and for your decisions: an automated-assistant notice and transcription consent on every call; audio is not stored. **Check Cartesia's retention settings for this agent** to confirm it doesn't keep audio. Paste it into the Playground; it is not applied by the registration action.)
 - **Ending calls:** the agent can only hang up if the `end_call` system tool is enabled (Playground → Tools, or `config.system_tools.end_call: {}`). See https://docs.cartesia.ai/agents/system-tools.md. Without it, the call runs until the caller hangs up or `config.turn.inactivity_end_call_secs` passes (20–240 s; the default is 240). Our registration action PATCHes only `config.tools`, and omitted system tools are left unchanged, so re-running it is safe.
 - **First live test (user, 2026-10-24):** a Playground preview with a `session_token` sample value (the original tool design). The tool reached Convex, statements were recorded as voice, and the dashboard updated live. Billing: about 25k LLM tokens, and $0.09 of "voice agent dollars" ($1.00 → $0.91). Credits were unchanged, which matches the pricing docs (agents are billed in USD per minute plus LLM tokens, not in credits). The call did not end when asked to, because `end_call` was not enabled.
 - **First live browser call (user, 2026-10-24):** connected, the agent spoke, statements were recorded through the call-ID binding, and End call worked when asked. Cost $0.05. Quality issues are tracked in `CONTEXT.md` (spoken amounts, missing agent-question context, repetition).
@@ -129,10 +133,9 @@ We do not yet know whether the chosen model honours JSON-only output. The provid
 ## Unresolved questions
 
 1. Cartesia: event credit amount, and whether Managed Agent LLM tokens are covered. (Dynamic-variable passing is resolved; see the Cartesia section.)
-2. Bitdeer: credit amount, which models support tool calling and JSON output, and the rate limits.
-3. Nessie: the purchase and transfer POST bodies (the seed script will reveal the purchase body).
-4. CRS: your account's rate limit, and whether non-persona requests cost anything. The OFAC and military endpoints mentioned on the event page aren't in the OpenAPI spec.
-5. Factory: credits, and whether `run()` accepts an autonomy level directly.
+2. Nessie: the purchase and transfer POST bodies (the seed script will reveal the purchase body).
+3. CRS: your account's rate limit, and whether non-persona requests cost anything. The OFAC and military endpoints mentioned on the event page aren't in the OpenAPI spec.
+4. Factory: credits, and whether `run()` accepts an autonomy level directly.
 
 ### CRS implementation notes (2026-10-23)
 - Code: `lib/providers/crs.ts`, `convex/crs.ts` (action), `convex/crsData.ts`. The test personas are in `lib/fixtures/crsPersonas.ts` (P01, P12, P14, P16, P19), copied verbatim from the CRS persona file.

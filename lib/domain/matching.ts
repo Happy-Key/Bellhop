@@ -11,7 +11,7 @@ import type { TransactionEvidence } from "./schemas";
 export const DATE_TOLERANCE_DAYS = 3;
 
 export interface MatchReason {
-  field: "amount" | "date" | "merchant";
+  field: "amount" | "date" | "merchant" | "customer_confirmation";
   detail: string;
   statementRef: string;
 }
@@ -126,7 +126,13 @@ export function matchTransactions(facts: ClaimFacts, txns: TransactionEvidence[]
   // Consistency filter: if some candidates agree with a reported merchant / date, drop the ones
   // that don't. If none agree, nothing is dropped (the reported term may be noise).
   const excluded: ExcludedCandidate[] = [];
-  let remaining = candidates;
+  // The customer said "no, not that one" to a candidate they were asked about.
+  const rejected = new Map(facts.txnDecisions.filter((d) => d.decision === "rejected").map((d) => [d.txnRef, d.statementRef]));
+  let remaining = candidates.filter((c) => {
+    const by = rejected.get(c.txnRef);
+    if (by) excluded.push({ txnRef: c.txnRef, reason: `customer said this is not the payment (${by})` });
+    return !by;
+  });
   const narrow = (field: "merchant" | "date", ok: (c: MatchCandidate) => boolean) => {
     if (remaining.length > 1 && remaining.some(ok)) {
       for (const c of remaining.filter((c) => !ok(c))) excluded.push({ txnRef: c.txnRef, reason: `inconsistent with reported ${field}` });
@@ -137,6 +143,19 @@ export function matchTransactions(facts: ClaimFacts, txns: TransactionEvidence[]
   narrow("date", (c) => c.dateDeltaDays !== null && c.dateDeltaDays <= DATE_TOLERANCE_DAYS);
 
   remaining.sort((a, b) => b.score - a.score || a.txnRef.localeCompare(b.txnRef));
+
+  // The customer confirmed a specific candidate ("yes, that one"): it is the match, labelled as such.
+  const confirmation = facts.txnDecisions.find((d) => d.decision === "confirmed" && remaining.some((c) => c.txnRef === d.txnRef));
+  if (confirmation) {
+    const chosen = remaining.find((c) => c.txnRef === confirmation.txnRef)!;
+    for (const c of remaining) if (c !== chosen) excluded.push({ txnRef: c.txnRef, reason: `customer confirmed ${chosen.txnRef} instead (${confirmation.statementRef})` });
+    const confirmed: MatchCandidate = {
+      ...chosen,
+      reasons: [...chosen.reasons, { field: "customer_confirmation", detail: `customer confirmed this record when asked`, statementRef: confirmation.statementRef }],
+    };
+    return { outcome: "clear", candidates: [confirmed], excluded, matchedRef: chosen.txnRef };
+  }
+
   const base = { candidates: remaining, excluded };
 
   if (remaining.length === 0) return { outcome: "no_match", ...base, matchedRef: null };

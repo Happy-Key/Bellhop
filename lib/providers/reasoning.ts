@@ -5,7 +5,7 @@
  * Implementations:
  *  - ScriptedReasoningProvider: deterministic patterns, always labelled "scripted".
  *  - OpenAICompatibleReasoningProvider: any documented OpenAI-compatible
- *    /chat/completions endpoint (candidate: Bitdeer Model Studio). Disabled until
+ *    /chat/completions endpoint. No provider is chosen; disabled until one is
  *    configured and verified. Failures throw — callers must NOT fall back to scripted.
  */
 import { z } from "zod";
@@ -62,7 +62,7 @@ export const ModelOutput = z.object({
 });
 
 export interface OpenAICompatibleConfig {
-  baseUrl: string; // e.g. https://api-inference.bitdeer.ai/v1 (from provider docs)
+  baseUrl: string; // the provider's documented OpenAI-compatible base URL, ending in /v1
   apiKey: string;
   model: string;
   providerLabel: string;

@@ -10,7 +10,7 @@ import { httpRouter } from "convex/server";
 import { z } from "zod";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { voiceIdempotencyKey } from "../lib/domain/idempotency";
+import { voiceUtteranceKey } from "../lib/domain/idempotency";
 import { CALL_ID_PATTERN } from "./voice";
 
 // Live calls send call_id (from Cartesia's system__conversation_id). session_token remains for
@@ -21,8 +21,20 @@ const ToolBody = z
     session_token: z.string().regex(/^vs_[a-f0-9]{32}$/).optional(),
     utterance: z.string().min(1).max(4000),
     turn_id: z.string().min(1).max(128).optional(),
+    // Echo of the previous result's question_id. Model-supplied, so it only disambiguates which
+    // question was answered; it is checked against questions issued on this call.
+    question_id: z.string().min(1).max(64).nullish(),
   })
   .refine((b) => !!b.call_id !== !!b.session_token, "exactly one of call_id or session_token");
+
+/** How long the tool call waits for a live interpretation before answering without it. */
+const DEFAULT_INTERPRETATION_WAIT_MS = 4500;
+const POLL_MS = 250;
+
+function interpretationWaitMs(): number {
+  const n = Number(process.env.VOICE_INTERPRETATION_WAIT_MS);
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, 10_000) : DEFAULT_INTERPRETATION_WAIT_MS;
+}
 
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -47,21 +59,40 @@ http.route({
 
     const parsed = ToolBody.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return json(400, { error: "invalid body" });
-    const { call_id, session_token, utterance, turn_id } = parsed.data;
-    const key = await voiceIdempotencyKey((call_id ?? session_token)!, utterance, turn_id);
+    const { call_id, session_token, utterance, turn_id, question_id } = parsed.data;
     const result = await ctx.runMutation(internal.voice.recordVoiceUtterance, {
       ...(call_id ? { callId: call_id } : { sessionToken: session_token }),
       utterance,
-      idempotencyKey: key,
+      utteranceKey: await voiceUtteranceKey(utterance, turn_id),
+      ...(question_id ? { questionId: question_id } : {}),
     });
     if (!result.ok) return json(404, { error: result.error });
-    // Plain, short response the voice agent can relay. Questions come from the backend workflow.
-    return json(200, {
-      recorded: result.ref,
+    // A retry gets exactly the response the first call got.
+    if (result.storedResponse) return json(200, { ...result.storedResponse, duplicate: true });
+
+    // Live interpretation runs in the background. Wait for it briefly so the next question reflects
+    // what the customer just said; if it isn't ready, the agent is told to acknowledge instead.
+    let awaiting = result.pending;
+    if (awaiting && "statementId" in result && result.statementId) {
+      const deadline = Date.now() + interpretationWaitMs();
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, POLL_MS));
+        const status = await ctx.runQuery(internal.voice.statementStatus, { statementId: result.statementId });
+        if (status !== "pending") {
+          awaiting = status !== "done";
+          break;
+        }
+      }
+    }
+    // Questions come from the backend workflow. No recommendation or eligibility is sent to the agent.
+    const response = await ctx.runMutation(internal.voice.issueVoiceQuestion, {
+      sessionId: result.sessionId,
+      idempotencyKey: result.idempotencyKey,
+      ref: result.ref,
       duplicate: result.duplicate,
-      next_questions: result.openQuestions,
-      recommended_action: result.recommendation,
+      awaitingInterpretation: awaiting,
     });
+    return json(200, response);
   }),
 });
 

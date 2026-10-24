@@ -1,0 +1,68 @@
+/**
+ * Reads a reply in the context of the question it answers (RULE-BASED, labelled by parser ID).
+ *
+ * Short replies ("me", "someone else", "yes, that one", "I don't know") carry no facts on their
+ * own; with the question as context they do. This runs at insert time in both reasoning modes and
+ * is separate from statement interpretation: it never stands in for a failed live interpretation.
+ */
+import type { AskedQuestion, StatementAnswer } from "./schemas";
+
+export const ANSWER_PARSER = "answer-slot-parser@1";
+
+const UNKNOWN = /\b(?:i\s+(?:do\s*n[o']?t|dont)\s+know|not\s+sure|no\s+idea|i\s+(?:can(?:no|')t|cannot)\s+(?:remember|recall|tell)|unsure|i'?m\s+not\s+certain)\b/i;
+const DECLINED = /\b(?:rather\s+not\s+(?:say|answer)|prefer\s+not\s+to|do\s*n[o']?t\s+want\s+to\s+(?:say|answer|tell))\b/i;
+const YES = /^\s*(?:yes|yeah|yep|yup|correct|right|that'?s\s+(?:it|right|the\s+one|correct)|that\s+one|exactly)\b/i;
+const NO = /^\s*(?:no|nope|nah|not\s+that\s+one|that'?s\s+not\s+(?:it|the\s+one|right))\b/i;
+
+const OTHER_PERSON = /\b(?:someone\s+else|somebody\s+else|they\s+did|he\s+did|she\s+did|the\s+(?:scammer|caller|fraudster|other\s+person)|not\s+me|i\s+did\s*n[o']?t(?:\s+(?:send|make|do))?|wasn'?t\s+me)\b/i;
+const CUSTOMER =
+  /^\s*(?:yes,?\s+)?(?:me|myself|it\s+was\s+me|i\s+did(?!\s*n))\b|\bi\s+(?:sent|entered|made|typed|pressed|did)\s+(?:it|that|them|the\s+(?:payment|transfer)|it\s+myself)\b|\bi\s+(?:personally|myself)\b/i;
+
+const SHARED = /\b(?:codes?|passwords?|pins?|card\s+(?:number|details)|one[- ]time|verification|login|security\s+(?:code|answers?))\b/i;
+const NOTHING_SHARED = /^\s*(?:no|nope|nobody|no\s+one|none|nothing)\b/i;
+
+/** Returns undefined when the statement was not a reply to a known question. */
+export function interpretAnswer(text: string, asked: AskedQuestion | undefined, relatedRef?: string): StatementAnswer | undefined {
+  if (!asked) return undefined;
+  const base = { key: asked.key, kind: asked.kind, parser: ANSWER_PARSER };
+  if (DECLINED.test(text)) return { ...base, state: "declined" };
+
+  // Conflict questions about who sent the payment, or about shared credentials, are re-asked in
+  // the same words as the original question, so their replies parse the same way.
+  const kind = asked.key === "conflict:authorization" ? "initiation" : asked.key === "conflict:credentialSharing" ? "credential_sharing" : asked.kind;
+  switch (kind) {
+    case "initiation": {
+      // "someone else" is checked first: "not me" contains "me".
+      if (OTHER_PERSON.test(text)) return { ...base, state: "answered", derived: { authorization: "denies_authorization" } };
+      if (CUSTOMER.test(text)) return { ...base, state: "answered", derived: { authorization: "authorized" } };
+      break;
+    }
+    case "tentative_match": {
+      if (!relatedRef) break;
+      if (NO.test(text)) return { ...base, state: "answered", derived: { rejectsTxnRef: relatedRef } };
+      if (YES.test(text)) return { ...base, state: "answered", derived: { confirmsTxnRef: relatedRef } };
+      break;
+    }
+    case "credential_sharing": {
+      if (NOTHING_SHARED.test(text) && !/\b(?:but|except)\b/i.test(text)) return { ...base, state: "answered", derived: { credentialSharing: "not_shared" } };
+      if (YES.test(text) || SHARED.test(text)) return { ...base, state: "answered", derived: { credentialSharing: "shared" } };
+      break;
+    }
+    case "code_purpose":
+    case "payment_purpose":
+    case "narrative":
+      // Open questions: any substantive reply answers them; the words are the answer.
+      if (UNKNOWN.test(text)) return { ...base, state: "unknown" };
+      return { ...base, state: text.trim().split(/\s+/).length >= 2 ? "answered" : "unparsed" };
+    default:
+      break;
+  }
+  if (UNKNOWN.test(text)) return { ...base, state: "unknown" };
+  return { ...base, state: "unparsed" };
+}
+
+/** The transaction a tentative-match question asks about is encoded in its key ("tentative:T:abc"). */
+export function relatedRefFromKey(key: string): string | undefined {
+  const m = key.match(/^tentative:(T:[A-Za-z0-9_-]+)$/);
+  return m?.[1];
+}

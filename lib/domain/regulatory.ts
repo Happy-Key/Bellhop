@@ -108,12 +108,14 @@ export const REGULATORY_SOURCES: RegulatorySource[] = [
     ref: "R:cfpb.eft-faq.induced-sharing",
     kind: "agency_guidance",
     title: "CFPB Electronic Fund Transfers FAQs — fraudulently induced sharing of account access information",
-    citation: "CFPB EFT FAQs, Error Resolution: Unauthorized EFTs",
+    citation: "CFPB EFT FAQs, Error Resolution: Unauthorized EFTs (questions on fraudulently induced sharing of account access information; page updated Jan 15, 2025)",
     url: "https://www.consumerfinance.gov/compliance/compliance-resources/deposit-accounts-resources/electronic-fund-transfers/electronic-fund-transfers-faqs/",
-    reviewedOn: "2026-10-23",
+    reviewedOn: "2026-10-24",
+    // Quoted fragments joined with "…", each matched word for word against the live page on 2026-10-24.
+    // Edited by a developer agent with the user's explicit approval (2026-10-24).
     excerpt:
-      "Guidance indicates a transfer can be unauthorized when a consumer is fraudulently induced into sharing account access information with a third party who then initiates the transfer, and that such a consumer has not 'furnished' an access device.",
-    verbatimVerified: false,
+      "\"when a consumer is fraudulently induced into sharing account access information with a third party\" … \"the transfer is an unauthorized EFT under Regulation E.\" On later transfers using that information: \"No. A consumer who is fraudulently induced into providing account information has not furnished an access device under Regulation E.\"",
+    verbatimVerified: true,
     applicability: "Agency guidance (not the regulation itself). Relevant when a third party, not the consumer, initiated the transfer using credentials obtained by deception.",
   },
   {

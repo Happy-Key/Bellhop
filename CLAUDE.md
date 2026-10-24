@@ -10,16 +10,25 @@ Guidance for Claude Code and other developer agents working in this repository.
 
 ## Product scope
 
-This is a hackathon prototype. It investigates suspected-fraud claims on **U.S. consumer
-deposit accounts**, one disputed transaction per case, using synthetic data only.
+This is a hackathon prototype, using synthetic data only. **Consumers use it to file fraud
+claims, and the software is an extension of the bank** (decided 2026-10-24). A report made
+here is likely notice to the bank, so record its date and time precisely. It covers **U.S.
+consumer deposit, prepaid and credit-card accounts**. A case may hold **several disputed
+payments**. Design: `docs/claim-intake-design.md`.
 
-The pipeline: intake (text, later voice) → live Nessie bank records → deterministic matching
-→ clarification → curated regulatory considerations → draft packet → **human review**.
+The pipeline: intake (text and voice) → live Nessie bank records → deterministic matching
+→ clarification → curated regulatory considerations → reimbursement screen and
+attorney-review screen → draft packet → **human review**.
+
+**Allowed (2026-10-24):** clearly labelled deadline *estimates* that show their working and
+basis (statutory, institution procedure or internal reminder), and the two screening results.
+Screens say "potential route", "needs facts" or "ready for review", never "approved" or
+"denied".
 
 **Non-goals:**
-- moving real money, approving reimbursements, or filing complaints
+- moving real money, approving or denying reimbursements, or filing complaints
 - accessing unrelated accounts
-- legal determinations or deadline calculations
+- legal determinations: screens route cases to humans; they don't decide them
 - real customer data
 
 ## Directory layout
@@ -80,8 +89,8 @@ package.json).
 - Claude Code is the **development** assistant only. The app must not require the Anthropic
   API or SDK.
 - Reasoning sits behind `ReasoningProvider` (`lib/providers/reasoning.ts`). It is `scripted`
-  by default and always labelled. The live candidate is Bitdeer, through an
-  OpenAI-compatible API, once its credits are claimed.
+  and always labelled. Bitdeer was dropped from the stack (2026-10-24); no live provider is
+  chosen. Don't add one without the user's decision.
 - The Cartesia Managed Agent LLM handles the voice conversation only; case reasoning stays in
   Convex.
 - Never silently fall back from live to scripted. Never enable a paid service or buy credits

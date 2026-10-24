@@ -52,8 +52,10 @@ export function buildRecordStatementTool(endpointUrl: string, toolSecret: string
     type: "webhook",
     name: RECORD_STATEMENT_TOOL_NAME,
     description:
-      "Records what the customer just said about their disputed transaction in the case file and returns the next questions the case needs answered. " +
-      "Call it after every complete customer statement about the claim, including corrections. Then ask the returned next_questions. Do not draw your own conclusions about the case.",
+      "Records what the customer just said about their disputed payment in the case file and returns the one question to ask next. " +
+      "Call it after every complete customer statement about the claim, including short answers and corrections. " +
+      "Then ask the returned `question`, in your own natural words, and nothing else. If `question` is null, ask whether there is anything else they want to add. " +
+      "Pass the `question_id` from the previous result back as `question_id`. Do not draw your own conclusions about the case.",
     pre_tool_speech: "auto",
     execution_mode: "immediate",
     response_timeout_secs: 15,
@@ -64,6 +66,7 @@ export function buildRecordStatementTool(endpointUrl: string, toolSecret: string
         type: "object",
         properties: {
           utterance: { type: "string", description: "The customer's latest complete statement, in their own words. Do not summarize, interpret, or add anything." },
+          question_id: { type: "string", description: "The question_id from the previous record_statement result, exactly as returned. Omit it on the first call or if the previous result had none." },
           call_id: { type: "string", dynamic_variable: CALL_ID_VARIABLE },
         },
         required: ["utterance"],

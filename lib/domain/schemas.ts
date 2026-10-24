@@ -67,6 +67,34 @@ export const StatementInterpretation = z.object({
 });
 export type StatementInterpretation = z.infer<typeof StatementInterpretation>;
 
+/** The question a statement answers, as it was put to the customer. */
+export const AskedQuestion = z.object({ key: z.string().min(1).max(200), kind: z.string().min(1).max(40), text: z.string().max(600) });
+export type AskedQuestion = z.infer<typeof AskedQuestion>;
+
+/**
+ * How a statement answered the question it replied to. `unknown` and `declined` are answers:
+ * the question is not asked again. `unparsed` means the reply did not settle it.
+ */
+export const AnswerState = z.enum(["answered", "unknown", "declined", "unparsed"]);
+export type AnswerState = z.infer<typeof AnswerState>;
+
+export const StatementAnswer = z.object({
+  key: z.string(),
+  kind: z.string(),
+  state: AnswerState,
+  /** Values read from a short reply using the question as context (rule-based, labelled by parser). */
+  derived: z
+    .object({
+      authorization: AuthorizationClaim.optional(),
+      credentialSharing: CredentialSharing.optional(),
+      confirmsTxnRef: z.string().optional(),
+      rejectsTxnRef: z.string().optional(),
+    })
+    .optional(),
+  parser: z.string(),
+});
+export type StatementAnswer = z.infer<typeof StatementAnswer>;
+
 export const Statement = z.object({
   ref: z.string().regex(STATEMENT_REF),
   text: z.string().min(1).max(4000),
@@ -75,6 +103,8 @@ export const Statement = z.object({
   /** Original statements are never edited; a correction points at the statement it corrects. */
   correctsRef: z.string().regex(STATEMENT_REF).optional(),
   interpretation: StatementInterpretation.nullable(),
+  inResponseTo: AskedQuestion.optional(),
+  answer: StatementAnswer.optional(),
 });
 export type Statement = z.infer<typeof Statement>;
 
@@ -129,25 +159,39 @@ export const Finding = z.object({
 export type Finding = z.infer<typeof Finding>;
 
 export const QuestionKind = z.enum([
+  "narrative",
   "missing_transaction_details",
   "ambiguous_match",
   "no_match",
   "tentative_match",
   "conflict",
-  "authorization",
+  /** Who entered and sent the payment. Asks about actions, never "was it authorized". */
+  "initiation",
   "credential_sharing",
+  "code_purpose",
+  "payment_purpose",
   "evidence_unavailable",
   "multiple_amounts",
   "identity_review",
 ]);
 export type QuestionKind = z.infer<typeof QuestionKind>;
 
+/** Who a question is for. Reviewer questions are never read to the customer. */
+export const QuestionAudience = z.enum(["customer", "reviewer"]);
+export type QuestionAudience = z.infer<typeof QuestionAudience>;
+
 export const OpenQuestion = z.object({
+  /** Display ID (Q1, Q2 …), renumbered on every analysis. */
   id: z.string(),
+  /** Stable identity across analyses (e.g. "initiation", "conflict:amount"); used to log and de-duplicate asks. */
+  key: z.string(),
   kind: QuestionKind,
   text: z.string(),
   relatedRefs: z.array(z.string()),
   blocking: z.boolean(),
+  audience: QuestionAudience,
+  /** Lower is asked first. */
+  priority: z.number(),
 });
 export type OpenQuestion = z.infer<typeof OpenQuestion>;
 

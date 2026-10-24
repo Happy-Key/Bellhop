@@ -19,6 +19,25 @@ export const interpretation = v.object({
   scamIndicators: v.array(v.string()),
 });
 
+/** The question a statement answers (lib/domain/schemas.ts AskedQuestion). */
+export const askedQuestion = v.object({ key: v.string(), kind: v.string(), text: v.string() });
+
+/** How a statement answered its question (lib/domain/schemas.ts StatementAnswer). */
+export const statementAnswer = v.object({
+  key: v.string(),
+  kind: v.string(),
+  state: v.union(v.literal("answered"), v.literal("unknown"), v.literal("declined"), v.literal("unparsed")),
+  derived: v.optional(
+    v.object({
+      authorization: v.optional(interpretation.fields.authorization),
+      credentialSharing: v.optional(interpretation.fields.credentialSharing),
+      confirmsTxnRef: v.optional(v.string()),
+      rejectsTxnRef: v.optional(v.string()),
+    }),
+  ),
+  parser: v.string(),
+});
+
 export const bankFetch = v.union(
   v.object({ status: v.literal("never") }),
   v.object({ status: v.literal("ok"), at: v.number(), count: v.number() }),

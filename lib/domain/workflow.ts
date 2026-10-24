@@ -66,6 +66,23 @@ export interface CaseAnalysis {
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
+/** Lower is asked first. Safety and missing evidence come before detail. */
+export const QUESTION_PRIORITY: Record<OpenQuestion["kind"], number> = {
+  narrative: 0,
+  evidence_unavailable: 1,
+  conflict: 2,
+  multiple_amounts: 3,
+  missing_transaction_details: 3,
+  no_match: 4,
+  ambiguous_match: 4,
+  tentative_match: 4,
+  initiation: 5,
+  credential_sharing: 6,
+  code_purpose: 7,
+  payment_purpose: 7,
+  identity_review: 9,
+};
+
 export function buildEvidenceIndex(input: CaseInput): EvidenceIndex {
   return {
     statementRefs: new Set(input.statements.map((s) => s.ref)),
@@ -77,14 +94,37 @@ export function buildEvidenceIndex(input: CaseInput): EvidenceIndex {
 
 export function analyzeCase(input: CaseInput): CaseAnalysis {
   const facts = aggregateFacts(input.statements);
+  // "I sent it" plus a reported deception (in any statement) is a customer-initiated scam payment.
+  const customerSentAfterDeception =
+    facts.authorization?.value === "authorized_induced" || (facts.authorization?.value === "authorized" && facts.scamIndicators.length > 0);
+  const considerationFacts: ClaimFacts =
+    customerSentAfterDeception && facts.authorization?.value === "authorized"
+      ? { ...facts, authorization: { ...facts.authorization, value: "authorized_induced" } }
+      : facts;
   const match = matchTransactions(facts, input.transactions);
   const index = buildEvidenceIndex(input);
   const txnByRef = index.transactions;
   const matchedTxn = match.matchedRef ? txnByRef.get(match.matchedRef) ?? null : null;
 
   const questions: OpenQuestion[] = [];
-  const q = (kind: OpenQuestion["kind"], text: string, relatedRefs: string[], blocking = true) =>
-    questions.push({ id: `Q${questions.length + 1}`, kind, text, relatedRefs, blocking });
+  // Questions the customer already answered "I don't know" or declined are not asked again. A
+  // blocking one goes to a reviewer instead; a non-blocking one is dropped.
+  const answerFor = new Map(facts.answers.map((a) => [a.key, a]));
+  const q = (kind: OpenQuestion["kind"], key: string, text: string, relatedRefs: string[], opts: { blocking?: boolean; audience?: OpenQuestion["audience"] } = {}) => {
+    const blocking = opts.blocking ?? true;
+    const audience = opts.audience ?? "customer";
+    const prior = answerFor.get(key);
+    if (audience === "customer" && prior && (prior.state === "unknown" || prior.state === "declined")) {
+      if (!blocking) return;
+      questions.push({
+        id: "", key, kind, blocking, audience: "reviewer", priority: QUESTION_PRIORITY[kind], relatedRefs: [...relatedRefs, prior.statementRef],
+        text: `Customer ${prior.state === "unknown" ? "did not know" : "declined to answer"} (${prior.statementRef}): "${text}" Needs reviewer follow-up.`,
+      });
+      return;
+    }
+    questions.push({ id: "", key, kind, text, relatedRefs, blocking, audience, priority: QUESTION_PRIORITY[kind] });
+  };
+  const answered = (key: string) => answerFor.get(key)?.state === "answered";
 
   // ---- Rule-based findings (validated like any other finding) ----
   const ruleFindings: Finding[] = [];
@@ -92,9 +132,9 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
 
   if (facts.authorization) {
     const label = {
-      denies_authorization: "Customer reports they did not authorize the transaction.",
-      authorized_induced: "Customer reports making the payment themselves after being deceived.",
-      authorized: "Customer reports making the payment themselves.",
+      denies_authorization: "Customer reports they did not make this payment (someone else did, or they do not recognize it).",
+      authorized_induced: "Customer reports they entered and sent the payment themselves after being deceived.",
+      authorized: "Customer reports they entered and sent the payment themselves.",
       unspecified: "",
     }[facts.authorization.value];
     f({ text: label, category: "customer_statement", evidenceRefs: [facts.authorization.statementRef], status: "unverified", contradictions: [] });
@@ -134,40 +174,50 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
   }
 
   // ---- Open questions ----
+  // Customer-facing wording asks about actions and never asks for a legal classification
+  // ("was it authorized?"). Reviewer-facing questions are never read to the customer.
   if (input.statements.length === 0) {
-    q("missing_transaction_details", "Please describe what happened: the amount, the date, and the merchant or recipient of the payment you are disputing.", []);
+    q("narrative", "narrative", "Please tell me what happened, starting with when you were contacted or first noticed a problem.", []);
   }
   if (input.bankFetch.status === "error") {
-    q("evidence_unavailable", `Bank records could not be retrieved (${input.bankFetch.error}). Retry retrieval before matching.`, [], true);
+    q("evidence_unavailable", "evidence_unavailable", `Bank records could not be retrieved (${input.bankFetch.error}). Retry retrieval before matching.`, [], { audience: "reviewer" });
   }
   for (const c of facts.conflicts) {
     const refs = [...new Set(c.values.map((v) => v.statementRef))];
-    q("conflict", `Your statements give different ${c.field} values (${c.values.map((v) => `${v.statementRef}: ${v.value}`).join("; ")}). Which is correct?`, refs);
+    const values = [...new Set(c.values.map((v) => v.value))];
+    const text = {
+      amount: `I have more than one amount noted: ${values.map((x) => usd(Number(x))).join(" and ")}. Which is the amount of the payment you're disputing, or were these different payments?`,
+      date: `I have more than one date noted: ${values.join(" and ")}. Which date is right?`,
+      authorization: "I want to make sure I have this right. Did you personally enter and send this payment, or did someone else do that?",
+      credentialSharing: "I want to make sure I have this right. Before this payment, did anyone ask you for a code, a password, or card details? Please don't tell me the code or number itself.",
+    }[c.field];
+    q("conflict", `conflict:${c.field}`, text, refs);
   }
   if (input.statements.length > 0) {
     const multiAmount = input.statements.find((s) => (s.interpretation?.amounts.length ?? 0) > 1);
-    if (multiAmount) q("multiple_amounts", `Statement ${multiAmount.ref} mentions more than one amount. Which single payment are you disputing?`, [multiAmount.ref]);
+    if (multiAmount) q("multiple_amounts", `multiple_amounts:${multiAmount.ref}`, `You mentioned more than one amount (${multiAmount.interpretation!.amounts.map(usd).join(", ")}). Which single payment are you disputing?`, [multiAmount.ref]);
 
     if (input.bankFetch.status === "ok") {
       switch (match.outcome) {
         case "insufficient_facts":
-          q("missing_transaction_details", "What was the amount and date of the payment, and who was it to?", input.statements.map((s) => s.ref));
+          q("missing_transaction_details", "details", "What was the amount and date of the payment, and who was it to?", input.statements.map((s) => s.ref));
           break;
         case "no_match":
-          q("no_match", "No transaction on the account matches the details provided. Can you double-check the amount and date?", facts.amounts.map((a) => a.statementRef));
+          q("no_match", "no_match", "I couldn't find a payment on the account with those details. Could you double-check the amount and the date?", facts.amounts.map((a) => a.statementRef));
           break;
         case "ambiguous": {
+          const refs = match.candidates.map((c) => c.txnRef);
           const list = match.candidates.map((c) => {
             const t = txnByRef.get(c.txnRef);
             return t ? `${t.date ?? "?"} ${usd(t.amount)} ${t.merchantName ?? t.description ?? ""}`.trim() : c.txnRef;
           });
-          q("ambiguous_match", `Several transactions could match: ${list.join(" | ")}. Which one are you disputing (date or merchant)?`, match.candidates.map((c) => c.txnRef));
+          q("ambiguous_match", `ambiguous:${[...refs].sort().join(",")}`, `I see more than one payment that could match: ${list.join("; ")}. Which one are you disputing?`, refs);
           break;
         }
         case "tentative": {
           const c = match.candidates[0]!;
           const t = txnByRef.get(c.txnRef);
-          q("tentative_match", `Is this the payment you mean: ${t ? `${t.date ?? "?"} ${usd(t.amount)} ${t.merchantName ?? ""}` : c.txnRef}?${c.contradictions.length ? ` (Note: ${c.contradictions.join("; ")})` : ""}`, [c.txnRef]);
+          q("tentative_match", `tentative:${c.txnRef}`, `Is this the payment you mean: ${t ? `${usd(t.amount)} on ${t.date ?? "an unknown date"}${t.merchantName ? ` at ${t.merchantName}` : ""}` : c.txnRef}?`, [c.txnRef]);
           break;
         }
         default:
@@ -175,10 +225,17 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
       }
     }
     if (!facts.authorization && !facts.conflicts.some((c) => c.field === "authorization")) {
-      q("authorization", "Did you make or approve this payment yourself (even if you were tricked into it), or was it made without your permission?", input.statements.map((s) => s.ref));
+      q("initiation", "initiation", "Did you personally enter and send this payment, or did someone else do that?", input.statements.map((s) => s.ref));
     }
-    if (facts.authorization?.value === "denies_authorization" && !facts.credentialSharing) {
-      q("credential_sharing", "Did you share your card number, PIN, password, or a one-time code with anyone before this payment?", [facts.authorization.statementRef], false);
+    if (facts.authorization?.value === "denies_authorization" && !facts.credentialSharing && !facts.conflicts.some((c) => c.field === "credentialSharing")) {
+      q("credential_sharing", "credentials", "Before this payment, did anyone ask you for a code, a password, or card details? Please don't tell me the code or number itself, just what kind it was.", [facts.authorization.statementRef], { blocking: false });
+    }
+    if (facts.credentialSharing?.value === "shared" && !answered("code_purpose")) {
+      q("code_purpose", "code_purpose", "What did they tell you the code or details would be used for?", [facts.credentialSharing.statementRef], { blocking: false });
+    }
+    const auth = facts.authorization?.value;
+    if ((auth === "authorized" || auth === "authorized_induced") && !answered("payment_purpose")) {
+      q("payment_purpose", "payment_purpose", "What did you understand that payment was for, or who did you believe you were paying?", [facts.authorization!.statementRef], { blocking: false });
     }
   }
 
@@ -199,9 +256,10 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
     if (msgs.length > 0) {
       q(
         "identity_review",
+        `identity_review:${persona}`,
         `The identity check for linked test persona ${persona} returned ${msgs.length} issue(s). A reviewer should assess identity separately; this is not evidence that the claim is false.`,
         [result.ref, ...msgs.map((m) => m.ref)],
-        false,
+        { blocking: false, audience: "reviewer" },
       );
     }
   }
@@ -209,7 +267,7 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
   const considerations =
     input.statements.length > 0
       ? assessConsiderations({
-          facts,
+          facts: considerationFacts,
           match,
           matchedTxn,
           mentionsWire: (() => {
@@ -221,6 +279,10 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
 
   // ---- Validate all findings (rule-based + model-proposed) ----
   const { accepted, rejected } = partitionFindings([...ruleFindings, ...(input.proposedFindings ?? [])], index);
+
+  // ---- Order questions (stable within a priority) and number them for display ----
+  questions.sort((a, b) => a.priority - b.priority);
+  questions.forEach((x, i) => (x.id = `Q${i + 1}`));
 
   // ---- Recommendation & stage ----
   const blocking = questions.filter((x) => x.blocking);
@@ -242,7 +304,7 @@ export function analyzeCase(input: CaseInput): CaseAnalysis {
     recommendation = repeatedConflict
       ? { action: "escalate", rationale: "Multiple unresolved conflicts between customer statements; route to a human investigator.", blockingQuestionIds: blocking.map((x) => x.id) }
       : { action: "request_clarification", rationale: "Open questions must be answered before the claim can be assessed.", blockingQuestionIds: blocking.map((x) => x.id) };
-  } else if (facts.authorization?.value === "authorized_induced") {
+  } else if (customerSentAfterDeception) {
     stage = "human_review";
     recommendation = { action: "escalate", rationale: "Customer-initiated payment after reported deception. Requires specialist scam review; not automatically reimbursable.", blockingQuestionIds: [] };
   } else if (facts.authorization?.value === "denies_authorization" && match.outcome === "clear") {

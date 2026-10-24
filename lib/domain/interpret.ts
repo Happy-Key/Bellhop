@@ -29,12 +29,39 @@ function isoDate(y: number, m: number, d: number): string | null {
   return `${y}-${pad(m)}-${pad(d)}`;
 }
 
+const NUM = String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)`;
+const AMOUNT_PATTERNS: Array<{ re: RegExp; value: (m: RegExpMatchArray) => number }> = [
+  // "24 dollars and 99 cents", "24 dollars 99 cents"
+  { re: new RegExp(String.raw`\b(${NUM})\s*dollars?\s*(?:and\s*)?(\d{1,2})\s*cents?\b`, "gi"), value: (m) => Number(m[1]!.replace(/,/g, "")) + Number(m[2]) / 100 },
+  // "$19.99", "$ 1,250"
+  { re: new RegExp(String.raw`\$\s?(${NUM}(?:\.\d{1,2})?)`, "g"), value: (m) => Number(m[1]!.replace(/,/g, "")) },
+  // "20 dollars", "20 bucks", "20 USD"
+  { re: new RegExp(String.raw`\b(${NUM}(?:\.\d{1,2})?)\s?(?:dollars?|usd|bucks)\b`, "gi"), value: (m) => Number(m[1]!.replace(/,/g, "")) },
+  // Bare decimals in a money context, as speech-to-text writes them: "a bill for 19.99"
+  {
+    re: new RegExp(String.raw`\b(?:charge[sd]?|bill(?:ed)?|payments?|paid|pay|sent|send|amount|for|cost|transfer(?:red)?|purchased?|spent|took|withdrew|withdrawal|of)\s+(?:about\s+|around\s+|roughly\s+)?(${NUM}\.\d{2})\b`, "gi"),
+    value: (m) => Number(m[1]!.replace(/,/g, "")),
+  },
+];
+
+/**
+ * Amounts the customer reports. An amount directly preceded by "not" is the one being
+ * corrected ("24.99, not 19.99") and is left out.
+ */
 export function extractAmounts(text: string): number[] {
+  const hits: { start: number; end: number; value: number }[] = [];
+  for (const { re, value } of AMOUNT_PATTERNS) {
+    for (const m of text.matchAll(re)) {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      if (hits.some((h) => start < h.end && end > h.start)) continue; // overlaps a more specific pattern
+      hits.push({ start, end, value: value(m) });
+    }
+  }
   const found: number[] = [];
-  const re = /\$\s?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)|\b((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)\s?(?:dollars|usd)\b/gi;
-  for (const m of text.matchAll(re)) {
-    const raw = (m[1] ?? m[2] ?? "").replace(/,/g, "");
-    const n = Number(raw);
+  for (const h of hits.sort((a, b) => a.start - b.start)) {
+    if (/\bnot\s+(?:the\s+|a\s+)?$/i.test(text.slice(Math.max(0, h.start - 12), h.start))) continue;
+    const n = Math.round(h.value * 100) / 100;
     if (Number.isFinite(n) && n > 0 && !found.includes(n)) found.push(n);
   }
   return found.slice(0, 10);
@@ -139,9 +166,16 @@ export function classifyCredentialSharing(text: string): CredentialSharing {
   return "unspecified";
 }
 
-/** Heuristic: statements starting with "correction" / "actually" / "sorry, I meant" are corrections. */
+/**
+ * Heuristic: statements starting with "correction" / "actually" / "sorry, I meant" / "no, it was",
+ * or containing "I misspoke" / "not X like I said", are corrections.
+ */
 export function looksLikeCorrection(text: string): boolean {
-  return /^\s*(?:correction\b|actually\b|sorry,?\s+(?:i|it)\s+(?:meant|was)|i\s+meant\b|let me correct)/i.test(text);
+  return (
+    /^\s*(?:correction\b|actually\b|sorry,?\s+(?:i|it)\s+(?:meant|was)|i\s+meant\b|let me correct|no,?\s+(?:it|that)\s+(?:was|is)\b)/i.test(text) ||
+    /\bI\s+misspoke\b/i.test(text) ||
+    /\bnot\s+[^!?;]{0,40}?\b(?:like|as)\s+I\s+(?:said|mentioned|told you)\b/i.test(text)
+  );
 }
 
 export function interpretStatementScripted(text: string, receivedAt: number): StatementInterpretation {

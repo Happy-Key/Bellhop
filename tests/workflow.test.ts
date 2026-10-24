@@ -9,10 +9,10 @@ const input = (over: Partial<CaseInput>): CaseInput => ({ statements: [], transa
 describe("workflow analysis", () => {
   beforeEach(resetStatements);
 
-  it("starts at intake and asks for details", () => {
+  it("starts at intake with the open narrative question", () => {
     const a = analyzeCase(input({}));
     expect(a.stage).toBe("intake");
-    expect(a.questions[0]?.kind).toBe("missing_transaction_details");
+    expect(a.questions[0]).toMatchObject({ kind: "narrative", text: "Please tell me what happened, starting with when you were contacted or first noticed a problem." });
   });
 
   it("does not match before bank evidence is retrieved (missing evidence)", () => {

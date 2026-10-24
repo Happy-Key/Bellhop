@@ -16,12 +16,14 @@ export const linkPersona = mutation({
     const persona = getCrsPersona(personaId);
     if (!persona) throw new Error(`unknown CRS test persona ${personaId}`);
     if (c.crsPersonaId === persona.id) return;
-    // Evidence about a previously linked persona no longer describes this case's subject.
+    // Evidence about a previously linked persona no longer describes this case's subject. It is
+    // superseded, not deleted, so the case keeps its provenance.
     let removed = 0;
+    const now = Date.now();
     const existing = await ctx.db.query("providerEvidence").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect();
     for (const e of existing) {
-      if (e.provider === "crs") {
-        await ctx.db.delete(e._id);
+      if (e.provider === "crs" && e.supersededAt === undefined) {
+        await ctx.db.patch(e._id, { supersededAt: now, supersededReason: `persona ${c.crsPersonaId ?? "?"} replaced by ${persona.id}` });
         removed++;
       }
     }
@@ -31,7 +33,7 @@ export const linkPersona = mutation({
       caseId,
       "human",
       "crs_persona_linked",
-      `CRS test persona ${persona.id} linked${c.crsPersonaId ? ` (replacing ${c.crsPersonaId}; ${removed} earlier CRS evidence row(s) removed)` : ""}. SYNTHETIC association: CRS identities and Nessie customers are separate datasets.`,
+      `CRS test persona ${persona.id} linked${c.crsPersonaId ? ` (replacing ${c.crsPersonaId}; ${removed} earlier CRS evidence row(s) superseded and kept as history)` : ""}. SYNTHETIC association: CRS identities and Nessie customers are separate datasets.`,
     );
     await recomputeAnalysis(ctx, caseId);
   },
@@ -95,9 +97,13 @@ export const storeIdentityEvidence = internalMutation({
   },
   handler: async (ctx, { caseId, personaId, rows }) => {
     const now = Date.now();
-    // Replace earlier results for the same persona so one check is shown at a time.
+    // Earlier results for the same persona are superseded (kept as history) so one check is current at a time.
     const existing = await ctx.db.query("providerEvidence").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect();
-    for (const e of existing) if (e.provider === "crs" && e.ref.startsWith(`X:crs:${personaId}:`)) await ctx.db.delete(e._id);
+    for (const e of existing) {
+      if (e.provider === "crs" && e.supersededAt === undefined && e.ref.startsWith(`X:crs:${personaId}:`)) {
+        await ctx.db.patch(e._id, { supersededAt: now, supersededReason: "replaced by a newer identity check" });
+      }
+    }
     for (const r of rows) await ctx.db.insert("providerEvidence", { caseId, retrievedAt: now, ...r });
     await logActivity(ctx, caseId, "crs:live", "identity_evidence_retrieved", `LIVE CRS sandbox identity check for test persona ${personaId}: ${rows[0]?.value ?? "no result"}.`);
     await recomputeAnalysis(ctx, caseId);

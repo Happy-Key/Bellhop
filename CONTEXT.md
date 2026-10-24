@@ -5,7 +5,7 @@
 > Details live in `docs/status.md` (checklist), `docs/integrations.md` (verified provider
 > facts), `docs/architecture.md` (design), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-23_
+_Last updated: 2026-10-24_
 
 ## What this is
 
@@ -35,7 +35,8 @@ Rules that always hold:
 | Regulatory considerations | ✅ Curated official sources (Reg E and CFPB), scenario-scoped, no deadline math. 3 excerpts need word-for-word verification |
 | Developer agent (Factory Droid) | ❌ Not started |
 | Simulated reimbursement | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, 74 unit tests, production build all pass |
+| Checks | ✅ `npm run verify`: typecheck, lint, 99 unit tests, production build all pass (2026-10-24) |
+| Backend consistency fixes | ✅ Mock-tested 2026-10-24, **not yet pushed or run live** (see "What needs to be added" item 1) |
 
 ## What works today (end to end)
 
@@ -85,7 +86,7 @@ Rules that always hold:
 - **Reasoning provider.**
   - The Cartesia agent's LLM only runs the voice conversation.
   - Case reasoning sits behind one swappable interface in Convex.
-  - The live candidate is Bitdeer (OpenAI-compatible), pending your decision.
+  - No live provider is chosen. Bitdeer was dropped from the stack (2026-10-24).
   - There's never a silent fallback to scripted mode.
 - **CRS safety.**
   - Only CRS-published persona request bodies are sent, so no request is billable.
@@ -93,7 +94,22 @@ Rules that always hold:
 
 ## What needs to be added (priority order)
 
-1. **Voice quality** (from the live browser test, 2026-10-24; case `jx72bbhya9tfz6ctaw67rt28sh8gxa6n`, S1–S7):
+1. **Live-test the consistency fixes (2026-10-24).** Mock-tested only. They address every item in the
+   voice-quality list below:
+   - Spoken amounts ("24 dollars and 99 cents", "a bill for 19.99"); "not X" drops the corrected amount.
+   - Answers linked to the question asked (`inResponseTo`). Short replies are read against it (rule-based).
+   - One question per turn, with `question_id`. "Yes." to different questions is no longer deduplicated.
+   - No question is asked more than twice per call; after that it goes to a reviewer.
+   - The legal "did you authorize?" question is replaced by "Did you personally enter and send this
+     payment, or did someone else do that?"
+   - Corrections link to the statement that gave the value.
+   - Live interpretation: stale-attempt guard, plus a bounded 4.5 s wait in the webhook.
+   - Card numbers and codes are removed before storage. Evidence is superseded, never deleted.
+   - `recommended_action` is no longer sent to the agent.
+   - Steps: push with `npx convex dev`, re-register the tool, paste the new agent instructions
+     (`docs/integrations.md`), then make one live call.
+
+   **Original voice-quality notes** (from the live browser test, 2026-10-24; case `jx72bbhya9tfz6ctaw67rt28sh8gxa6n`, S1–S7):
    - **Spoken amounts are missed.** `extractAmounts` (`lib/domain/interpret.ts:32`) only matches `$19.99`
      or "19.99 dollars".
      - "a bill for 19.99" gave `[]` (S3).
@@ -119,8 +135,8 @@ Rules that always hold:
    - **Still to do:** the welcome message and the rest of the Playground instructions. Lower the
      inactivity timeout. Add a login or rate limit before sharing the app URL (starting a call is
      public and billed).
-2. **Live reasoning.** Decide on Bitdeer, claim its credits, set the `REASONING_*`
-   variables, and run the first live test.
+2. **Live reasoning.** No provider is chosen (Bitdeer dropped 2026-10-24). Interpretation stays scripted
+   plus the rule-based answer reader. Adding a provider later needs only the `REASONING_*` env vars.
 3. **Simulated reimbursement.** A Nessie deposit labelled SIMULATED, with explicit human
    approval and protection against running twice.
 4. **Factory Droid loop.**
@@ -133,10 +149,19 @@ Rules that always hold:
 
 ## Waiting on you
 
+- **Claim-intake redesign:** decisions recorded 2026-10-24 (`docs/claim-intake-design.md` section I).
+  - Consumers file claims; the software is an extension of the bank.
+  - Cases can hold several payments; labelled deadline estimates and both screens are allowed.
+  - Credit cards get full support. Demo login now, bank SSO later. Keep the 3-minute cap.
+  - Calls are transcribed only, with consent and an AI notice on every call. Bitdeer is removed.
+  - Still for you: check Cartesia's retention settings so audio isn't kept.
+- **Voice fixes go-live:** run `npx convex dev` (pushes the new schema and functions to cloud dev),
+  then `npx convex run voiceSetup:registerVoiceTool`, then paste the updated agent instructions from
+  `docs/integrations.md` into the Playground.
+
 - **Cartesia:** tune the Playground prompt (repetition) and lower the inactivity timeout. The balance
   is about $0.86 until the promo code is applied; the last call cost $0.05. Re-run
   `voiceSetup:registerVoiceTool` whenever the tool definition changes.
-- **Reasoning:** decide whether to claim Bitdeer credits.
 - **Factory:** API key and `droid` CLI install, when we reach that step.
 - **Housekeeping:**
   - Rotate the CRS password at some point; it was pasted in chat.
@@ -174,4 +199,7 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | First live voice test passed (Playground → webhook tool → Convex → dashboard). Found `end_call` not enabled; usage recorded |
 | 2026-10-24 | Committed and pushed tool registration (`ed41f61`). Browser call client built: `components/VoiceCall.tsx` + `lib/voice/`, 9 new tests; not run live |
 | 2026-10-24 | Live browser call failed: `dynamic_variables_not_allowed` for browser tokens. Switched to binding by call ID (`bindVoiceCall`, tool sends `system__conversation_id`); 74 tests pass; tool needs re-registering |
+| 2026-10-24 | Decisions on the 13 questions recorded. CLAUDE.md scope widened; Bitdeer removed from docs and code comments; CFPB FAQ excerpt in `regulatory.ts` replaced with word-for-word quotes (user-approved); Nessie deposits read probe (200, empty); consent and AI notice added to the agent instructions |
+| 2026-10-24 | Backend consistency fixes: question keys, audience and priority; answers linked to questions; `question_id` voice flow; no-repeat; stale-attempt guard; bounded interpretation wait; redaction on ingest; append-only evidence; correction targeting; spoken amounts; action-based initiation question. 99 tests pass; not pushed or run live |
+| 2026-10-24 | Design proposal `docs/claim-intake-design.md`: fact model, adaptive voice intake, reimbursement and legal-review screens, rule registry, phased plan. No code changed; Reg E 1005.6(b), 1005.11 and CFPB EFT FAQs re-checked live. Awaiting decisions in its section I |
 | 2026-10-24 | **Live browser voice call worked** (call-ID binding confirmed: `system__conversation_id` = `session_ready.call_id`); End call works; $0.05. Logged issues: spoken amounts and cents missed, answers lack the agent's question, agent repeats itself, voice corrections unlinked |

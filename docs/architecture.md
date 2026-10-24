@@ -80,9 +80,30 @@ Rejected findings are shown in the UI and logged.
 ## Idempotency
 
 - Text: the browser generates `clientEventId` per submit, keyed as `text:<case>:<id>`.
-- Voice: the key is `voice:<session>:sha256(turn_id or normalized utterance)`.
-- `processedEvents` stores each key. A replay returns the original statement ref with
-  `duplicate: true`.
+- Voice: the key is `voice:<call>:<question turn>:sha256(normalized utterance)`. The question turn
+  is the `question_id` the agent echoed (accepted only if issued on this call), else the last one
+  issued. "Yes." to two different questions is two statements.
+- `processedEvents` stores each key, and for voice the full tool response. A replay returns the
+  original response with `duplicate: true`.
+
+## Statement intake (both channels)
+
+- **Sensitive values are removed before storage** (`lib/domain/redact.ts`): Luhn-valid card
+  numbers, codes or PINs next to a keyword, passwords, SSNs. Only the kind is kept
+  (`statements.redactions`).
+- **Answers carry their question.** A voice statement stores `inResponseTo` (the question issued on
+  the call) and a rule-based `answer` read against it (`lib/domain/answers.ts`): "me" / "someone
+  else" / "yes, that one" / "I don't know". `unknown` and `declined` are answers: the question is not
+  asked again, and a blocking one goes to a reviewer.
+- **Questions** have a stable `key`, an `audience` (customer or reviewer) and a `priority`. Customer
+  wording asks about actions ("Did you personally enter and send this payment, or did someone else
+  do that?"), never for a legal classification.
+- **Auto-linked corrections** point at the latest earlier statement that gave a value for the same
+  field, not blindly at the previous one.
+- **Live interpretation attempts** carry an `attemptId`. Only the statement's current attempt may
+  write a result or a failure; anything else is logged as `stale_result_discarded`.
+- **Evidence is append-only.** A changed Nessie record and replaced CRS results get `supersededAt`
+  and stay in `cases.view().history`; nothing is deleted.
 
 ## Voice
 
@@ -90,8 +111,12 @@ Rejected findings are shown in the UI and logged.
 - Cartesia Managed Agent → webhook tool → Convex HTTP action. Only finalized utterances
   arrive, because the tool is invoked by the agent after a turn and not on partial
   transcripts.
-- The tool response returns the backend's blocking questions, so the agent asks what the
-  workflow needs rather than inventing its own.
+- The tool response returns **one** backend-chosen question (`question`, `question_id`), so the
+  agent asks what the workflow needs rather than inventing its own. Each issued question is logged
+  in `intakeTurns`; one asked twice on a call without being settled is handed to a reviewer.
+- With live reasoning, the endpoint waits up to `VOICE_INTERPRETATION_WAIT_MS` (default 4.5 s)
+  for the new statement's interpretation, then answers `awaiting_interpretation: true` with an
+  acknowledgement rather than a question that may already be answered.
 - Browser call client: `components/VoiceCall.tsx` on the case page, using `lib/voice/` (pure PCM and
   protocol helpers).
   - Steps: microphone permission, then `voice.createVoiceSession`, then `voice.createCartesiaAccessToken`

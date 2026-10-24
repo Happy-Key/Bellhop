@@ -26,8 +26,11 @@ Legend: [x] done and tested · [~] implemented, not yet verified live · [ ] not
 - [x] Found live: browser tokens can't send dynamic variables. Switched to call-ID binding (`voice:bindVoiceCall` + `system__conversation_id`); tested with convex-test; tool must be re-registered
 - [x] `end_call` system tool enabled (works live)
 - [ ] Lower the inactivity timeout; finish the welcome message and prompt
-- [ ] Voice quality: spoken amounts and cents, agent-question context on answers, repetition, voice corrections
-- [~] OpenAI-compatible live reasoning provider (mock-tested; Bitdeer credits not claimed)
+- [x] Voice quality fixes (2026-10-24, mock-tested; not yet run live): spoken amounts and cents; answers linked to the question asked (`inResponseTo`, rule-based answer reading); one question per turn with `question_id`; no question more than twice per call; correction targeting; stale-attempt guard; bounded wait for live interpretation
+- [x] Sensitive values removed before storage; evidence history kept (superseded, not deleted)
+- [ ] Re-register the tool and paste the updated agent instructions (`docs/integrations.md`), then test live
+- [ ] Claim-intake redesign (`docs/claim-intake-design.md`): waiting on decisions
+- [~] Generic OpenAI-compatible live reasoning provider (mock-tested; no provider chosen; Bitdeer dropped 2026-10-24)
 
 ## Phase 4: CRS evidence
 - [x] Login once, reuse the token, lock on failure (`npx convex run crsData:unlockLogin` to clear)

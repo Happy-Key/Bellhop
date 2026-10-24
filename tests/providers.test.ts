@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NessieClient, retrieveAccountTransactions } from "@/lib/providers/nessie";
 import { OpenAICompatibleReasoningProvider } from "@/lib/providers/reasoning";
 import { ProviderError, redact, type FetchLike } from "@/lib/providers/errors";
-import { voiceIdempotencyKey } from "@/lib/domain/idempotency";
+import { voiceIdempotencyKey, voiceUtteranceKey } from "@/lib/domain/idempotency";
 
 const ACCOUNT = "acc-0000-1111-2222";
 const MERCHANT = "mer-0000-1111-2222-3333-4444";
@@ -104,12 +104,14 @@ describe("redaction and idempotency", () => {
     expect(redact("GET /x?key=abc123&y=1 Bearer sk_car_zzz")).toBe("GET /x?key=[REDACTED]&y=1 Bearer [REDACTED]");
   });
 
-  it("produces stable voice keys for retried events", async () => {
-    const a = await voiceIdempotencyKey("vs_1", "It was  $49 ");
-    const b = await voiceIdempotencyKey("vs_1", "it was $49");
-    const c = await voiceIdempotencyKey("vs_1", "it was $49", "turn-7");
-    expect(a).toBe(b);
-    expect(c).not.toBe(a);
-    expect(await voiceIdempotencyKey("vs_2", "it was $49")).not.toBe(a);
+  it("produces stable voice keys for retried events, scoped to the question answered", async () => {
+    const u = await voiceUtteranceKey("It was  $49 ");
+    expect(await voiceUtteranceKey("it was $49")).toBe(u);
+    expect(await voiceUtteranceKey("it was $49", "turn-7")).not.toBe(u);
+    const a = voiceIdempotencyKey("ac_1", "turnA", u);
+    expect(voiceIdempotencyKey("ac_1", "turnA", u)).toBe(a); // retry
+    expect(voiceIdempotencyKey("ac_1", "turnB", u)).not.toBe(a); // same words, different question
+    expect(voiceIdempotencyKey("ac_2", "turnA", u)).not.toBe(a);
+    expect(voiceIdempotencyKey("ac_1", null, u)).toBe(`voice:ac_1:start:${u}`);
   });
 });

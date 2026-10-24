@@ -33,12 +33,13 @@ function fakeCartesia(state: { tools: { id: string; name: string }[]; agentTools
 }
 
 describe("record_statement tool definition", () => {
-  it("fills call_id from Cartesia's system variable and only asks the model for the utterance", () => {
+  it("fills call_id from Cartesia's system variable; the model supplies only the utterance and an optional question_id echo", () => {
     const def = buildRecordStatementTool(URL_, SECRET);
     const body = def.api_schema.request_body_schema as { properties: Record<string, Record<string, unknown>>; required: string[] };
     expect(def).toMatchObject({ type: "webhook", name: "record_statement", execution_mode: "immediate", api_schema: { url: URL_, method: "POST" } });
-    expect(Object.keys(body.properties).sort()).toEqual(["call_id", "utterance"]);
+    expect(Object.keys(body.properties).sort()).toEqual(["call_id", "question_id", "utterance"]);
     expect(body.properties.call_id).toEqual({ type: "string", dynamic_variable: "system__conversation_id" });
+    expect(body.properties.question_id).not.toHaveProperty("dynamic_variable");
     expect(body.required).toEqual(["utterance"]);
     expect(def.api_schema.authentication).toEqual({ mode: "bearer", token: { type: "secret", secret_description: "VOICE_TOOL_SECRET", secret_value: SECRET } });
   });

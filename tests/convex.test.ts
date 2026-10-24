@@ -1,8 +1,9 @@
 // @vitest-environment edge-runtime
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import schema from "../convex/schema";
 import { api, internal } from "../convex/_generated/api";
+import { AWAITING_PROMPT } from "../lib/domain/voiceTurn";
 
 const modules = import.meta.glob("../convex/**/*.*s");
 
@@ -58,9 +59,9 @@ describe("Convex case workflow", () => {
     const t = convexTest(schema, modules);
     const caseId = await t.mutation(api.cases.createSynthetic, {});
     const { token } = await t.mutation(api.voice.createVoiceSession, { caseId });
-    const a = await t.mutation(internal.voice.recordVoiceUtterance, { sessionToken: token, utterance: "I didn't make a $49 charge", idempotencyKey: "voice:k1" });
-    const b = await t.mutation(internal.voice.recordVoiceUtterance, { sessionToken: token, utterance: "I didn't make a $49 charge", idempotencyKey: "voice:k1" });
-    const bad = await t.mutation(internal.voice.recordVoiceUtterance, { sessionToken: "vs_unknown", utterance: "hi", idempotencyKey: "voice:k2" });
+    const a = await t.mutation(internal.voice.recordVoiceUtterance, { sessionToken: token, utterance: "I didn't make a $49 charge", utteranceKey: "k1" });
+    const b = await t.mutation(internal.voice.recordVoiceUtterance, { sessionToken: token, utterance: "I didn't make a $49 charge", utteranceKey: "k1" });
+    const bad = await t.mutation(internal.voice.recordVoiceUtterance, { sessionToken: "vs_unknown", utterance: "hi", utteranceKey: "k2" });
     expect(a).toMatchObject({ ok: true, ref: "S1", duplicate: false });
     expect(b).toMatchObject({ ok: true, ref: "S1", duplicate: true });
     expect(bad).toEqual({ ok: false, error: "unknown or expired voice session" });
@@ -99,12 +100,157 @@ describe("Convex case workflow", () => {
       await t.mutation(api.voice.bindVoiceCall, { sessionToken: token, callId: "ac_cccccccccc" });
       const ok = await post({ call_id: "ac_cccccccccc", utterance: "I didn't make a $49 charge" });
       expect(ok.status).toBe(200);
-      expect(await ok.json()).toMatchObject({ recorded: "S1", duplicate: false });
+      const body = await ok.json();
+      expect(body).toMatchObject({ recorded: "S1", duplicate: false, awaiting_interpretation: false });
+      expect(body).not.toHaveProperty("recommended_action");
       const view = await t.query(api.cases.view, { caseId });
       expect(view?.statements.map((s) => [s.ref, s.channel])).toEqual([["S1", "voice"]]);
     } finally {
       delete process.env.VOICE_TOOL_SECRET;
     }
+  });
+
+  it("asks one question at a time, links answers to it, and never repeats a question more than twice", async () => {
+    process.env.VOICE_TOOL_SECRET = "test-secret";
+    try {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      const fields = { provider: "nessie" as const, kind: "purchase" as const, description: null, merchantId: null, status: "executed", medium: "balance" };
+      await t.mutation(internal.cases.storeTransactions, {
+        caseId,
+        transactions: [
+          { ...fields, ref: "T:g-1", externalId: "g-1", amount: 49, date: "2026-10-19", merchantName: "FCI Demo GiftCard Hub" },
+          { ...fields, ref: "T:c-1", externalId: "c-1", amount: 49, date: "2026-10-20", merchantName: "FCI Demo Bean Coffee" },
+        ],
+        warnings: [],
+      });
+      const { token } = await t.mutation(api.voice.createVoiceSession, { caseId });
+      await t.mutation(api.voice.bindVoiceCall, { sessionToken: token, callId: "ac_dddddddddd" });
+      const say = async (utterance: string, question_id?: string | null) =>
+        (await t.fetch("/voice/tools/record-statement", {
+          method: "POST",
+          headers: { Authorization: "Bearer test-secret", "Content-Type": "application/json" },
+          body: JSON.stringify({ call_id: "ac_dddddddddd", utterance, ...(question_id ? { question_id } : {}) }),
+        })).json() as Promise<{ recorded: string; duplicate: boolean; question_id: string | null; question: string | null; next_questions: string[] }>;
+
+      const r1 = await say("There's a $49 charge I don't recognize");
+      expect(r1.question).toMatch(/more than one payment/);
+      expect(r1.next_questions).toEqual([r1.question]);
+
+      const r2 = await say("The gift card one, at GiftCard Hub", r1.question_id);
+      expect(r2.question).toMatch(/did anyone ask you for a code/);
+
+      const r3 = await say("Yes.", r2.question_id);
+      expect(r3.recorded).toBe("S3");
+      expect(r3.question).toBe("What did they tell you the code or details would be used for?");
+
+      // Same words, different question: a new statement, not a duplicate.
+      const r4 = await say("Yes.", r3.question_id);
+      expect(r4).toMatchObject({ recorded: "S4", duplicate: false });
+      // A retry of that call returns the same response.
+      const retry = await say("Yes.", r3.question_id);
+      expect(retry).toEqual({ ...r4, duplicate: true });
+      // "Yes." does not answer an open question, so it is asked once more, then handed to a reviewer.
+      expect(r4.question).toBe(r3.question);
+      const r5 = await say("Okay.", r4.question_id);
+      expect(r5.question).toBeNull();
+      // An unknown or foreign question_id is ignored, not trusted.
+      expect((await say("Nothing else", "not-a-real-id")).recorded).toBe("S6");
+
+      const view = await t.query(api.cases.view, { caseId });
+      const byRef = new Map(view!.statements.map((s) => [s.ref, s]));
+      expect(byRef.get("S2")?.inResponseTo?.key).toBe("ambiguous:T:c-1,T:g-1");
+      expect(byRef.get("S3")?.answer).toMatchObject({ key: "credentials", state: "answered", derived: { credentialSharing: "shared" } });
+      expect(byRef.get("S4")?.inResponseTo?.key).toBe("code_purpose");
+      expect((view?.case.analysis as { match: { matchedRef: string } }).match.matchedRef).toBe("T:g-1");
+      expect(view?.activity.some((a) => a.kind === "question_handed_to_reviewer")).toBe(true);
+    } finally {
+      delete process.env.VOICE_TOOL_SECRET;
+    }
+  });
+
+  it("tells the agent to acknowledge, not ask, while a live interpretation is pending", async () => {
+    vi.useFakeTimers();
+    Object.assign(process.env, { VOICE_TOOL_SECRET: "test-secret", REASONING_PROVIDER: "openai-compatible", VOICE_INTERPRETATION_WAIT_MS: "0" });
+    try {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      const { token } = await t.mutation(api.voice.createVoiceSession, { caseId });
+      const res = await t.fetch("/voice/tools/record-statement", {
+        method: "POST",
+        headers: { Authorization: "Bearer test-secret", "Content-Type": "application/json" },
+        body: JSON.stringify({ session_token: token, utterance: "I didn't make a $49 charge" }),
+      });
+      expect(await res.json()).toMatchObject({ recorded: "S1", awaiting_interpretation: true, question_id: null, question: AWAITING_PROMPT });
+    } finally {
+      for (const k of ["VOICE_TOOL_SECRET", "REASONING_PROVIDER", "VOICE_INTERPRETATION_WAIT_MS"]) delete process.env[k];
+      vi.useRealTimers();
+    }
+  });
+
+  it("applies a live result only from the statement's current attempt", async () => {
+    vi.useFakeTimers();
+    process.env.REASONING_PROVIDER = "openai-compatible";
+    try {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      await t.mutation(api.cases.submitStatement, { caseId, text: "I didn't make a $49 charge", clientEventId: "evt-00000001" });
+      const first = (await t.query(api.cases.view, { caseId }))!.statements[0]!;
+      expect(first.interpretationStatus).toBe("pending");
+      const oldAttempt = first.currentAttemptId!;
+
+      await t.mutation(api.statements.retryLive, { statementId: first._id });
+      const interp = { mode: "live" as const, provider: "m", amounts: [49], dates: [], merchantTerms: [], authorization: "denies_authorization" as const, credentialSharing: "unspecified" as const, scamIndicators: [] };
+      // The superseded attempt's late success and late failure are both discarded.
+      await t.mutation(internal.statements.applyInterpretation, { statementId: first._id, attemptId: oldAttempt, interpretation: interp, proposedFindings: [], followUpQuestion: null });
+      await t.mutation(internal.statements.markInterpretationFailed, { statementId: first._id, attemptId: oldAttempt, error: "timeout" });
+      let s = (await t.query(api.cases.view, { caseId }))!.statements[0]!;
+      expect(s.interpretationStatus).toBe("pending");
+      expect(s.currentAttemptId).not.toBe(oldAttempt);
+
+      await t.mutation(internal.statements.applyInterpretation, { statementId: first._id, attemptId: s.currentAttemptId!, interpretation: interp, proposedFindings: [], followUpQuestion: null });
+      const view = (await t.query(api.cases.view, { caseId }))!;
+      s = view.statements[0]!;
+      expect(s.interpretationStatus).toBe("done");
+      expect(view.activity.filter((a) => a.kind === "stale_result_discarded")).toHaveLength(2);
+    } finally {
+      delete process.env.REASONING_PROVIDER;
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes card numbers and codes before storing or logging a statement", async () => {
+    const t = convexTest(schema, modules);
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(api.cases.submitStatement, { caseId, text: "They took $389. My card is 4111 1111 1111 1111 and the code was 482913", clientEventId: "evt-00000001" });
+    const view = (await t.query(api.cases.view, { caseId }))!;
+    expect(view.statements[0]?.text).toBe("They took $389. My card is [REDACTED:card_number] and the code was [REDACTED:code]");
+    expect(view.statements[0]?.redactions?.sort()).toEqual(["card_number", "code"]);
+    expect(JSON.stringify(view)).not.toMatch(/4111|482913/);
+  });
+
+  it("links an auto-detected correction to the statement that gave that value, not a 'Yes.' in between", async () => {
+    const t = convexTest(schema, modules);
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(api.cases.submitStatement, { caseId, text: "I got a bill for 19.99 I didn't make", clientEventId: "evt-00000001" });
+    await t.mutation(api.cases.submitStatement, { caseId, text: "Yes.", clientEventId: "evt-00000002" });
+    await t.mutation(api.cases.submitStatement, { caseId, text: "It was 24 dollars and 99 cents, not 19 dollars and 99 cents like I said", clientEventId: "evt-00000003" });
+    const view = (await t.query(api.cases.view, { caseId }))!;
+    const s3 = view.statements[2]!;
+    expect(s3.correctsRef).toBe("S1");
+    expect(s3.interpretation?.amounts).toEqual([24.99]);
+    expect((view.case.analysis as { facts: { amounts: { value: number }[] } }).facts.amounts.map((a) => a.value)).toEqual([24.99]);
+  });
+
+  it("keeps the earlier version when a re-retrieved transaction changes", async () => {
+    const t = convexTest(schema, modules);
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    const txn = { ref: "T:p-1", provider: "nessie" as const, externalId: "p-1", kind: "purchase" as const, amount: 389, date: "2026-10-17", description: null, merchantId: null, merchantName: "Volt", status: "pending", medium: "balance" };
+    await t.mutation(internal.cases.storeTransactions, { caseId, transactions: [txn], warnings: [] });
+    await t.mutation(internal.cases.storeTransactions, { caseId, transactions: [{ ...txn, status: "executed" }], warnings: [] });
+    const view = (await t.query(api.cases.view, { caseId }))!;
+    expect(view.transactions.map((x) => x.status)).toEqual(["executed"]);
+    expect(view.history.transactions.map((x) => x.status)).toEqual(["pending"]);
   });
 });
 
@@ -131,7 +277,7 @@ describe("CRS persistence", () => {
 });
 
 describe("CRS persona re-linking", () => {
-  it("removes evidence about the previously linked persona", async () => {
+  it("supersedes evidence about the previously linked persona and keeps it as history", async () => {
     const t = convexTest(schema, modules);
     const caseId = await t.mutation(api.cases.createSynthetic, {});
     await t.mutation(api.crsData.linkPersona, { caseId, personaId: "P12" });
@@ -143,6 +289,7 @@ describe("CRS persona re-linking", () => {
     await t.mutation(api.crsData.linkPersona, { caseId, personaId: "P01" });
     const view = await t.query(api.cases.view, { caseId });
     expect(view?.providerEvidence).toHaveLength(0);
+    expect(view?.history.providerEvidence.map((e) => e.supersededReason)).toEqual(["persona P12 replaced by P01"]);
     expect((view?.case.analysis as { findings: { category: string }[] }).findings.some((f) => f.category === "external_provider")).toBe(false);
   });
 });

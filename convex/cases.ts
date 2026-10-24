@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { logActivity, recomputeAnalysis, recordStatement } from "./model";
+import type { Doc } from "./_generated/dataModel";
+import { currentEvidence, logActivity, recomputeAnalysis, recordStatement } from "./model";
 import { transactionFields } from "./validators";
 import { DEMO_CUSTOMER_LABEL } from "../lib/fixtures/demo";
 
@@ -17,17 +18,18 @@ export const view = query({
   handler: async (ctx, { caseId }) => {
     const c = await ctx.db.get(caseId);
     if (!c) return null;
-    const [statements, transactions, providerEvidence, activity] = await Promise.all([
+    const [statements, evidence, activity] = await Promise.all([
       ctx.db.query("statements").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect(),
-      ctx.db.query("transactions").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect(),
-      ctx.db.query("providerEvidence").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect(),
+      currentEvidence(ctx, caseId),
       ctx.db.query("activity").withIndex("by_case", (q) => q.eq("caseId", caseId)).order("desc").take(200),
     ]);
     return {
       case: { ...c, nessieAccountBound: c.nessieAccountId !== null },
       statements: statements.sort((a, b) => a.receivedAt - b.receivedAt),
-      transactions: transactions.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")),
-      providerEvidence,
+      transactions: evidence.transactions.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")),
+      providerEvidence: evidence.providerEvidence,
+      /** Superseded evidence, kept for provenance. */
+      history: evidence.history,
       activity,
     };
   },
@@ -66,17 +68,24 @@ export const submitStatement = mutation({
   },
   handler: async (ctx, args) => {
     if (!/^[A-Za-z0-9-]{8,64}$/.test(args.clientEventId)) throw new Error("invalid clientEventId");
-    return recordStatement(ctx, {
+    const { duplicate, ref } = await recordStatement(ctx, {
       caseId: args.caseId,
       text: args.text,
       channel: "text",
       idempotencyKey: `text:${args.caseId}:${args.clientEventId}`,
       ...(args.correctsRef ? { correctsRef: args.correctsRef } : {}),
     });
+    return { duplicate, ref };
   },
 });
 
 // ---------- internal functions used by actions ----------
+
+type TransactionFields = Omit<Doc<"transactions">, "_id" | "_creationTime" | "caseId" | "retrievedAt" | "supersededAt">;
+
+function sameTransaction(row: Doc<"transactions">, t: TransactionFields): boolean {
+  return (Object.keys(t) as (keyof TransactionFields)[]).every((k) => row[k] === t[k]);
+}
 
 export const getForAction = internalQuery({
   args: { caseId: v.id("cases") },
@@ -104,16 +113,23 @@ export const storeTransactions = internalMutation({
   handler: async (ctx, { caseId, transactions, warnings }) => {
     const now = Date.now();
     let added = 0;
+    let changed = 0;
     for (const t of transactions) {
-      const existing = await ctx.db.query("transactions").withIndex("by_case_ref", (q) => q.eq("caseId", caseId).eq("ref", t.ref)).unique();
-      if (existing) await ctx.db.patch(existing._id, { ...t, retrievedAt: now });
-      else {
-        await ctx.db.insert("transactions", { caseId, retrievedAt: now, ...t });
-        added++;
+      const rows = await ctx.db.query("transactions").withIndex("by_case_ref", (q) => q.eq("caseId", caseId).eq("ref", t.ref)).collect();
+      const current = rows.find((r) => r.supersededAt === undefined);
+      if (current && sameTransaction(current, t)) {
+        await ctx.db.patch(current._id, { retrievedAt: now });
+        continue;
       }
+      // A changed record (e.g. status pending → posted → reversed) keeps its earlier version as history.
+      if (current) {
+        await ctx.db.patch(current._id, { supersededAt: now });
+        changed++;
+      } else added++;
+      await ctx.db.insert("transactions", { caseId, retrievedAt: now, ...t });
     }
     await ctx.db.patch(caseId, { bankFetch: { status: "ok", at: now, count: transactions.length } });
-    await logActivity(ctx, caseId, "nessie:live", "bank_records_retrieved", `LIVE Nessie retrieval: ${transactions.length} purchase record(s), ${added} new.`);
+    await logActivity(ctx, caseId, "nessie:live", "bank_records_retrieved", `LIVE Nessie retrieval: ${transactions.length} purchase record(s), ${added} new, ${changed} changed (earlier versions kept).`);
     for (const w of warnings) await logActivity(ctx, caseId, "nessie:live", "warning", w);
     await recomputeAnalysis(ctx, caseId);
   },
