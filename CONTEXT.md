@@ -28,7 +28,7 @@ Rules that always hold:
 |---|---|
 | Web app (Next.js 16 + TypeScript) | ✅ Working: plain dashboard at `npm run dev` |
 | Backend (Convex) | ✅ Cloud dev deployment linked (team `maximo-zhang`, project `calhacks`) |
-| Bank records (Capital One Nessie) | ✅ **Live**: synthetic demo account seeded (5 purchases); retrieval verified |
+| Bank records (Capital One Nessie) | ✅ **Live**: synthetic demo account seeded (5 purchases); retrieval verified. The records are our own seeded data; see `docs/data-provenance.md` for what is raw and what is altered |
 | Identity evidence (CRS sandbox) | ✅ **Live**: TransUnion identity check on test personas; verified with P12 (3 issues) and P01 (clean) |
 | Reasoning | ⚠️ **Scripted mode** (deterministic, labelled). Live model provider built but not configured |
 | Voice (Cartesia) | ✅ **Live**: browser call from the case page works end to end (2026-10-24). The call is linked to the case by call ID; statements are recorded through the `record_statement` webhook tool; End call works. Quality issues are open (see below). Agent balance about $0.86 |
@@ -230,3 +230,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Separate personal Convex dev deployment for `client-view` review (user-created; own keys). `VOICE_TOOL_SECRET` generated and set there; `record_statement` tool registered live on a new, separate Cartesia agent |
 | 2026-10-24 | Merged `client-view` into `foundation` (no conflicts); `npm run verify` passes on the merge (100 tests) |
 | 2026-10-24 | Claims workstation `/review` built on branch `bank-dashboard` (new files plus `SiteBanner.tsx`; new read-only `review:queue`; 8 new tests; verify passes). `review:queue` was pushed to the personal review deployment by the user's running `npx convex dev`; 6 synthetic demo cases seeded there (with approval) and browser-tested in Chrome (desktop, 390 px, dark mode, keyboard, live retrieval). Committed and pushed to `origin/bank-dashboard` |
+| 2026-10-24 | `docs/data-provenance.md`: what is raw Nessie data, what we normalize, which statements were seeded (and from where), and what is display-only |
