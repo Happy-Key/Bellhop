@@ -27,3 +27,22 @@ button { font: inherit; padding: 4px 10px; margin: 4px 4px 4px 0; }
 .cc-user { align-self: flex-end; background: #1a73e8; color: #fff; }
 .cc-agent { align-self: flex-start; background: #8882; }
 .cc-speaker { display: block; font-size: 11px; opacity: 0.75; margin-bottom: 2px; }
+
+/* Demo persona picker on /call (DEMO ONLY) */
+.persona-picker { border-style: dashed; border-color: #6b4fbb88; }
+.persona-heading { margin: 0 0 8px; font-size: 14px; }
+.persona-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; }
+.persona-option { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 0; padding: 8px 10px; text-align: left; border: 1px solid #8886; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.persona-option span { font-size: 12px; opacity: 0.75; }
+.persona-option:disabled { cursor: not-allowed; opacity: 0.6; }
+.persona-selected { border-color: #6b4fbb; box-shadow: inset 0 0 0 1px #6b4fbb; background: #6b4fbb14; }
+.persona-notes { margin-top: 8px; font-size: 14px; }
+.persona-notes summary { cursor: pointer; font-weight: 600; }
+.persona-notes ol { margin: 4px 0; padding-left: 20px; }
+.persona-ledger { margin: 6px 0; font-size: 13px; }
+.persona-disputed td { font-weight: 600; }
+button.danger { color: #c62828; border: 1px solid #c6282866; background: transparent; border-radius: 4px; cursor: pointer; }
+button.danger:disabled { opacity: 0.6; cursor: progress; }
+.persona-modes { margin-bottom: 8px; }
+.callback-picker select { max-width: 100%; font: inherit; padding: 4px; }
+.callback-picker p { margin: 6px 0 0; }

@@ -18,6 +18,8 @@ import type * as nessie from "../nessie.js";
 import type * as paymentOrigins from "../paymentOrigins.js";
 import type * as payout from "../payout.js";
 import type * as payoutData from "../payoutData.js";
+import type * as personaSetup from "../personaSetup.js";
+import type * as personas from "../personas.js";
 import type * as proposals from "../proposals.js";
 import type * as reasoning from "../reasoning.js";
 import type * as review from "../review.js";
@@ -44,6 +46,8 @@ declare const fullApi: ApiFromModules<{
   paymentOrigins: typeof paymentOrigins;
   payout: typeof payout;
   payoutData: typeof payoutData;
+  personaSetup: typeof personaSetup;
+  personas: typeof personas;
   proposals: typeof proposals;
   reasoning: typeof reasoning;
   review: typeof review;

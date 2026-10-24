@@ -12,6 +12,8 @@ export default defineSchema({
     nessieAccountId: v.union(v.string(), v.null()),
     /** CRS test persona linked by a reviewer. SYNTHETIC association: CRS and Nessie are separate datasets. */
     crsPersonaId: v.optional(v.string()),
+    /** SYNTHETIC demo persona (lib/fixtures/demoPersonas.ts) the case was opened for on /call; its records are set up automatically. */
+    demoPersonaId: v.optional(v.string()),
     nextStatementNumber: v.number(),
     bankFetch,
     /** Derived CaseAnalysis (lib/domain/workflow.ts), recomputed after every evidence change. */
@@ -86,7 +88,9 @@ export default defineSchema({
     resultRef: v.optional(v.string()),
     /** JSON of the response first returned for this event; a retry gets exactly the same response. */
     response: v.optional(v.string()),
-  }).index("by_key", ["key"]),
+  })
+    .index("by_key", ["key"])
+    .index("by_case", ["caseId"]),
 
   /**
    * How a Nessie transaction was made (device, two-factor, location): the bank's authentication
@@ -171,7 +175,8 @@ export default defineSchema({
     answeredByRef: v.optional(v.string()),
   })
     .index("by_session", ["sessionId"])
-    .index("by_session_key", ["sessionId", "questionKey"]),
+    .index("by_session_key", ["sessionId", "questionKey"])
+    .index("by_case", ["caseId"]),
 
   /**
    * Provider session state (server-only; never returned by a public function).
@@ -200,5 +205,6 @@ export default defineSchema({
     lastResponseWasAck: v.optional(v.boolean()),
   })
     .index("by_token", ["token"])
-    .index("by_call", ["callId"]),
+    .index("by_call", ["callId"])
+    .index("by_case", ["caseId"]),
 });

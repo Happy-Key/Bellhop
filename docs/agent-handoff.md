@@ -78,7 +78,7 @@ Hard rules:
   - A dry-run merge into the current `foundation` has **no conflicts**.
   - After merging, run `npm run verify` and re-check `CONTEXT.md` by hand: both branches edited it,
     so its sections may need tidying even though git merges it cleanly.
-- `legislative-reference/` is **untracked and must stay uncommitted**. The user didn't recognize it.
+- `legislative-reference/` (research pack) is committed; the user approved it on 2026-10-24.
   It's a research pack (overview plus a 35-rule CSV) used as background only.
 
 ## 5. What changed on 2026-10-24 (backend), and what it means for the frontend

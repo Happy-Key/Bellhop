@@ -8,43 +8,12 @@
  * Purchase POST body follows the documented purchase fields; it is not in the official
  * OpenAPI spec, so the script re-reads the account afterwards to verify what was stored.
  */
-import { config } from "dotenv";
 import { DEMO_ACCOUNT, DEMO_CUSTOMER, DEMO_MERCHANTS, DEMO_PURCHASES } from "../lib/fixtures/demo";
-import { NessieClient, retrieveAccountTransactions, NESSIE_DEFAULT_BASE_URL } from "../lib/providers/nessie";
-
-config({ path: ".env.local" });
-
-const key = process.env.NESSIE_API_KEY;
-const base = (process.env.NESSIE_BASE_URL || NESSIE_DEFAULT_BASE_URL).replace(/\/$/, "");
-
-function idFrom(json: unknown): string {
-  const j = json as { objectCreated?: { _id?: unknown }; _id?: unknown } | null;
-  const id = j?.objectCreated?._id ?? j?._id;
-  if (typeof id !== "string") throw new Error(`could not find created _id in response: ${JSON.stringify(json).slice(0, 200)}`);
-  return id;
-}
-
-async function post(path: string, body: unknown): Promise<unknown> {
-  const res = await fetch(`${base}${path}?key=${encodeURIComponent(key!)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`POST ${path} -> HTTP ${res.status}: ${text.slice(0, 300)}`);
-  return text ? JSON.parse(text) : null;
-}
-
-function daysAgo(n: number): string {
-  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
-}
+import { NessieClient, retrieveAccountTransactions } from "../lib/providers/nessie";
+import { base, daysAgo, exitWithError, idFrom, key, post, requireConfirm } from "./nessie-seed-helpers";
 
 async function main() {
-  if (!key) throw new Error("NESSIE_API_KEY missing from .env.local");
-  if (!process.argv.includes("--confirm")) {
-    console.log("This writes SYNTHETIC records to the shared Nessie sandbox. Re-run with: npm run seed:nessie -- --confirm");
-    process.exit(1);
-  }
+  requireConfirm("npm run seed:nessie");
   const customerId = idFrom(await post("/customers", DEMO_CUSTOMER));
   console.log(`customer created: ${customerId}`);
   const accountId = idFrom(await post(`/customers/${customerId}/accounts`, DEMO_ACCOUNT));
@@ -68,7 +37,7 @@ async function main() {
     console.log(`purchase posted: $${p.amount} ${p.merchant} -> ${JSON.stringify(res).slice(0, 120)}`);
   }
 
-  const { transactions, warnings } = await retrieveAccountTransactions(new NessieClient(key, base), accountId);
+  const { transactions, warnings } = await retrieveAccountTransactions(new NessieClient(key!, base), accountId);
   console.log(`\nVerification read-back: ${transactions.length} purchase(s) stored.`);
   for (const t of transactions) console.log(`  ${t.ref} ${t.date} $${t.amount} ${t.merchantName ?? "?"} status=${t.status}`);
   for (const w of warnings) console.log(`  warning: ${w}`);
@@ -76,7 +45,4 @@ async function main() {
   console.log(`and add NESSIE_DEMO_ACCOUNT_ID=${accountId} to .env.local for npm run live:nessie`);
 }
 
-main().catch((e) => {
-  console.error(String(e instanceof Error ? e.message : e).split(key ?? "\u0000").join("[REDACTED]"));
-  process.exit(1);
-});
+main().catch(exitWithError);

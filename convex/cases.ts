@@ -1,15 +1,74 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
 import { currentEvidence, logActivity, recomputeAnalysis, recordStatement } from "./model";
 import { transactionFields } from "./validators";
 import { DEMO_CUSTOMER_LABEL } from "../lib/fixtures/demo";
+import { applyPersonaOrigins } from "./personas";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
     const cases = await ctx.db.query("cases").order("desc").take(50);
-    return cases.map((c) => ({ _id: c._id, title: c.title, createdAt: c.createdAt, stage: (c.analysis as { stage?: string } | null)?.stage ?? "intake" }));
+    return cases.map((c) => {
+      const analysis = c.analysis as { stage?: string; questions?: { audience: string }[]; recommendation?: { action: string } } | null;
+      return {
+        _id: c._id,
+        title: c.title,
+        createdAt: c.createdAt,
+        stage: analysis?.stage ?? "intake",
+        customerLabel: c.customerLabel,
+        demoPersonaId: c.demoPersonaId ?? null,
+        recommendation: analysis?.recommendation?.action ?? null,
+        /** Questions waiting on the customer (the /call page shows which cases need a call back). */
+        openCustomerQuestions: analysis?.questions?.filter((q) => q.audience === "customer").length ?? 0,
+      };
+    });
+  },
+});
+
+/** Every table that holds rows for one case. Payment-origin records are keyed by the Nessie transaction, not the case, and are kept. */
+const CASE_TABLES = ["statements", "transactions", "providerEvidence", "activity", "processedEvents", "reimbursementDecisions", "caseProposals", "intakeTurns", "voiceSessions"] as const;
+/** Rows deleted per table per mutation; a bigger case continues in a scheduled follow-up. */
+const PURGE_BATCH = 500;
+
+async function purgeBatch(ctx: MutationCtx, caseId: Id<"cases">): Promise<{ deleted: number; more: boolean }> {
+  let deleted = 0;
+  let more = false;
+  for (const table of CASE_TABLES) {
+    const rows = await ctx.db.query(table).withIndex("by_case", (q) => q.eq("caseId", caseId)).take(PURGE_BATCH);
+    for (const r of rows) await ctx.db.delete(r._id);
+    deleted += rows.length;
+    if (rows.length === PURGE_BATCH) more = true;
+  }
+  return { deleted, more };
+}
+
+/**
+ * Removes a synthetic case and everything recorded for it (developer tool; all data is synthetic).
+ * The case row goes first, so it leaves every list at once and work still in flight for it (an
+ * interpretation, persona setup, a CRS check) fails instead of writing new rows. Nessie records,
+ * including SIMULATED payout deposits, are outside this app and stay.
+ */
+export const remove = mutation({
+  args: { caseId: v.id("cases") },
+  handler: async (ctx, { caseId }) => {
+    const c = await ctx.db.get(caseId);
+    if (!c) return { removed: false };
+    await ctx.db.delete(caseId);
+    const { deleted, more } = await purgeBatch(ctx, caseId);
+    if (more) await ctx.scheduler.runAfter(0, internal.cases.purgeRemainingRows, { caseId });
+    console.log(`case ${caseId} ("${c.title}") removed: ${deleted} row(s) deleted${more ? ", more scheduled" : ""}`);
+    return { removed: true };
+  },
+});
+
+export const purgeRemainingRows = internalMutation({
+  args: { caseId: v.id("cases") },
+  handler: async (ctx, { caseId }) => {
+    const { more } = await purgeBatch(ctx, caseId);
+    if (more) await ctx.scheduler.runAfter(0, internal.cases.purgeRemainingRows, { caseId });
   },
 });
 
@@ -139,6 +198,7 @@ export const storeTransactions = internalMutation({
     await ctx.db.patch(caseId, { bankFetch: { status: "ok", at: now, count: transactions.length } });
     await logActivity(ctx, caseId, "nessie:live", "bank_records_retrieved", `LIVE Nessie retrieval: ${transactions.filter((t) => t.kind !== "deposit").length} purchase(s) and ${transactions.filter((t) => t.kind === "deposit").length} deposit(s), ${added} new, ${changed} changed (earlier versions kept).`);
     for (const w of warnings) await logActivity(ctx, caseId, "nessie:live", "warning", w);
+    await applyPersonaOrigins(ctx, caseId);
     await recomputeAnalysis(ctx, caseId);
   },
 });

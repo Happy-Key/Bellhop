@@ -51,9 +51,11 @@ interface VoiceCallProps {
   caseId: Id<"cases"> | (() => Promise<Id<"cases">>);
   /** "staff" (default) shows call internals; "customer" shows only the call controls and transcript. */
   variant?: "staff" | "customer";
+  /** Told when a call starts or stops (the customer page locks its demo-persona picker during a call). */
+  onInCallChange?: (inCall: boolean) => void;
 }
 
-export function VoiceCall({ caseId, variant = "staff" }: VoiceCallProps) {
+export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCallProps) {
   const createSession = useMutation(api.voice.createVoiceSession);
   const mintToken = useAction(api.voice.createCartesiaAccessToken);
   const bindCall = useMutation(api.voice.bindVoiceCall);
@@ -254,6 +256,9 @@ export function VoiceCall({ caseId, variant = "staff" }: VoiceCallProps) {
   useEffect(() => () => teardown(), []);
 
   const inCall = status === "connecting" || status === "live";
+  useEffect(() => {
+    onInCallChange?.(inCall);
+  }, [inCall, onInCallChange]);
   if (variant === "customer") {
     // The boundary keeps a display error from unmounting VoiceCall, whose cleanup would hang up the call.
     return (

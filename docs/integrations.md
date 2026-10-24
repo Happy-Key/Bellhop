@@ -70,7 +70,7 @@ Claude Code is the development assistant only. **The app does not use the Anthro
 5. Record a statement on a synthetic case. It shows "pending", then "model: bitdeer:<model>", or a visible failure with Retry.
 
 **Live results (2026-10-24, synthetic statements, our full prompt):**
-- **Credits:** the CalHacks credits are not approved yet and the balance shows **$0.00**, but requests still succeed. **Bitdeer may start refusing at any moment.** Keep live requests to a minimum. A refusal now shows the provider's own reason on the case (`interpretation failed: HTTP 4xx: …`). On voice, a failed interpretation doesn't stall the call; the next question is still asked.
+- **Credits:** the CalHacks promo **is active** (confirmed by the user, 2026-10-24). Bitdeer's dashboard still shows **$0.00**; that is a display bug on Bitdeer's side, not missing credits. If requests ever fail with a balance error, report the exact error. A refusal now shows the provider's own reason on the case (`interpretation failed: HTTP 4xx: …`). On voice, a failed interpretation doesn't stall the call; the next question is still asked.
 - **Models available to our key:** DeepSeek-V4.1-Flash, DeepSeek-V4-Flash, GLM-5.3, GLM-5.3-Flash, Qwen3.8-27B (plus embedding, reranker and image models).
 
   | Model | Time per statement | Notes |
