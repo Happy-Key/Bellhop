@@ -1,2 +1,32 @@
+# Secrets — never commit real keys
 .env
 .env*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Next.js / build output
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# Convex local state (convex/_generated IS committed)
+.convex/
+
+# Testing / logs
+coverage/
+npm-debug.log*
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Factory / developer-agent scratch output
+.factory-runs/
