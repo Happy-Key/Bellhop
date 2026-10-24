@@ -30,7 +30,12 @@ credentials yet unless the status says so.
   - Unknown routes return 403 "Missing Authentication Token" (API Gateway). That does not mean a bad key.
   - No rate limits are documented, and no data-wipe endpoint was found.
 - **Deposits read probe (2026-10-24, read-only, approved by the user):** `GET /accounts/{demo}/deposits` returns HTTP 200 with `[]`. The endpoint works, but the demo account has no deposits, so the read payload shape is still **UNVERIFIED**. Seeing it needs a seeded synthetic deposit, which is a write and needs approval. Needed to compare reported refunds and credits with records.
-- Simulated payout candidate: `POST /accounts/{id}/deposits` with `{medium, transaction_date, status, amount, description}` is fully defined in the spec. The transfer POST body is UNVERIFIED. Not implemented.
+- **Simulated payout (implemented 2026-10-24; not yet run live):** `POST /accounts/{id}/deposits`.
+  - The spec's `DepositCreate` requires `medium`, `transaction_date`, `status`, `amount` (**integer**) and `description`, and lists no allowed values for `medium` or `status`. We send `medium: "balance"` and `status: "completed"`, the values our verified purchase POSTs used.
+  - The new id is read from `objectCreated._id`, as for other creates, or `_id`.
+  - `depositOnce` first lists deposits and reuses one whose description carries `[claim <decisionId>]`, so a retry can't pay twice.
+  - Non-whole-dollar amounts are refused and must be paid by a person.
+  - **The first automatic approval on dev makes the first live deposit**, permanently, on the shared demo account. Check the result on the case page.
 - Credentials: `NESSIE_API_KEY` and `NESSIE_DEMO_ACCOUNT_ID` go in **both** the Convex env (`npx convex env set …`) and `.env.local` (for the scripts).
 
 ## Runtime reasoning: selection

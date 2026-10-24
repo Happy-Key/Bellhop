@@ -17,7 +17,7 @@ export const integrationStatus = query({
       cartesia: { apiKey: set("CARTESIA_API_KEY"), agentId: set("CARTESIA_AGENT_ID"), toolSecret: set("VOICE_TOOL_SECRET"), status: "partial: webhook tool registered and called live; browser call client live" },
       crs: { credentials: set("CRS_USERNAME") && set("CRS_PASSWORD"), status: set("CRS_USERNAME") && set("CRS_PASSWORD") ? "configured" : "needs_configuration" },
       factory: { status: "not_implemented" },
-      payout: { status: "not_implemented" },
+      payout: { status: "simulated: auto-approval policy AUTO-1 (approve-only, up to $100) with Nessie deposits labelled SIMULATED" },
     };
   },
 });

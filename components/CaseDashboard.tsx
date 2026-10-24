@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { CaseAnalysis } from "@/lib/domain/workflow";
 import { getSource } from "@/lib/domain/regulatory";
+import { AUTO_APPROVAL_POLICY, type AutoApprovalEvaluation } from "@/lib/domain/autoApproval";
 import { DEMO_STATEMENTS } from "@/lib/fixtures/demo";
 import { CRS_PERSONAS, getCrsPersona } from "@/lib/fixtures/crsPersonas";
 import { IntegrationStatus } from "./IntegrationStatus";
@@ -40,6 +41,7 @@ export function CaseDashboard({ caseId }: { caseId: string }) {
       </div>
       {analysis && <FindingsAndQuestions analysis={analysis} />}
       {analysis && <Packet analysis={analysis} />}
+      <AutoApprovalPanel evaluation={(data.case.autoApproval ?? null) as AutoApprovalEvaluation | null} decisions={data.decisions} />
       <Activity activity={data.activity} />
       <IntegrationStatus />
     </main>
@@ -278,6 +280,51 @@ function FindingsAndQuestions({ analysis }: { analysis: StoredAnalysis }) {
   );
 }
 
+/** Approve-only automation (policy AUTO-1). Claims that fail any check go to a person; nothing is denied automatically. */
+function AutoApprovalPanel({ evaluation, decisions }: { evaluation: AutoApprovalEvaluation | null; decisions: Doc<"reimbursementDecisions">[] }) {
+  const retry = useMutation(api.payoutData.retryPayout);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <section>
+      <h2>5. Automatic reimbursement <span className="label synthetic">SIMULATED money</span></h2>
+      <p className="muted">
+        Policy {evaluation?.policy ?? `${AUTO_APPROVAL_POLICY.id}@${AUTO_APPROVAL_POLICY.version}`}: the app may approve a claim of up to ${AUTO_APPROVAL_POLICY.maxAmount} when every check
+        passes. It never denies; anything else goes to a person.
+      </p>
+      {decisions.map((d) => (
+        <div key={d._id} style={{ marginBottom: 8 }}>
+          <strong>Approved automatically: ${d.amount.toFixed(2)} for <span className="ref">{d.txnRef}</span></strong>{" "}
+          <span className="muted">{new Date(d.decidedAt).toLocaleString()}</span>
+          <div>
+            Payout: <span className={`label ${d.payout.status === "failed" ? "error" : ""}`}>{d.payout.status}</span>
+            {d.payout.depositId && <span className="muted"> Nessie deposit {d.payout.depositId}{d.payout.reused ? " (found from an earlier attempt)" : ""}</span>}
+            {d.payout.error && <span className="error"> {d.payout.error}</span>}
+            {d.payout.status === "failed" && (
+              <button onClick={() => retry({ decisionId: d._id }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))}>Retry payout</button>
+            )}
+          </div>
+          {d.needsReview && <div className="error">Needs review: {d.needsReview.reason}</div>}
+        </div>
+      ))}
+      {error && <p className="error">{error}</p>}
+      {decisions.length === 0 && (
+        <p>
+          {evaluation?.eligible ? "All checks pass; approval is being recorded…" : <>Not approved automatically: <strong>goes to a person</strong> unless the failing checks below are resolved.</>}
+        </p>
+      )}
+      {evaluation && (
+        <ul>
+          {evaluation.checks.map((c) => (
+            <li key={c.id}>
+              <span className={`label ${c.passed ? "" : "error"}`}>{c.passed ? "pass" : "fail"}</span> {c.detail}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function Packet({ analysis }: { analysis: StoredAnalysis }) {
   const p = analysis.packet;
   return (
@@ -315,7 +362,7 @@ function Packet({ analysis }: { analysis: StoredAnalysis }) {
 function Activity({ activity }: { activity: Doc<"activity">[] }) {
   return (
     <section>
-      <h2>5. Activity log</h2>
+      <h2>6. Activity log</h2>
       <table>
         <tbody>
           {activity.map((a) => (

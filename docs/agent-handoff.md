@@ -19,8 +19,10 @@ payment by voice (Cartesia agent) or text. The backend:
 
 Hard rules:
 - **All data is synthetic.**
-- **The app only recommends.** It never moves money, approves or denies reimbursement, or makes
-  legal determinations.
+- **Approve-only automation (since 2026-10-24).** Policy AUTO-1 (`lib/domain/autoApproval.ts`)
+  may approve a claim of **$100 or less** when every check passes, and pays it as a **SIMULATED**
+  Nessie deposit, at most once. The app **never denies**: everything else goes to a person.
+  It moves no real money and makes no legal determinations.
 
 ## 2. Stack and where things live
 
@@ -166,6 +168,8 @@ Response:
 | AI disclosure | The agent says it's automated at the start of every call |
 | Extraction | **Bitdeer** (OpenAI-compatible, `https://api-inference.bitdeer.ai/v1`). **Integration PAUSED by the user**: nothing configured, Convex runs the scripted extractor. Steps to resume: `docs/integrations.md` → "How to turn it on"; check script `npm run live:reasoning` |
 | Question repeats | Maximum 2 per call |
+| Automatic reimbursement | Approve-only, up to $100, SIMULATED Nessie deposit (policy AUTO-1). Denials always human. Case page section 5 shows the checks |
+| Demo plan | A prepared bank record and script. The customer is framed as already logged in, so **no** automatic bank-record pull at call start |
 
 The full design (claim model, question bank, rule registry, phased plan, test plan) is in
 **`docs/claim-intake-design.md`**. Section I records these decisions.
@@ -191,7 +195,8 @@ The full design (claim model, question bank, rule registry, phased plan, test pl
 - Document upload and draft artifacts.
 - Reading Nessie deposits. The endpoint returns 200 but there are no deposits to show the shape;
   seeding one is a write and needs approval.
-- Factory Droid loop; simulated reimbursement.
+- Factory Droid loop.
+- Approve and reverse buttons for a person, for claims outside AUTO-1. The first live SIMULATED deposit hasn't been made.
 
 ## 9. Commands
 

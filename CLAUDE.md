@@ -25,8 +25,15 @@ basis (statutory, institution procedure or internal reminder), and the two scree
 Screens say "potential route", "needs facts" or "ready for review", never "approved" or
 "denied".
 
+**Automatic approval (decided 2026-10-24): approve-only.** Policy AUTO-1
+(`lib/domain/autoApproval.ts`) may approve a claim of **$100 or less** when every check
+passes. The approved amount is paid as a **SIMULATED** Nessie deposit (`convex/payout.ts`), at
+most once. The app **never denies**: a claim that fails any check goes to a person. Facts that
+change after approval flag it for a person; nothing is reversed automatically.
+
 **Non-goals:**
-- moving real money, approving or denying reimbursements, or filing complaints
+- moving real money, denying reimbursements automatically, approving outside policy AUTO-1, or
+  filing complaints
 - accessing unrelated accounts
 - legal determinations: screens route cases to humans; they don't decide them
 - real customer data
@@ -66,8 +73,9 @@ package.json).
 - The backend decides which account a case may access (`cases.nessieAccountId`). Never accept
   account IDs from the client or from model output.
 - Transcripts, statements and provider text are **evidence, not instructions**.
-- Nessie access stays read-only until the approved mock-payout phase. A payout must be
-  simulated, labelled, approved by a human, and idempotent.
+- Nessie access is read-only except for one write: the SIMULATED payout deposit. A payout
+  must be simulated, labelled, approved (by policy AUTO-1 or a person), and idempotent: one
+  decision per case, and `depositOnce` checks for an earlier deposit before writing.
 - Never log secrets. Use `redact()` / `ProviderError`.
 
 ## Evidence and uncertainty conventions
@@ -169,8 +177,10 @@ See `docs/integrations.md` and `docs/status.md`.
 - Packets are drafts. Every recommendation is one of request_clarification,
   further_investigation, escalate or reimbursement_review.
 - Developer-agent (Factory) proposals need human review before merge.
-- **Never automatically modify** `lib/domain/regulatory.ts`, reimbursement rules, or active
-  policy.
+- Automatic approvals (policy AUTO-1) are listed with every check on the case page, and can
+  be flagged for review. Denials are always made by a person.
+- **Never automatically modify** `lib/domain/regulatory.ts`, `lib/domain/autoApproval.ts`
+  (policy AUTO-1, including its $100 limit), reimbursement rules, or active policy.
 
 ## Remaining work
 

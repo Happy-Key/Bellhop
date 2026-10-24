@@ -17,6 +17,8 @@ export default defineSchema({
     /** Derived CaseAnalysis (lib/domain/workflow.ts), recomputed after every evidence change. */
     analysis: v.any(),
     analysisVersion: v.number(),
+    /** Current automatic-approval evaluation (lib/domain/autoApproval.ts), recomputed with the analysis. */
+    autoApproval: v.optional(v.any()),
     createdAt: v.number(),
   }),
 
@@ -85,6 +87,30 @@ export default defineSchema({
     /** JSON of the response first returned for this event; a retry gets exactly the same response. */
     response: v.optional(v.string()),
   }).index("by_key", ["key"]),
+
+  /**
+   * Automatic APPROVALS only (policy AUTO-1). Never a denial: claims that fail the policy have no
+   * row and go to a person. The payout is a SIMULATED Nessie deposit, made at most once.
+   */
+  reimbursementDecisions: defineTable({
+    caseId: v.id("cases"),
+    txnRef: v.string(),
+    amount: v.number(),
+    policy: v.string(),
+    outcome: v.literal("auto_approved"),
+    checks: v.array(v.object({ id: v.string(), passed: v.boolean(), detail: v.string() })),
+    decidedAt: v.number(),
+    payout: v.object({
+      simulated: v.literal(true),
+      status: v.union(v.literal("pending"), v.literal("deposited"), v.literal("failed")),
+      depositId: v.optional(v.string()),
+      reused: v.optional(v.boolean()),
+      error: v.optional(v.string()),
+      at: v.optional(v.number()),
+    }),
+    /** Set when facts change after approval so the policy no longer passes: a person must look. */
+    needsReview: v.optional(v.object({ at: v.number(), reason: v.string() })),
+  }).index("by_case", ["caseId"]),
 
   /** Every question the backend put to the customer on a voice call, so it can avoid repeats. */
   intakeTurns: defineTable({

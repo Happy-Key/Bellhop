@@ -682,3 +682,4 @@ through `t.fetch`).
 | 11 | FAQ wording | **Approved; edited** | `regulatory.ts` quotes now matched word for word against the live page |
 | 12 | Commit | **Commit on `foundation`; push after the live test** | — |
 | 13 | Repeat limit | **2 per call** | Unchanged |
+| 14 | Automatic reimbursement | **Approve-only; up to $100; SIMULATED Nessie deposit** | Policy AUTO-1 (`lib/domain/autoApproval.ts`) replaces "never approves" for qualifying claims. Every check must pass; a claim that fails any check goes to a person. Denials are never automated (12 CFR 1005.11(c)-(d) investigation and written explanation; CFPB 2022 action on denials by automated filter). Facts that change after approval flag it for review; nothing is reversed automatically |

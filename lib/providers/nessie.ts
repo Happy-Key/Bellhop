@@ -2,8 +2,9 @@
  * Capital One Nessie client (mock banking API).
  * Docs: https://nessieisreal.com/docs  Spec: https://nessieisreal.com/nessie-openapi-spec.yaml
  *
- * READ-ONLY for the investigator. Write helpers used by the seed script live in
- * scripts/seed-nessie.ts, not here.
+ * READ-ONLY for the investigator. The one write is `createDeposit`, used only by the approved
+ * SIMULATED reimbursement payout (convex/payout.ts) through `depositOnce`. Seed-script writes live
+ * in scripts/seed-nessie.ts.
  *
  * Verified notes (see docs/integrations.md):
  *  - Base URL https://api.nessieisreal.com, auth via `?key=` query parameter.
@@ -45,6 +46,24 @@ export const NessieAccount = z
   .loose();
 export type NessieAccount = z.infer<typeof NessieAccount>;
 
+/** Deposit as listed by GET /accounts/{id}/deposits (spec schema `Deposit`; live shape unverified). */
+export const NessieDeposit = z
+  .object({ _id: z.string().min(1), amount: z.number().finite(), description: z.string().nullish(), transaction_date: dateish, status: z.string().nullish(), medium: z.string().nullish() })
+  .loose();
+export type NessieDeposit = z.infer<typeof NessieDeposit>;
+
+/** Body of POST /accounts/{id}/deposits (spec schema `DepositCreate`; all fields required, amount is an integer). */
+export interface DepositCreate {
+  medium: "balance";
+  transaction_date: string;
+  status: "completed";
+  amount: number;
+  description: string;
+}
+
+/** Creation responses carry the new id in `objectCreated._id` (seen live for other POSTs) or `_id`. */
+const CreatedResponse = z.object({ objectCreated: z.object({ _id: z.string().min(1) }).loose().optional(), _id: z.string().min(1).optional() }).loose();
+
 export interface BankingProvider {
   getAccount(accountId: string): Promise<NessieAccount>;
   listPurchases(accountId: string): Promise<NessiePurchase[]>;
@@ -63,10 +82,19 @@ export class NessieClient implements BankingProvider {
   }
 
   private async get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
+    return this.request("GET", path, schema);
+  }
+
+  private async request<T>(method: "GET" | "POST", path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
     const url = `${this.baseUrl.replace(/\/$/, "")}${path}${path.includes("?") ? "&" : "?"}key=${encodeURIComponent(this.apiKey)}`;
     let res: Response;
     try {
-      res = await this.fetchImpl(url, { method: "GET", headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
+      res = await this.fetchImpl(url, {
+        method,
+        headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(15_000),
+      });
     } catch (e) {
       throw new ProviderError("nessie", "network", this.scrub(String(e)));
     }
@@ -108,6 +136,35 @@ export class NessieClient implements BankingProvider {
     this.checkId(merchantId);
     return this.get(`/merchants/${merchantId}`, NessieMerchant);
   }
+  async listDeposits(accountId: string) {
+    this.checkId(accountId);
+    return this.get(`/accounts/${accountId}/deposits`, z.array(NessieDeposit));
+  }
+  /** The only write. Returns the new deposit's id. */
+  async createDeposit(accountId: string, body: DepositCreate): Promise<string> {
+    this.checkId(accountId);
+    if (!Number.isInteger(body.amount) || body.amount <= 0) throw new ProviderError("nessie", "rejected_output", "Nessie deposits take a positive whole-dollar amount");
+    const created = await this.request("POST", `/accounts/${accountId}/deposits`, CreatedResponse, body);
+    const id = created.objectCreated?._id ?? created._id;
+    if (!id) throw new ProviderError("nessie", "malformed_response", "deposit created but no id returned");
+    return id;
+  }
+}
+
+/**
+ * Deposits at most once per marker. Before writing, it looks for an existing deposit whose
+ * description carries the marker, so a retry after a lost response can't pay twice.
+ */
+export async function depositOnce(
+  client: Pick<NessieClient, "listDeposits" | "createDeposit">,
+  accountId: string,
+  deposit: { amount: number; date: string; description: string; marker: string },
+): Promise<{ depositId: string; reused: boolean }> {
+  if (!deposit.description.includes(deposit.marker)) throw new ProviderError("nessie", "rejected_output", "deposit description must carry its idempotency marker");
+  const existing = (await client.listDeposits(accountId)).find((d) => d.description?.includes(deposit.marker));
+  if (existing) return { depositId: existing._id, reused: true };
+  const depositId = await client.createDeposit(accountId, { medium: "balance", transaction_date: deposit.date, status: "completed", amount: deposit.amount, description: deposit.description });
+  return { depositId, reused: false };
 }
 
 function normalizeDate(s: string | null | undefined): string | null {

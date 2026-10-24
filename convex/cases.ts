@@ -18,10 +18,11 @@ export const view = query({
   handler: async (ctx, { caseId }) => {
     const c = await ctx.db.get(caseId);
     if (!c) return null;
-    const [statements, evidence, activity] = await Promise.all([
+    const [statements, evidence, activity, decisions] = await Promise.all([
       ctx.db.query("statements").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect(),
       currentEvidence(ctx, caseId),
       ctx.db.query("activity").withIndex("by_case", (q) => q.eq("caseId", caseId)).order("desc").take(200),
+      ctx.db.query("reimbursementDecisions").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect(),
     ]);
     return {
       case: { ...c, nessieAccountBound: c.nessieAccountId !== null },
@@ -30,6 +31,8 @@ export const view = query({
       providerEvidence: evidence.providerEvidence,
       /** Superseded evidence, kept for provenance. */
       history: evidence.history,
+      /** Automatic approvals (policy AUTO-1) with their SIMULATED payout status. */
+      decisions,
       activity,
     };
   },

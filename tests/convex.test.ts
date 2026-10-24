@@ -243,6 +243,59 @@ describe("Convex case workflow", () => {
     }
   });
 
+  it("automatically approves a qualifying claim once, schedules a SIMULATED payout, and flags later doubt", async () => {
+    vi.useFakeTimers(); // keeps the scheduled payout (a live Nessie write) from running
+    try {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      const fields = { provider: "nessie" as const, kind: "purchase" as const, description: null, merchantId: null, status: "executed", medium: "balance" };
+      const today = new Date().toISOString().slice(0, 10);
+      await t.mutation(internal.cases.storeTransactions, {
+        caseId,
+        transactions: [
+          { ...fields, ref: "T:g-1", externalId: "g-1", amount: 23, date: today, merchantName: "FCI Demo Corner Grocer" },
+          { ...fields, ref: "T:v-1", externalId: "v-1", amount: 389, date: today, merchantName: "FCI Demo Volt Electronics Online" },
+        ],
+        warnings: [],
+      });
+      await t.mutation(api.cases.submitStatement, { caseId, text: "I did not make the $23 purchase at Corner Grocer. I never shared my card or codes.", clientEventId: "evt-00000001" });
+      await t.mutation(api.cases.submitStatement, { caseId, text: "That's all I have.", clientEventId: "evt-00000002" });
+      let view = (await t.query(api.cases.view, { caseId }))!;
+      expect(view.decisions).toHaveLength(1);
+      expect(view.decisions[0]).toMatchObject({ txnRef: "T:g-1", amount: 23, outcome: "auto_approved", payout: { simulated: true, status: "pending" } });
+      expect(view.activity.filter((a) => a.kind === "auto_approved")).toHaveLength(1);
+
+      await t.mutation(internal.payoutData.recordPayout, { decisionId: view.decisions[0]!._id, result: { ok: true, depositId: "dep-1", reused: false } });
+      await expect(t.mutation(api.payoutData.retryPayout, { decisionId: view.decisions[0]!._id })).rejects.toThrow(/not failed/);
+
+      // A later contradiction doesn't reverse anything; it flags the approval for a person.
+      await t.mutation(api.cases.submitStatement, { caseId, text: "Actually I paid for the $23 order myself", clientEventId: "evt-00000003" });
+      view = (await t.query(api.cases.view, { caseId }))!;
+      expect(view.decisions[0]).toMatchObject({ payout: { status: "deposited", depositId: "dep-1" } });
+      expect(view.decisions[0]?.needsReview?.reason).toMatch(/Facts changed after automatic approval/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not approve over the limit; the case shows which check failed", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = convexTest(schema, modules);
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      const txn = { provider: "nessie" as const, kind: "purchase" as const, description: null, merchantId: null, status: "executed", medium: "balance", ref: "T:v-1", externalId: "v-1", amount: 389, date: new Date().toISOString().slice(0, 10), merchantName: "FCI Demo Volt Electronics Online" };
+      await t.mutation(internal.cases.storeTransactions, { caseId, transactions: [txn], warnings: [] });
+      await t.mutation(api.cases.submitStatement, { caseId, text: "I did not make the $389 purchase at Volt Electronics. I never shared my card or codes.", clientEventId: "evt-00000001" });
+      const view = (await t.query(api.cases.view, { caseId }))!;
+      expect(view.decisions).toEqual([]);
+      const evaluation = view.case.autoApproval as { eligible: boolean; checks: { id: string; passed: boolean }[] };
+      expect(evaluation.eligible).toBe(false);
+      expect(evaluation.checks.filter((c) => !c.passed).map((c) => c.id)).toEqual(["amount_within_limit"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("applies a live result only from the statement's current attempt", async () => {
     vi.useFakeTimers();
     process.env.REASONING_PROVIDER = "openai-compatible";

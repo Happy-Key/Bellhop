@@ -9,6 +9,7 @@ import { analyzeCase, type EvidenceFetchState } from "../lib/domain/workflow";
 import { interpretStatementScripted, looksLikeCorrection } from "../lib/domain/interpret";
 import { interpretAnswer, relatedRefFromKey } from "../lib/domain/answers";
 import { redactSensitive } from "../lib/domain/redact";
+import { evaluateAutoApproval, type AutoApprovalEvaluation } from "../lib/domain/autoApproval";
 import type { AskedQuestion, Statement, StatementInterpretation, TransactionEvidence, ProviderEvidence } from "../lib/domain/schemas";
 
 export const MAX_STATEMENT_CHARS = 4000;
@@ -89,9 +90,43 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
     ...analysis,
     rejectedFindings: analysis.rejectedFindings.map((r) => ({ finding: JSON.stringify(r.finding).slice(0, 600), reasons: r.reasons })),
   };
-  await ctx.db.patch(caseId, { analysis: JSON.parse(JSON.stringify(stored)), analysisVersion: c.analysisVersion + 1 });
+  const evaluation = evaluateAutoApproval({ analysis, transactions: transactions.map(toDomainTransaction), statements: statements.map(toDomainStatement) });
+  await ctx.db.patch(caseId, { analysis: JSON.parse(JSON.stringify(stored)), analysisVersion: c.analysisVersion + 1, autoApproval: evaluation });
   if (analysis.rejectedFindings.length > 0) {
     await logActivity(ctx, caseId, "validator", "findings_rejected", `${analysis.rejectedFindings.length} proposed finding(s) rejected: ${analysis.rejectedFindings.map((r) => r.reasons.join("; ")).join(" | ")}`);
+  }
+  await applyAutoApproval(ctx, caseId, evaluation);
+}
+
+/**
+ * Approve-only automation (policy AUTO-1). One automatic approval per case, made once: it records
+ * the decision and schedules the SIMULATED payout. If later facts make the policy fail, the
+ * approval is flagged for a person; nothing is ever denied or reversed automatically.
+ */
+async function applyAutoApproval(ctx: MutationCtx, caseId: Id<"cases">, evaluation: AutoApprovalEvaluation) {
+  const decisions = await ctx.db.query("reimbursementDecisions").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect();
+  if (evaluation.eligible && evaluation.txnRef && evaluation.amount !== null) {
+    if (decisions.length > 0) return;
+    const decisionId = await ctx.db.insert("reimbursementDecisions", {
+      caseId,
+      txnRef: evaluation.txnRef,
+      amount: evaluation.amount,
+      policy: evaluation.policy,
+      outcome: "auto_approved",
+      checks: evaluation.checks,
+      decidedAt: Date.now(),
+      payout: { simulated: true, status: "pending" },
+    });
+    await logActivity(ctx, caseId, `policy:${evaluation.policy}`, "auto_approved", `AUTOMATICALLY APPROVED under ${evaluation.policy}: $${evaluation.amount.toFixed(2)} for ${evaluation.txnRef}; all ${evaluation.checks.length} checks passed. SIMULATED credit scheduled.`);
+    await ctx.scheduler.runAfter(0, internal.payout.payDecision, { decisionId });
+    return;
+  }
+  const failed = evaluation.checks.filter((c) => !c.passed);
+  for (const d of decisions) {
+    if (d.needsReview) continue;
+    const reason = `Facts changed after automatic approval; now failing: ${failed.map((c) => c.id).join(", ")}.`;
+    await ctx.db.patch(d._id, { needsReview: { at: Date.now(), reason } });
+    await logActivity(ctx, caseId, `policy:${evaluation.policy}`, "auto_approval_needs_review", `${reason} A person must review the approval of ${d.txnRef}; nothing was reversed.`);
   }
 }
 
