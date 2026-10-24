@@ -2,7 +2,7 @@
  * One customer turn, shared by the voice webhook (convex/http.ts) and the text chat
  * (convex/chat.ts): wait briefly for the live interpretation of what the customer just said, then
  * for the reasoning model's reassessment, then issue the next question. Both channels get the
- * same questions, answer linking, repeat limits and acknowledgement rules.
+ * same questions, answer linking, repeat limits, wrap-up and closing.
  */
 import type { GenericActionCtx } from "convex/server";
 import type { DataModel, Id } from "./_generated/dataModel";
@@ -11,16 +11,18 @@ import type { VoiceToolResponse } from "./voice";
 
 /**
  * How long a turn waits for a live interpretation before answering without it. Bitdeer
- * (GLM-5.3-Flash) measured 4.7–7.0 s per statement on a live call (2026-10-24); Cartesia's tool
- * timeout is 15 s (lib/providers/cartesia.ts), so the cap stays well under it.
+ * (GLM-5.3-Flash) measured 4.7–7.0 s per statement on a live call (2026-10-24). The agent tells the
+ * customer to wait before every tool call, so the wait can cover slow statements; Cartesia's tool
+ * timeout is 20 s (lib/providers/cartesia.ts), so the cap stays well under it.
  */
-const DEFAULT_INTERPRETATION_WAIT_MS = 8000;
-const MAX_INTERPRETATION_WAIT_MS = 12_000;
+const DEFAULT_INTERPRETATION_WAIT_MS = 12_000;
+const MAX_INTERPRETATION_WAIT_MS = 15_000;
 /**
  * Total time a turn may wait, including the reasoning model's reassessment that chooses the next
  * question. If the reassessment isn't ready by then, the rule-based question is used (logged).
+ * Stays under the tool's 20 s timeout; the customer has been told to wait.
  */
-const MAX_TOTAL_WAIT_MS = 12_000;
+const MAX_TOTAL_WAIT_MS = 16_000;
 const POLL_MS = 250;
 
 function interpretationWaitMs(): number {
@@ -39,8 +41,8 @@ export interface RecordedTurn {
 }
 
 export async function takeTurn(ctx: Pick<GenericActionCtx<DataModel>, "runQuery" | "runMutation">, result: RecordedTurn): Promise<VoiceToolResponse> {
-  // Live interpretation runs in the background. Wait for it briefly so the next question reflects
-  // what the customer just said; if it isn't ready, the customer is acknowledged instead.
+  // Live interpretation runs in the background. Wait for it so the next question reflects what the
+  // customer just said; if it still isn't ready, the next question comes from earlier statements.
   let awaiting = result.pending;
   const started = Date.now();
   if (awaiting && result.statementId) {

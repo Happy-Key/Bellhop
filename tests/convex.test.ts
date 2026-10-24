@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import schema from "../convex/schema";
 import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
-import { AWAITING_PROMPT } from "../lib/domain/voiceTurn";
+import { CLOSING_MESSAGE, WRAP_UP_COMPLETE_PROMPT, WRAP_UP_PROMPT } from "../lib/domain/voiceTurn";
 
 const modules = import.meta.glob("../convex/**/*.*s");
 
@@ -132,7 +132,7 @@ describe("Convex case workflow", () => {
           method: "POST",
           headers: { Authorization: "Bearer test-secret", "Content-Type": "application/json" },
           body: JSON.stringify({ call_id: "ac_dddddddddd", utterance, ...(question_id ? { question_id } : {}) }),
-        })).json() as Promise<{ recorded: string; duplicate: boolean; question_id: string | null; question: string | null; next_questions: string[] }>;
+        })).json() as Promise<{ recorded: string; duplicate: boolean; question_id: string | null; question: string | null; next_questions: string[]; end_call: boolean }>;
 
       const r1 = await say("There's a $49 charge I don't recognize");
       expect(r1.question).toMatch(/I found 2 payments that could match/);
@@ -153,10 +153,18 @@ describe("Convex case workflow", () => {
       expect(retry).toEqual({ ...r4, duplicate: true });
       // "Yes." does not answer an open question, so it is asked once more, then handed to a reviewer.
       expect(r4.question).toBe(r3.question);
+      // Nothing left to ask: one wrap-up question, then the closing with end_call (live 2026-10-24:
+      // a null question made the agent ask "anything else?" forever, and it waited for a goodbye).
       const r5 = await say("Okay.", r4.question_id);
-      expect(r5.question).toBeNull();
+      expect(r5).toMatchObject({ question: WRAP_UP_PROMPT, end_call: false });
+      expect(r5.question_id).not.toBeNull();
+      expect(await t.query(api.voice.sessionClosing, { sessionToken: token })).toBe(false);
       // An unknown or foreign question_id is ignored, not trusted.
-      expect((await say("Nothing else", "not-a-real-id")).recorded).toBe("S6");
+      const r6 = await say("No, that's all", "not-a-real-id");
+      expect(r6).toMatchObject({ recorded: "S6", question: CLOSING_MESSAGE, question_id: null, end_call: true });
+      expect(await t.query(api.voice.sessionClosing, { sessionToken: token })).toBe(true);
+      // Anything said after the closing gets the closing again, never another "anything else?".
+      expect(await say("Oh, and thanks")).toMatchObject({ end_call: true, question: CLOSING_MESSAGE });
 
       const view = await t.query(api.cases.view, { caseId });
       const byRef = new Map(view!.statements.map((s) => [s.ref, s]));
@@ -170,7 +178,7 @@ describe("Convex case workflow", () => {
     }
   });
 
-  it("tells the agent to acknowledge, not ask, while a live interpretation is pending", async () => {
+  it("asks a real question even when the live interpretation isn't ready, never an \"anything else?\" acknowledgement", async () => {
     vi.useFakeTimers();
     Object.assign(process.env, { VOICE_TOOL_SECRET: "test-secret", REASONING_PROVIDER: "openai-compatible", VOICE_INTERPRETATION_WAIT_MS: "0" });
     try {
@@ -182,14 +190,18 @@ describe("Convex case workflow", () => {
         headers: { Authorization: "Bearer test-secret", "Content-Type": "application/json" },
         body: JSON.stringify({ session_token: token, utterance: "I didn't make a $49 charge" }),
       });
-      expect(await res.json()).toMatchObject({ recorded: "S1", awaiting_interpretation: true, question_id: null, question: AWAITING_PROMPT });
+      const body = (await res.json()) as { awaiting_interpretation: boolean; question: string | null; question_id: string | null; end_call: boolean };
+      expect(body).toMatchObject({ awaiting_interpretation: true, end_call: false });
+      expect(body.question).toEqual(expect.any(String));
+      expect(body.question_id).not.toBeNull();
+      expect(body.question).not.toMatch(/anything else about that/i);
     } finally {
       for (const k of ["VOICE_TOOL_SECRET", "REASONING_PROVIDER", "VOICE_INTERPRETATION_WAIT_MS"]) delete process.env[k];
       vi.useRealTimers();
     }
   });
 
-  it("acknowledges at most once in a row and doesn't make short replies wait for the model", async () => {
+  it("never acknowledges instead of asking, and doesn't make short replies wait for the model", async () => {
     vi.useFakeTimers();
     Object.assign(process.env, { VOICE_TOOL_SECRET: "test-secret", REASONING_PROVIDER: "openai-compatible", VOICE_INTERPRETATION_WAIT_MS: "0" });
     try {
@@ -205,9 +217,10 @@ describe("Convex case workflow", () => {
 
       // Live call 2026-10-24: every turn was an acknowledgement and no question was ever asked.
       const r1 = await say("Okay, so I had a transaction that I believe was fraudulent because I did not authorize it");
-      expect(r1).toMatchObject({ awaiting_interpretation: true, question: AWAITING_PROMPT });
+      expect(r1.awaiting_interpretation).toBe(true);
+      expect(r1.question_id).not.toBeNull();
       const r2 = await say("It happened yesterday and it was billed to my account in the evening");
-      expect(r2.awaiting_interpretation).toBe(false);
+      expect(r2.awaiting_interpretation).toBe(true); // still not interpreted (wait is 0 here), but a question is asked
       expect(r2.question_id).not.toBeNull();
       const r3 = await say("No, I'm done.");
       expect(r3.awaiting_interpretation).toBe(false);
@@ -552,5 +565,91 @@ describe("removing a case", () => {
     const [row] = await t.query(api.cases.list, {});
     expect(row).toMatchObject({ _id: caseId, demoPersonaId: null, customerLabel: expect.stringMatching(/synthetic/i), stage: expect.any(String) });
     expect(typeof row!.openCustomerQuestions).toBe("number");
+  });
+});
+
+describe("call-backs (live 2026-10-24)", () => {
+  const ledger = [{ ref: "T:cb-1", externalId: "cb-1", provider: "nessie" as const, kind: "purchase" as const, amount: 23, date: "2026-10-22", description: null, merchantId: "m-cb", merchantName: "FCI Demo Corner Grocer", status: "completed", medium: "balance" }];
+
+  it("doesn't flag an automatic approval for review just because a new statement is still being interpreted", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = newTest();
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      await t.mutation(internal.cases.storeTransactions, { caseId, transactions: ledger, warnings: [] });
+      await t.run(async (ctx) => {
+        await ctx.db.insert("reimbursementDecisions", { caseId, txnRef: "T:cb-1", amount: 23, policy: "AUTO-1@test", outcome: "auto_approved", checks: [], decidedAt: 1, payout: { simulated: true, status: "deposited" } });
+      });
+      process.env.REASONING_PROVIDER = "openai-compatible";
+      // A call-back statement goes to the live model; while it is pending, "all_statements_interpreted" fails.
+      await t.mutation(api.cases.submitStatement, { caseId, text: "I'm calling back about the $23 charge", clientEventId: "evt-cb-0001" });
+      const pending = await t.run(async (ctx) => ({
+        decision: (await ctx.db.query("reimbursementDecisions").withIndex("by_case", (q) => q.eq("caseId", caseId)).first())!,
+        statement: (await ctx.db.query("statements").withIndex("by_case", (q) => q.eq("caseId", caseId)).first())!,
+      }));
+      expect(pending.statement.interpretationStatus).toBe("pending");
+      expect(pending.decision.needsReview).toBeUndefined();
+
+      // A FAILED interpretation is a real gap, so it does flag the approval.
+      await t.mutation(internal.statements.markInterpretationFailed, { statementId: pending.statement._id, attemptId: pending.statement.currentAttemptId!, error: "HTTP 500" });
+      const after = await t.run((ctx) => ctx.db.query("reimbursementDecisions").withIndex("by_case", (q) => q.eq("caseId", caseId)).first());
+      expect(after?.needsReview?.reason).toMatch(/all_statements_interpreted/);
+    } finally {
+      delete process.env.REASONING_PROVIDER;
+      vi.useRealTimers();
+    }
+  });
+
+  it("on a call about a case that already has everything, says so before the wrap-up, then closes", async () => {
+    process.env.VOICE_TOOL_SECRET = "test-secret";
+    try {
+      const t = newTest();
+      const caseId = await t.mutation(api.cases.createSynthetic, {});
+      await t.mutation(internal.cases.storeTransactions, { caseId, transactions: ledger, warnings: [] });
+      await t.mutation(api.cases.submitStatement, { caseId, text: "I did not make the $23 purchase at Corner Grocer. I never shared my card or codes.", clientEventId: "evt-cb-0002" });
+      const questions = ((await t.query(api.cases.view, { caseId }))!.case.analysis as { questions: { audience: string }[] }).questions;
+      expect(questions.filter((q) => q.audience === "customer")).toEqual([]);
+
+      const { token } = await t.mutation(api.voice.createVoiceSession, { caseId });
+      const say = async (utterance: string) =>
+        (await t.fetch("/voice/tools/record-statement", {
+          method: "POST",
+          headers: { Authorization: "Bearer test-secret", "Content-Type": "application/json" },
+          body: JSON.stringify({ session_token: token, utterance }),
+        })).json() as Promise<{ question: string | null; end_call: boolean }>;
+      expect(await say("Hi, I'm calling back about the charge I reported")).toMatchObject({ question: WRAP_UP_COMPLETE_PROMPT, end_call: false });
+      expect(await say("No, that's all")).toMatchObject({ question: CLOSING_MESSAGE, end_call: true });
+    } finally {
+      delete process.env.VOICE_TOOL_SECRET;
+    }
+  });
+});
+
+describe("cases stored with an older analysis shape (live 2026-10-24)", () => {
+  it("still load in the claims queue: missing facts.txnDecisions/answers and question keys are filled in", async () => {
+    const t = newTest();
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(internal.cases.storeTransactions, {
+      caseId,
+      transactions: [{ ref: "T:old-1", externalId: "old-1", provider: "nessie", kind: "purchase", amount: 389, date: "2026-10-17", description: null, merchantId: "m-old", merchantName: "FCI Demo Volt Electronics Online", status: "completed", medium: "balance" }],
+      warnings: [],
+    });
+    await t.mutation(api.cases.submitStatement, { caseId, text: "I did not make the $389 purchase at Volt Electronics", clientEventId: "evt-old-0001" });
+    // Strip what was added to the stored analysis during 2026-10-24, as on the oldest dev cases.
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get(caseId))!;
+      const a = JSON.parse(JSON.stringify(c.analysis));
+      expect(a.match.matchedRef).toBe("T:old-1"); // the crash needs a matched payment
+      delete a.facts.txnDecisions;
+      delete a.facts.answers;
+      for (const q of a.questions) {
+        delete q.key;
+        delete q.audience;
+        delete q.priority;
+      }
+      await ctx.db.patch(caseId, { analysis: a });
+    });
+    const rows = await t.query(api.review.queue, {});
+    expect(rows.map((r) => r._id)).toContain(caseId);
   });
 });

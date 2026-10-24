@@ -20,6 +20,7 @@ interface Message { id: string; role: "customer" | "assistant"; text: string; fa
 
 const OPENING_NEW = "Hi, I'm the bank's fraud support assistant. Tell me about the payment you don't recognize: the amount, who it was paid to and when, if you know.";
 const OPENING_NOTHING_WAITING = "Welcome back. We don't need anything else from you right now. Is there anything you'd like to add to your report?";
+/** Only for replies stored before the wrap-up and closing existed (the backend now always says something). */
 const NOTHING_MORE = "Thank you. That's everything we need for now. You can add anything else here, or end the chat.";
 const SOURCE_LABEL = { reviewer: "Our fraud team", model: "Our assistant", rules: "Our assistant" } as const;
 
@@ -83,6 +84,8 @@ export function TextChat({ caseId, existingCaseId = null, onInChatChange }: Text
       const r = await send({ sessionToken: session.token, text: m.text, messageId: m.id, ...(questionId.current ? { questionId: questionId.current } : {}) });
       questionId.current = r.question_id;
       setMessages((prev) => [...prev, { id: `${m.id}-reply`, role: "assistant", text: r.question ?? NOTHING_MORE }]);
+      // The closing message (nothing left to ask, after the wrap-up question) ends the chat, as it ends a call.
+      if (r.end_call) setStatus("ended");
     } catch (e) {
       setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, failed: true } : x)));
       setError(e instanceof Error ? e.message.replace(/^.*Uncaught Error: /s, "").split("\n")[0]! : String(e));
@@ -129,7 +132,7 @@ export function TextChat({ caseId, existingCaseId = null, onInChatChange }: Text
           <button type="button" className="tc-start-button" onClick={start}>
             {status === "idle" ? "Start chat" : "Start a new chat"}
           </button>
-          {status === "ended" && <p className="muted">Chat ended. Thank you — a member of our team will review your report.</p>}
+          {status === "ended" && <p className="muted">Chat ended. Our fraud team will follow up with you about the outcome.</p>}
           {status === "error" && error && <p className="error">{error}</p>}
           {status === "idle" && <p className="muted">You&apos;ll be chatting with an automated assistant. What you type is saved to your report for our fraud team to review.</p>}
         </div>

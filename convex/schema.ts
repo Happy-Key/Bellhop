@@ -214,10 +214,12 @@ export default defineSchema({
     callId: v.optional(v.string()),
     /** Question keys asked the maximum number of times on this call and handed to a reviewer. */
     handedOffKeys: v.optional(v.array(v.string())),
-    /** The previous tool response was an acknowledgement; the next one must ask a question. */
+    /** No longer written (the "anything else?" acknowledgement was removed 2026-10-24); kept so older rows still validate. */
     lastResponseWasAck: v.optional(v.boolean()),
     /** "text" for the customer text chat (same turn logic as a call); absent or "voice" for calls. */
     channel: v.optional(v.union(v.literal("voice"), v.literal("text"))),
+    /** When the backend gave the agent the closing message (end_call: true); the customer page then hangs up. */
+    closingAt: v.optional(v.number()),
   })
     .index("by_token", ["token"])
     .index("by_call", ["callId"])

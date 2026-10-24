@@ -11,14 +11,14 @@
  *    2026-10-24: `dynamic_variables_not_allowed`).
  */
 import { v } from "convex/values";
-import { action, internalMutation, internalQuery, mutation, type MutationCtx } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { logActivity, recordStatement } from "./model";
 import { modelQuestionFor } from "./proposals";
 import { redact } from "../lib/providers/errors";
 import { CARTESIA_VERSION } from "../lib/providers/cartesia";
 import { voiceIdempotencyKey } from "../lib/domain/idempotency";
-import { AWAITING_PROMPT, MAX_ASKS_PER_CALL, selectVoiceQuestion } from "../lib/domain/voiceTurn";
+import { CLOSING_MESSAGE, MAX_ASKS_PER_CALL, WRAP_UP_COMPLETE_PROMPT, WRAP_UP_KEY, WRAP_UP_PROMPT, selectVoiceQuestion } from "../lib/domain/voiceTurn";
 import type { OpenQuestion } from "../lib/domain/schemas";
 import { openReviewerQuestions } from "./reviewerQuestions";
 
@@ -36,6 +36,19 @@ export const createVoiceSession = mutation({
     await ctx.db.insert("voiceSessions", { token, caseId, createdAt: now, expiresAt: now + VOICE_SESSION_TTL_MS });
     await logActivity(ctx, caseId, "system", "voice_session_created", "Voice session issued (expires in 30 min).");
     return { token, expiresAt: now + VOICE_SESSION_TTL_MS };
+  },
+});
+
+/**
+ * Whether the backend has closed this call (said the closing message). The customer page uses it to
+ * hang up once the agent has finished speaking, in case the agent doesn't end the call itself.
+ * Takes the session token the page already holds; returns nothing else about the case.
+ */
+export const sessionClosing = query({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, { sessionToken }) => {
+    const session = await ctx.db.query("voiceSessions").withIndex("by_token", (q) => q.eq("token", sessionToken)).unique();
+    return session?.closingAt !== undefined;
   },
 });
 
@@ -72,12 +85,17 @@ export interface VoiceToolResponse {
   duplicate: boolean;
   /** Echo this back as `question_id` on the next tool call. Null when no question was issued. */
   question_id: string | null;
-  /** The one question to ask next, in the agent's own words. Null: ask whether there is anything else. */
+  /**
+   * What to say next: the one question to ask, in the agent's own words, or the closing message
+   * when `end_call` is true. Null only from responses stored before 2026-10-24.
+   */
   question: string | null;
   /** Kept for agents configured with the earlier instructions ("ask the first next_questions item"). */
   next_questions: string[];
-  /** True when the statement is still being interpreted: acknowledge, don't move on to new topics. */
+  /** True when the wait ran out before the statement was interpreted (the question comes from earlier statements). */
   awaiting_interpretation: boolean;
+  /** True: `question` is the closing message. Say it, then end the call without waiting for a reply. */
+  end_call?: boolean;
 }
 
 /**
@@ -183,27 +201,34 @@ export const issueVoiceQuestion = internalMutation({
     if (!c) throw new Error("case not found");
 
     let response: VoiceToolResponse;
-    // Acknowledge at most once in a row; otherwise a slow model loops the call on "anything else?"
-    // (seen live 2026-10-24: three acknowledgements, no question). The second time, ask the next
-    // question from what is already interpreted.
-    const acknowledge = awaitingInterpretation && !session.lastResponseWasAck;
-    if (awaitingInterpretation && !acknowledge) {
-      await logActivity(ctx, session.caseId, "voice", "asked_without_waiting", `${ref} was still being interpreted, but the previous turn was already an acknowledgement, so the next question was asked from the statements interpreted so far.`);
+    // No "anything else?" acknowledgement while the model is slow: it invited a "no" and looped the
+    // call (live 2026-10-24). The customer is told to wait before every tool call, the wait is long
+    // (convex/intakeTurn.ts), and if the statement still isn't interpreted, the next question is
+    // asked from what is.
+    if (awaitingInterpretation) {
+      await logActivity(ctx, session.caseId, "voice", "asked_without_waiting", `${ref} was still being interpreted when the wait ran out, so the next question was asked from the statements interpreted so far.`);
     }
-    if (acknowledge) {
-      // The newest statement isn't interpreted yet, so any case question could already be answered by it.
-      response = { recorded: ref, duplicate, question_id: null, question: AWAITING_PROMPT, next_questions: [AWAITING_PROMPT], awaiting_interpretation: true };
-      await logActivity(ctx, session.caseId, "voice", "awaiting_interpretation", `${ref} was not interpreted in time; the agent was told to acknowledge rather than ask a possibly stale question.`);
+    const what = session.channel === "text" ? "chat" : "call";
+    const next = await issueNextQuestion(ctx, session, c);
+    if (next) {
+      response = { recorded: ref, duplicate, question_id: next.turnId, question: next.text, next_questions: [next.text], awaiting_interpretation: awaitingInterpretation, end_call: false };
     } else {
-      const next = await issueNextQuestion(ctx, session, c);
-      if (next) {
-        response = { recorded: ref, duplicate, question_id: next.turnId, question: next.text, next_questions: [next.text], awaiting_interpretation: false };
+      // Nothing left to ask: one wrap-up question per session, then the closing and the end.
+      const wrappedUp = await ctx.db.query("intakeTurns").withIndex("by_session_key", (x) => x.eq("sessionId", sessionId).eq("questionKey", WRAP_UP_KEY)).first();
+      if (!wrappedUp) {
+        // Nothing asked yet in this session: the case already had what it needs (a call-back), so say so.
+        const askedThisCall = await ctx.db.query("intakeTurns").withIndex("by_session", (x) => x.eq("sessionId", sessionId)).first();
+        const text = askedThisCall ? WRAP_UP_PROMPT : WRAP_UP_COMPLETE_PROMPT;
+        const turnId = await ctx.db.insert("intakeTurns", { caseId: session.caseId, sessionId, questionKey: WRAP_UP_KEY, kind: WRAP_UP_KEY, text, issuedAt: Date.now(), analysisVersion: c.analysisVersion });
+        response = { recorded: ref, duplicate, question_id: turnId, question: text, next_questions: [text], awaiting_interpretation: awaitingInterpretation, end_call: false };
       } else {
-        response = { recorded: ref, duplicate, question_id: null, question: null, next_questions: [], awaiting_interpretation: false };
+        response = { recorded: ref, duplicate, question_id: null, question: CLOSING_MESSAGE, next_questions: [CLOSING_MESSAGE], awaiting_interpretation: awaitingInterpretation, end_call: true };
+        // The customer page watches this and ends the call once the closing has been spoken, in case the agent doesn't.
+        await ctx.db.patch(sessionId, { closingAt: Date.now() });
+        await logActivity(ctx, session.caseId, "voice", "voice_intake_complete", `Nothing left to ask on this ${what}: the closing message was given and the ${what} ends.`);
       }
     }
     if (event) await ctx.db.patch(event._id, { response: JSON.stringify(response) });
-    await ctx.db.patch(sessionId, { lastResponseWasAck: acknowledge });
     return response;
   },
 });

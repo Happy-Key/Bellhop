@@ -114,7 +114,7 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
   if (analysis.rejectedFindings.length > 0) {
     await logActivity(ctx, caseId, "validator", "findings_rejected", `${analysis.rejectedFindings.length} proposed finding(s) rejected: ${analysis.rejectedFindings.map((r) => r.reasons.join("; ")).join(" | ")}`);
   }
-  await applyAutoApproval(ctx, caseId, evaluation);
+  await applyAutoApproval(ctx, caseId, evaluation, statements.some((s) => s.interpretationStatus === "pending"));
   // The reasoning model reassesses the case whenever its state changes (live mode only).
   await maybeRequestProposal(ctx, caseId);
 }
@@ -124,7 +124,7 @@ export async function recomputeAnalysis(ctx: MutationCtx, caseId: Id<"cases">) {
  * the decision and schedules the SIMULATED payout. If later facts make the policy fail, the
  * approval is flagged for a person; nothing is ever denied or reversed automatically.
  */
-async function applyAutoApproval(ctx: MutationCtx, caseId: Id<"cases">, evaluation: AutoApprovalEvaluation) {
+async function applyAutoApproval(ctx: MutationCtx, caseId: Id<"cases">, evaluation: AutoApprovalEvaluation, interpretationPending: boolean) {
   const decisions = await ctx.db.query("reimbursementDecisions").withIndex("by_case", (q) => q.eq("caseId", caseId)).collect();
   if (evaluation.eligible && evaluation.txnRef && evaluation.amount !== null) {
     if (decisions.length > 0) return;
@@ -142,6 +142,10 @@ async function applyAutoApproval(ctx: MutationCtx, caseId: Id<"cases">, evaluati
     await ctx.scheduler.runAfter(0, internal.payout.payDecision, { decisionId });
     return;
   }
+  // A statement still being interpreted fails "all_statements_interpreted" for a few seconds; that is
+  // not a change of facts (live 2026-10-24: a call-back flagged an approval it later passed again).
+  // Judge again once it's read. A failed interpretation isn't pending, so it still flags.
+  if (interpretationPending) return;
   const failed = evaluation.checks.filter((c) => !c.passed);
   for (const d of decisions) {
     if (d.needsReview) continue;

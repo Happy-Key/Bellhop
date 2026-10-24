@@ -13,7 +13,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CaseProposal } from "@/lib/domain/caseDecision";
-import { triageCase, type StoredAnalysis } from "@/lib/domain/triage";
+import { readStoredAnalysis, triageCase, type StoredAnalysis } from "@/lib/domain/triage";
 import type { EvidenceFetchState } from "@/lib/domain/workflow";
 import { caseStatus } from "@/lib/review/caseStatus";
 import { intakeProgress } from "@/lib/review/intake";
@@ -55,7 +55,7 @@ type AskedRow = NonNullable<ReturnType<typeof useQuery<typeof api.reviewerQuesti
 
 export function CaseWorkspace({ data, model, asked }: { data: CaseView; model: ModelState | null; asked: AskedRow[] }) {
   const [focusRef, setFocusRef] = useState<string | null>(null);
-  const analysis = data.case.analysis as StoredAnalysis | null;
+  const analysis = readStoredAnalysis(data.case.analysis);
   const bankFetch = data.case.bankFetch as EvidenceFetchState;
   const triage = triageCase({ analysis, bankFetch, statementCount: data.statements.length });
   const payments = paymentsOf(data, analysis);

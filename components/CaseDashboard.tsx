@@ -6,6 +6,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { CaseAnalysis } from "@/lib/domain/workflow";
+import { readStoredAnalysis } from "@/lib/domain/triage";
 import { getSource } from "@/lib/domain/regulatory";
 import { AUTO_APPROVAL_POLICY, type AutoApprovalEvaluation } from "@/lib/domain/autoApproval";
 import { PAYMENT_ORIGIN_PRESETS } from "@/lib/fixtures/paymentOrigins";
@@ -23,7 +24,7 @@ export function CaseDashboard({ caseId }: { caseId: string }) {
   const data = useQuery(api.cases.view, { caseId: id });
   if (data === undefined) return <p className="muted">Loading…</p>;
   if (data === null) return <p className="error">Case not found.</p>;
-  const analysis = data.case.analysis as StoredAnalysis | null;
+  const analysis = readStoredAnalysis(data.case.analysis);
 
   return (
     <main>
