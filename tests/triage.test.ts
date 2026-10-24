@@ -36,7 +36,8 @@ describe("reviewer triage", () => {
   it("an ambiguous match waits on the customer, keyed by the stable question key", () => {
     const t = triage({ statements: [stmt("There's a $49 charge I don't recognize")] });
     expect(t.attention).toBe("customer");
-    const step = t.steps.find((s) => s.key.startsWith("ambiguous:"));
+    // Two possible records: the customer is asked about the likelier one by name (a yes or no).
+    const step = t.steps.find((s) => s.key === "tentative:T:ccc333");
     expect(step).toMatchObject({ audience: "customer", blocking: true });
     expect(step?.refs.sort()).toEqual(["T:ccc333", "T:ddd444"]);
     expect(t.headline).toMatch(/^Customer to answer: /);

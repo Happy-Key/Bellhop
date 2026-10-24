@@ -59,9 +59,17 @@ export function aggregateFacts(statements: Statement[]): ClaimFacts {
     if (fields.length) superseded.push({ ref: s.correctsRef, by: s.ref, fields });
   }
 
-  // A reply to a conflict question ("conflict:<field>") that gives a value for that field
-  // settles it: earlier statements' values for the field are superseded (originals preserved).
+  // A reply to a question that asks the customer to settle a field, and that gives a value for it,
+  // supersedes earlier statements' values for that field (originals preserved):
+  //  - "conflict:<field>" and the read-back "confirm:<field>";
+  //  - questions about which payment it was ("tentative:<ref>", "multiple_amounts:<ref>", "no_match"),
+  //    whose replies often restate the amount or date ("yes, the $389 one").
   const CONFLICT_FIELD: Record<string, Field> = { amount: "amounts", date: "dates", authorization: "authorization", credentialSharing: "credentialSharing" };
+  const settles = (key: string): Field[] => {
+    const m = key.match(/^(?:conflict|confirm):(.+)$/);
+    if (m) return CONFLICT_FIELD[m[1]!] ? [CONFLICT_FIELD[m[1]!]!] : [];
+    return /^(?:tentative:|multiple_amounts:|no_match$)/.test(key) ? ["amounts", "dates"] : [];
+  };
   const provides = (s: Statement, field: Field): boolean => {
     const i = s.interpretation;
     const d = s.answer?.derived;
@@ -72,15 +80,19 @@ export function aggregateFacts(statements: Statement[]): ClaimFacts {
     return (!!i && i.credentialSharing !== "unspecified") || !!d?.credentialSharing;
   };
   for (const [idx, s] of ordered.entries()) {
-    const field = s.inResponseTo?.key.startsWith("conflict:") ? CONFLICT_FIELD[s.inResponseTo.key.slice("conflict:".length)] : undefined;
-    if (!field || !provides(s, field)) continue;
-    const set = overridden.get(field) ?? new Set<string>();
-    for (const earlier of ordered.slice(0, idx)) {
-      if (!provides(earlier, field) || set.has(earlier.ref)) continue;
-      set.add(earlier.ref);
-      superseded.push({ ref: earlier.ref, by: s.ref, fields: [field] });
+    for (const field of s.inResponseTo ? settles(s.inResponseTo.key) : []) {
+      if (!provides(s, field)) continue;
+      // A "yes, I sent it" read-back agrees with the earlier account and keeps its detail (sent after being deceived).
+      const auth = s.interpretation?.authorization !== "unspecified" ? s.interpretation?.authorization : s.answer?.derived?.authorization;
+      if (field === "authorization" && s.inResponseTo!.key.startsWith("confirm:") && auth !== "denies_authorization") continue;
+      const set = overridden.get(field) ?? new Set<string>();
+      for (const earlier of ordered.slice(0, idx)) {
+        if (!provides(earlier, field) || set.has(earlier.ref)) continue;
+        set.add(earlier.ref);
+        superseded.push({ ref: earlier.ref, by: s.ref, fields: [field] });
+      }
+      overridden.set(field, set);
     }
-    overridden.set(field, set);
   }
 
   const live = (f: Field, ref: string) => !overridden.get(f)?.has(ref);

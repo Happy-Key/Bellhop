@@ -72,6 +72,30 @@ describe("answers read against the question asked", () => {
     const q = { key: "credentials", kind: "credential_sharing", text: "Did anyone ask you for a code…?" };
     expect(interpretAnswer("No, nobody asked me anything", q)?.derived?.credentialSharing).toBe("not_shared");
     expect(interpretAnswer("They asked for the code from my text", q)?.derived?.credentialSharing).toBe("shared");
+    // Being asked and refusing is not sharing; a positive act of sharing still wins.
+    expect(interpretAnswer("They asked for a code but I didn't give it to them", q)?.derived?.credentialSharing).toBe("not_shared");
+    expect(interpretAnswer("Yes they asked, so I hung up", q)?.derived?.credentialSharing).toBe("not_shared");
+    expect(interpretAnswer("I never gave them my password", q)?.derived?.credentialSharing).toBe("not_shared");
+    expect(interpretAnswer("I never gave the password, but I read them the code", q)?.derived?.credentialSharing).toBe("shared");
+  });
+
+  it("reads 'no' and 'I don't recognize it' as someone else making the payment", () => {
+    for (const t of ["No.", "Nope", "I don't recognize it", "No, I've never shopped there"]) {
+      expect(interpretAnswer(t, initiation)?.derived?.authorization).toBe("denies_authorization");
+    }
+    expect(interpretAnswer("No, it was me", initiation)?.derived?.authorization).toBe("authorized");
+    // "Yes." is ambiguous to the open question but answers the yes/no read-back.
+    const readBack = { key: "confirm:authorization", kind: "initiation", text: "Just to check: did you make it yourself?" };
+    expect(interpretAnswer("Yes.", readBack)?.derived?.authorization).toBe("authorized");
+    expect(interpretAnswer("No, someone else did", readBack)?.derived?.authorization).toBe("denies_authorization");
+  });
+
+  it("reads yes or no to a question about one named bank record", () => {
+    for (const kind of ["ambiguous_match", "multiple_amounts"]) {
+      const q = { key: "tentative:T:ccc333", kind, text: "Is it the $49.00 payment…?" };
+      expect(interpretAnswer("Yes", q, "T:ccc333")?.derived).toEqual({ confirmsTxnRef: "T:ccc333" });
+      expect(interpretAnswer("No, the other one", q, "T:ccc333")?.derived).toEqual({ rejectsTxnRef: "T:ccc333" });
+    }
   });
 
   it("is absent when the statement was not a reply", () => {
@@ -97,7 +121,7 @@ describe("question flow", () => {
 
   it("gives questions stable keys and orders them by priority", () => {
     const a = analyzeCase(input({ statements: [stmt("There's a $49 charge I don't recognize")] }));
-    expect(a.questions.map((q) => q.key)).toEqual(["ambiguous:T:ccc333,T:ddd444", "credentials"]);
+    expect(a.questions.map((q) => q.key)).toEqual(["tentative:T:ccc333", "credentials"]);
     expect(a.questions.map((q) => q.id)).toEqual(["Q1", "Q2"]);
   });
 

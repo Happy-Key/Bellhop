@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (end of session; status sections rewritten for a context reset)_
+_Last updated: 2026-10-24 (intake questions tailored to automatic approval)_
 
 ## What this is
 
@@ -38,14 +38,14 @@ Rules that always hold:
 | Backend (Convex) | ✅ Cloud dev deployment `dev:dynamic-chihuahua-120`. **Latest code is deployed** (pushed with `npx convex dev --once`) |
 | Bank records (Nessie) | ✅ Live: purchases **and deposits** (deposits drive the refund check; never matched as the disputed payment) |
 | Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ⚠️ **Credits not approved ($0.00 balance); may be refused at any moment.** Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
-| Voice (Cartesia) | ✅ Live: one question per turn (`question_id`); waits up to 8 s for extraction; at most one "anything else?" in a row; a display error can't end a call |
+| Voice (Cartesia) | ✅ Live: one question per turn (`question_id`), **tailored to what AUTO-1 needs** (mostly a yes or no about one named bank record); waits up to 8 s for extraction; at most one "anything else?" in a row; a display error can't end a call |
 | CRS | ✅ Identity check and **Fraud Finder** live (persona bodies only; Fraud Finder verified on P01, score 11) |
 | Case decisions (Bitdeer) | 🟡 **Built, mock-tested, not run live** (committed on `foundation`): the model proposes approve / deny / request information / escalate with cited reasons, a legal reading and draft letters. Info requests and escalations are automatic; approvals pay out automatically only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Validated before use. Off switch: `CASE_REASONING=off`. The personal review deployment has no Bitdeer key (scripted) |
 | Automatic reimbursement | ✅ Built: AUTO-1 v2, 14 checks, SIMULATED deposit that can't be paid twice. ⚠️ **The first live deposit hasn't been made yet** |
 | Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown) |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
 | Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify` on the `bank-dashboard` merge: see revision log |
+| Checks | ✅ `npm run verify` (with the `bank-dashboard` merge): typecheck, lint, **152 tests**, build pass |
 
 ## Branch and git
 
@@ -73,7 +73,7 @@ Rules that always hold:
 1. **A full demo rehearsal on dev**, including the **first live SIMULATED deposit**. The code follows
    Nessie's spec (`medium: "balance"`, `status: "completed"`, integer amount), but nothing has run live
    yet. A rejection shows on the case, with Retry payout.
-2. **A voice re-test with Bitdeer on.** Check the pacing with the 8 s wait, and that varied acknowledgements
+2. **A voice re-test with Bitdeer on**, including the new tailored questions (not yet heard live). Check the pacing with the 8 s wait, and that varied acknowledgements
    follow the updated agent instructions (paste them from `docs/integrations.md` into the Cartesia Playground).
 3. **Buttons for a person:** approve or reverse claims outside AUTO-1. Today only the checklist is shown.
 4. **Login and access control** before any non-synthetic use (Convex Auth now, bank SSO later; decided).
@@ -176,4 +176,5 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Workstation rebuilt as an evidence-linked investigation workspace plus the synthetic guided-intake demo `/review/demo` (branch `bank-dashboard`, commit `0a59fbd`; 15 new tests) |
 | 2026-10-24 | Merged `bank-dashboard` into `foundation` (only conflict: CONTEXT.md, resolved by keeping foundation's rewrite and adding the workstation section) |
 | 2026-10-24 | Switching the working copy to `foundation` means the running `npx convex dev` watcher pushes foundation's schema and functions (AUTO-1, payouts, payment origins) to the personal review deployment `friendly-grouse-183`. It has no Bitdeer key, so extraction there stays scripted |
-| 2026-10-24 | Bitdeer whole-case decision proposals (user decision: Bitdeer, no Claude API; model may propose denials; not every decision needs a person). New `caseProposals` table and `approved_by_person` outcome; voice uses the model's question as a fallback; decision panel in `/review/<id>`; `CLAUDE.md` updated. 11 new tests (155 total); verify passes. Not run live. Committed and pushed to `foundation`. The running `convex dev` watcher pushed the new functions to `friendly-grouse-183` (scripted there, so no model calls) |
+| 2026-10-24 | **Intake questions tailored to automatic approval (AUTO-1).** Fixed four ways a legitimate claim got stuck: (1) two amounts in one statement blocked the claim for good (the question returned after being answered, and the reply created an amount conflict); it now confirms the one matched record by name. (2) "They asked for a code but I didn't give it" was read as *shared*; the question now asks what the customer *gave*, and refusals parse as not shared. (3) "No." / "I don't recognize it" in reply to "did you make it?" didn't parse; now read as someone else. (4) Missing details were one three-part question; now one at a time, exact amount (with cents) first, skipping a detail the customer doesn't know. Also: two possible records → yes/no about the likelier one ("no" leaves the other as the match); the initiation question names the matched payment; "I sent it" read from a free-form account gets one read-back (`confirm:authorization`) so a misread denial isn't lost; replies to which-payment questions that restate the amount or date supersede the earlier value (`settles()` in `lib/domain/facts.ts`). `autoApproval.ts` unchanged. 8 new tests. Rebased onto the `bank-dashboard` merge (`e8f06d2`); its triage and guided-intake demo tests updated to the new key (`tentative:<ref>` for two possible records) and the named initiation question. 152 tests pass. Pushed to `origin/foundation`; not run live; not pushed to Convex |
+| 2026-10-24 | Bitdeer whole-case decision proposals (user decision: Bitdeer, no Claude API; model may propose denials; not every decision needs a person). New `caseProposals` table and `approved_by_person` outcome; voice uses the model's question as a fallback; decision panel in `/review/<id>`; `CLAUDE.md` updated. 11 new tests (155 total); verify passes. Not run live. Committed and pushed to `foundation`, merged with the intake-question commit `c858e1b`. The running `convex dev` watcher pushed the new functions to `friendly-grouse-183` (scripted there, so no model calls) |

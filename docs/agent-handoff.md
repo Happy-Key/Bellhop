@@ -136,7 +136,9 @@ Response:
 ### 5.3 Other behaviour fixes
 
 - **Removed the legal question.** "Did you make or approve this payment…" is now: "Did you
-  personally enter and send this payment, or did someone else do that?"
+  personally enter and send this payment, or did someone else do that?" Once the payment is
+  matched, it names it: "Did you make the $23.00 payment to … on … yourself, or did someone else
+  make it?" (2026-10-24, questions tailored to AUTO-1; see `docs/architecture.md`).
 - **Masking before storage.** Card numbers (Luhn-checked), codes and PINs next to a keyword,
   passwords and SSNs are masked before anything is stored or logged (`lib/domain/redact.ts`).
 - **Short replies are read against the question asked** (`lib/domain/answers.ts`): "me", "someone

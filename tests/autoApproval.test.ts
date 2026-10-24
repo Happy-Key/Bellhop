@@ -4,8 +4,8 @@ import { evaluateAutoApproval } from "@/lib/domain/autoApproval";
 import { FRAUD_FINDER_PRODUCT, IDENTITY_PRODUCT } from "@/lib/domain/fraudSignals";
 import { depositOnce, NessieClient, type NessieDeposit } from "@/lib/providers/nessie";
 import { PAYMENT_ORIGIN_PRESETS, type PaymentOriginPreset } from "@/lib/fixtures/paymentOrigins";
-import type { PaymentOrigin, ProviderEvidence, Statement, TransactionEvidence } from "@/lib/domain/schemas";
-import { LEDGER, NOW, resetStatements, stmt, txn } from "./helpers/build";
+import type { OpenQuestion, PaymentOrigin, ProviderEvidence, Statement, TransactionEvidence } from "@/lib/domain/schemas";
+import { LEDGER, NOW, replyTo, resetStatements, stmt, txn } from "./helpers/build";
 
 const ok = { status: "ok", at: NOW, count: LEDGER.length } as const;
 const crs = (product: string, field: string, value: string, suffix: string): ProviderEvidence => ({ ref: `X:crs:P01:k1:${suffix}`, provider: "crs", product, field, value, syntheticAssociation: true });
@@ -164,5 +164,72 @@ describe("SIMULATED payout deposits at most once", () => {
   it("refuses non-whole-dollar amounts (Nessie amounts are integers)", async () => {
     const client = new NessieClient("k", "https://api.example.invalid", async () => new Response("[]", { status: 200 }));
     await expect(depositOnce(client, ACCOUNT, { ...deposit, amount: 23.5 })).rejects.toMatchObject({ kind: "rejected_output" });
+  });
+});
+
+describe("questions tailored to what automatic approval needs", () => {
+  beforeEach(resetStatements);
+  const ask = (statements: Statement[], pick: (q: OpenQuestion) => boolean) => replyTo(analyzeCase({ statements, transactions: LEDGER, providerEvidence: CLEAN_CRS, bankFetch: ok }).questions.find(pick));
+
+  it("two amounts in one statement: confirms the one bank record instead of blocking for good", () => {
+    const s1 = stmt("I did not make the $23 purchase at Corner Grocer, and now my balance is $12.");
+    expect(failed(evaluate([s1]))).toContain("ready_for_reimbursement_review");
+    const asked = ask([s1], (q) => q.kind === "multiple_amounts");
+    expect(asked).toMatchObject({ key: "tentative:T:eee555" });
+    expect(asked.text).toMatch(/Is the payment you're disputing the \$23\.00 payment to FCI Demo Corner Grocer on 2026-10-22\?/);
+    expect(evaluate([s1, stmt("Yes, that one", { replyTo: asked })]).eligible).toBe(true);
+
+    // Restating the amount settles it rather than creating an amount conflict.
+    resetStatements();
+    const s1b = stmt("I did not make the $23 purchase at Corner Grocer, and now my balance is $12.");
+    const e = evaluate([s1b, stmt("Yes, the $23 one", { replyTo: asked })]);
+    expect(failed(e)).toEqual([]);
+  });
+
+  it("asked for a code but gave nothing: approved once the customer says so", () => {
+    const s1 = stmt("Someone pretending to be my bank called me. I did not make the $23 purchase at Corner Grocer.");
+    expect(failed(evaluate([s1]))).toEqual(["no_scam_contact_reported"]);
+    const asked = ask([s1], (q) => q.key === "credentials");
+    expect(asked.text).toMatch(/did you give anyone a code/);
+    expect(evaluate([s1, stmt("They asked for a code but I didn't give it to them", { replyTo: asked })]).eligible).toBe(true);
+  });
+
+  it("asks who made the payment by naming it, and reads a plain 'No.' as someone else", () => {
+    const s1 = stmt("There's a $23 charge at Corner Grocer");
+    const asked = ask([s1], (q) => q.key === "initiation");
+    expect(asked.text).toBe("Did you make the $23.00 payment to FCI Demo Corner Grocer on 2026-10-22 yourself, or did someone else make it?");
+    expect(evaluate([s1, stmt("No.", { replyTo: asked })]).eligible).toBe(true);
+  });
+
+  it("two possible records: asks about one by name, and 'no' leaves the other as the match", () => {
+    const s1 = stmt("There's a $49 charge I don't recognize");
+    const asked = ask([s1], (q) => q.kind === "ambiguous_match");
+    expect(asked).toMatchObject({ key: "tentative:T:ccc333" });
+    expect(asked.text).toBe("I found 2 payments that could match. Is it the $49.00 payment to FCI Demo GiftCard Hub on 2026-10-19?");
+    const e = evaluate([s1, stmt("No, it's the other one", { replyTo: asked })]);
+    expect(e).toMatchObject({ eligible: true, txnRef: "T:ddd444" });
+  });
+
+  it("no details yet: asks for the exact amount first, and skips a detail the customer doesn't know", () => {
+    const s1 = stmt("There's a charge on my account I don't recognize");
+    const amount = ask([s1], (q) => q.kind === "missing_transaction_details");
+    expect(amount).toMatchObject({ key: "details:amount" });
+    expect(amount.text).toMatch(/exact amount of the payment, including cents/);
+    const s2 = stmt("I don't know", { replyTo: amount });
+    expect(ask([s1, s2], (q) => q.kind === "missing_transaction_details")).toMatchObject({ key: "details:merchant" });
+
+    resetStatements();
+    const s1b = stmt("There's a charge on my account I don't recognize");
+    expect(evaluate([s1b, stmt("It was $23", { replyTo: amount })]).eligible).toBe(true);
+  });
+
+  it("'I sent it' read from the account itself is read back, so a misread denial still gets approved", () => {
+    // The scripted extractor reads this as "I authorized it" (seen live 2026-10-24).
+    const s1 = stmt("I do not believe I authorized the $23 charge at Corner Grocer.");
+    expect(analyzeCase({ statements: [s1], transactions: LEDGER, providerEvidence: CLEAN_CRS, bankFetch: ok }).facts.authorization?.value).toBe("authorized");
+    const asked = ask([s1], (q) => q.key === "confirm:authorization");
+    expect(asked.text).toBe("Just to check I have this right: did you make the $23.00 payment to FCI Demo Corner Grocer on 2026-10-22 yourself? If someone else made it, please say so.");
+    const e = evaluate([s1, stmt("No, someone else made it", { replyTo: asked })]);
+    expect(failed(e)).toEqual([]);
   });
 });
