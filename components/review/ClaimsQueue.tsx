@@ -107,7 +107,7 @@ export function ClaimsQueue() {
     <main className="page">
       <div className="page-head">
         <h1 className="page-brand">
-          <Wordmark size={40} />
+          <Wordmark size={48} />
           <span className="page-brand-org">Demo Bank</span>
         </h1>
       </div>
@@ -298,7 +298,7 @@ function QueueSkeleton() {
     <main className="page" aria-busy="true">
       <div className="page-head">
         <h1 className="page-brand">
-          <Wordmark size={40} />
+          <Wordmark size={48} />
           <span className="page-brand-org">Demo Bank</span>
         </h1>
       </div>

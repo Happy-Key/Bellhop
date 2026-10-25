@@ -624,9 +624,9 @@ th {
   align-items: center;
   justify-content: space-between;
   gap: var(--s3) var(--s4);
-  min-height: 76px;
-  padding: var(--s4) 0;
-  margin: 0 0 var(--s5);
+  min-height: 112px;
+  padding: var(--s5) 0;
+  margin: 0 0 var(--s6);
   border-bottom: 1px solid var(--line-2);
 }
 .page-head h1 {
@@ -664,8 +664,8 @@ th {
     padding: 0 var(--s4) var(--s5);
   }
   .page-head {
-    min-height: 60px;
-    padding: var(--s3) 0;
+    min-height: 76px;
+    padding: var(--s4) 0;
     margin-bottom: var(--s4);
   }
   .page-head h1 {
