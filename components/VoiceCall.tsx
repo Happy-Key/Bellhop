@@ -30,6 +30,15 @@ const CLOSING_MIN_AUDIO_S = 3;
 const CLOSING_SILENCE_MS = 2500;
 const CLOSING_MAX_WAIT_MS = 30_000;
 
+/**
+ * "Thinking": while the backend works on a turn (the agent has told the customer to wait), the
+ * page sends silence instead of the microphone, so speech can't interrupt. Once the next question
+ * is ready it keeps holding until the agent starts saying it, at most THINKING_HOLD_MS.
+ * THINKING_MAX_MS releases the microphone if the backend's mark is never cleared.
+ */
+const THINKING_HOLD_MS = 5000;
+const THINKING_MAX_MS = 25_000;
+
 const CAPTURE_WORKLET = `
 class PcmCapture extends AudioWorkletProcessor {
   process(inputs) {
@@ -64,9 +73,13 @@ interface CallResources {
   closingSeenAt: number | null;
   audioAfterClosingS: number;
   lastAudioEndAt: number;
+  /** The backend is working on a turn: "Thinking" is shown and silence is sent instead of the microphone. */
+  thinking: boolean;
+  /** The next question is ready: release the microphone when the agent starts speaking. */
+  releaseOnAudio: boolean;
 }
 
-const emptyResources = (): CallResources => ({ sessionToken: null, ws: null, ctx: null, stream: null, nodes: [], sources: new Set(), nextPlayTime: 0, timer: null, closingSeenAt: null, audioAfterClosingS: 0, lastAudioEndAt: 0 });
+const emptyResources = (): CallResources => ({ sessionToken: null, ws: null, ctx: null, stream: null, nodes: [], sources: new Set(), nextPlayTime: 0, timer: null, closingSeenAt: null, audioAfterClosingS: 0, lastAudioEndAt: 0, thinking: false, releaseOnAudio: false });
 
 interface VoiceCallProps {
   /** The case to bind the call to, or a resolver run when the call starts (the customer view creates its case lazily). */
@@ -88,6 +101,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
   const [agentSpeaking, setAgentSpeaking] = useState(false);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const res = useRef<CallResources>(emptyResources());
   /** Live levels for the display; written on the audio path, read by the view's animation frame. */
   const levels = useRef<AudioLevels>({ mic: 0, agent: 0 });
@@ -111,6 +125,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     if (!ctx) return;
     const samples = decodePcm16Base64(b64);
     if (samples.length === 0) return;
+    if (res.current.releaseOnAudio) endThinking(res.current);
     const buffer = ctx.createBuffer(1, samples.length, AGENT_SAMPLE_RATE);
     buffer.copyToChannel(samples, 0);
     const src = ctx.createBufferSource();
@@ -138,6 +153,14 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     };
   }
 
+  /** Ends "Thinking" for this call (no-op once the call has been torn down). */
+  function endThinking(r: CallResources) {
+    if (res.current !== r) return;
+    r.thinking = false;
+    r.releaseOnAudio = false;
+    setThinking(false);
+  }
+
   /** Releases the microphone, audio graph, socket and timer. Safe to call more than once. */
   function teardown() {
     const r = res.current;
@@ -159,6 +182,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     setAgentSpeaking(false);
     setSessionToken(null);
     setMuted(false);
+    setThinking(false);
   }
 
   function fail(message: string) {
@@ -179,8 +203,10 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     const resampler = new Resampler(ctx.sampleRate, AGENT_SAMPLE_RATE);
     let pending = new Float32Array(0);
     capture.port.onmessage = (e: MessageEvent<Float32Array>) => {
-      levels.current.mic = res.current.stream?.getAudioTracks().some((t) => t.enabled) ? level(e.data) : 0;
-      const out = resampler.push(e.data);
+      // Thinking: the agent hears silence, so nothing the customer says can interrupt.
+      const hold = res.current.thinking;
+      levels.current.mic = !hold && res.current.stream?.getAudioTracks().some((t) => t.enabled) ? level(e.data) : 0;
+      const out = resampler.push(hold ? new Float32Array(e.data.length) : e.data);
       const merged = new Float32Array(pending.length + out.length);
       merged.set(pending);
       merged.set(out, pending.length);
@@ -333,11 +359,35 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
     }, 250);
     return () => clearInterval(timer);
   }, [closing, status]);
+
+  const backendThinking = useQuery(api.voice.sessionThinking, sessionToken && status === "live" ? { sessionToken } : "skip") === true;
+  // Shown from the moment the backend starts a turn; cleared by endThinking (agent audio or a timer).
+  const [sawBackendThinking, setSawBackendThinking] = useState(false);
+  if (backendThinking !== sawBackendThinking) {
+    setSawBackendThinking(backendThinking);
+    if (backendThinking) setThinking(true);
+  }
+  useEffect(() => {
+    if (status !== "live") return;
+    const r = res.current;
+    if (backendThinking) {
+      r.thinking = true;
+      r.releaseOnAudio = false;
+      const cap = setTimeout(() => endThinking(r), THINKING_MAX_MS);
+      return () => clearTimeout(cap);
+    }
+    if (!r.thinking) return;
+    // The next question is ready: hold until the agent starts saying it.
+    r.releaseOnAudio = true;
+    const hold = setTimeout(() => endThinking(r), THINKING_HOLD_MS);
+    return () => clearTimeout(hold);
+  }, [backendThinking, status]);
+
   if (variant === "customer") {
     // The boundary keeps a display error from unmounting VoiceCall, whose cleanup would hang up the call.
     return (
       <CallDisplayBoundary inCall={inCall} onHangUp={hangUp}>
-        <CustomerCallView status={status} detail={detail} turns={turns} elapsed={elapsed} maxSeconds={MAX_CALL_SECONDS} agentSpeaking={agentSpeaking} muted={muted} levels={levels} onStart={start} onHangUp={hangUp} onToggleMute={toggleMute} />
+        <CustomerCallView status={status} detail={detail} turns={turns} elapsed={elapsed} maxSeconds={MAX_CALL_SECONDS} agentSpeaking={agentSpeaking} thinking={thinking} muted={muted} levels={levels} onStart={start} onHangUp={hangUp} onToggleMute={toggleMute} />
       </CallDisplayBoundary>
     );
   }
@@ -346,7 +396,7 @@ export function VoiceCall({ caseId, variant = "staff", onInCallChange }: VoiceCa
       <h3>Voice call <span className="muted">(Cartesia agent; billed per minute, max {MAX_CALL_SECONDS / 60} min)</span></h3>
       {!inCall ? <button onClick={start}>Start voice call</button> : <button onClick={hangUp}>Hang up</button>}{" "}
       <span className="label">{status}</span>
-      {status === "live" && <span className="muted"> {elapsed}s{agentSpeaking ? " · agent speaking" : " · listening"}</span>}
+      {status === "live" && <span className="muted"> {elapsed}s{thinking ? " · thinking (microphone held)" : agentSpeaking ? " · agent speaking" : " · listening"}</span>}
       {detail && <p className={status === "error" ? "error" : "muted"}>{detail}</p>}
       {turns.length > 0 && (
         <div>

@@ -15,6 +15,8 @@ import { ProviderError, redact, type FetchLike } from "./errors";
 export const CARTESIA_BASE_URL = "https://api.cartesia.ai";
 export const CARTESIA_VERSION = "2026-08-14";
 export const RECORD_STATEMENT_TOOL_NAME = "record_statement";
+/** How long Cartesia waits for the tool. The backend stops before this (convex/intakeTurn.ts). */
+export const RECORD_STATEMENT_TIMEOUT_SECS = 20;
 /**
  * Cartesia system variable holding the call ID (https://docs.cartesia.ai/agents/dynamic-variables.md).
  * Browser access tokens cannot supply custom dynamic variables (`dynamic_variables_not_allowed`,
@@ -62,7 +64,7 @@ export function buildRecordStatementTool(endpointUrl: string, toolSecret: string
     // "force": the agent always speaks before the call, so the customer knows to wait (live 2026-10-24: silence after "I'll note that").
     pre_tool_speech: "force",
     execution_mode: "immediate",
-    response_timeout_secs: 20,
+    response_timeout_secs: RECORD_STATEMENT_TIMEOUT_SECS,
     api_schema: {
       url: endpointUrl,
       method: "POST",

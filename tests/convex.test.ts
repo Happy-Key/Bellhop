@@ -5,6 +5,7 @@ import schema from "../convex/schema";
 import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { CLOSING_MESSAGE, WRAP_UP_COMPLETE_PROMPT, WRAP_UP_PROMPT } from "../lib/domain/voiceTurn";
+import { takeTurn } from "../convex/intakeTurn";
 
 const modules = import.meta.glob("../convex/**/*.*s");
 
@@ -111,6 +112,43 @@ describe("Convex case workflow", () => {
     }
   });
 
+  it("issues no question once the voice agent has stopped waiting for the reply", async () => {
+    const t = convexTest(schema, modules);
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    const { token } = await t.mutation(api.voice.createVoiceSession, { caseId });
+    const r = await t.mutation(internal.voice.recordVoiceUtterance, { sessionToken: token, utterance: "No.", utteranceKey: "late-1" });
+    if (!r.ok || r.storedResponse) throw new Error("expected a fresh turn");
+    const ctx = { runQuery: t.query.bind(t), runMutation: t.mutation.bind(t) } as unknown as Parameters<typeof takeTurn>[0];
+    const late = await takeTurn(ctx, r, { respondBy: Date.now() - 1 });
+    expect(late).toMatchObject({ question: null, question_id: null });
+    expect(await t.run(async (c) => (await c.db.query("intakeTurns").collect()).length)).toBe(0);
+    const view = await t.query(api.cases.view, { caseId });
+    expect(view?.activity.some((a) => a.kind === "question_not_issued")).toBe(true);
+    expect(await t.query(api.voice.sessionThinking, { sessionToken: token })).toBe(false);
+    // The same request in time gets a question (nothing was stored for the late one).
+    const again = await t.mutation(internal.voice.recordVoiceUtterance, { sessionToken: token, utterance: "No.", utteranceKey: "late-1" });
+    if (!again.ok || again.storedResponse) throw new Error("expected the late turn to be handled afresh");
+    expect((await takeTurn(ctx, again, { respondBy: Date.now() + 60_000 })).question).not.toBeNull();
+  });
+
+  it("marks a turn as thinking while it is worked on, and a finish clears only its own mark", async () => {
+    const t = convexTest(schema, modules);
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    const { token } = await t.mutation(api.voice.createVoiceSession, { caseId });
+    const sessionId = await t.run(async (ctx) => (await ctx.db.query("voiceSessions").withIndex("by_token", (q) => q.eq("token", token)).unique())!._id);
+    const thinking = () => t.query(api.voice.sessionThinking, { sessionToken: token });
+    expect(await thinking()).toBe(false);
+    const first = await t.mutation(internal.voice.markThinking, { sessionId });
+    expect(await thinking()).toBe(true);
+    // An overlapping later turn: the first turn's finish must not release the microphone.
+    await t.run(async (ctx) => ctx.db.patch(sessionId, { thinkingSince: first! + 1 }));
+    await t.mutation(internal.voice.markThinking, { sessionId, since: first! });
+    expect(await thinking()).toBe(true);
+    await t.mutation(internal.voice.markThinking, { sessionId, since: first! + 1 });
+    expect(await thinking()).toBe(false);
+    expect(await t.query(api.voice.sessionThinking, { sessionToken: "vs_unknown" })).toBe(false);
+  });
+
   it("asks one question at a time, links answers to it, and never repeats a question more than twice", async () => {
     process.env.VOICE_TOOL_SECRET = "test-secret";
     try {
@@ -159,6 +197,8 @@ describe("Convex case workflow", () => {
       expect(r5).toMatchObject({ question: WRAP_UP_PROMPT, end_call: false });
       expect(r5.question_id).not.toBeNull();
       expect(await t.query(api.voice.sessionClosing, { sessionToken: token })).toBe(false);
+      // The "thinking" mark (microphone held on the call page) is cleared once the question is ready.
+      expect(await t.query(api.voice.sessionThinking, { sessionToken: token })).toBe(false);
       // An unknown or foreign question_id is ignored, not trusted.
       const r6 = await say("No, that's all", "not-a-real-id");
       expect(r6).toMatchObject({ recorded: "S6", question: CLOSING_MESSAGE, question_id: null, end_call: true });

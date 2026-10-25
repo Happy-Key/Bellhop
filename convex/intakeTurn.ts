@@ -40,7 +40,28 @@ export interface RecordedTurn {
   statementId?: Id<"statements"> | null;
 }
 
-export async function takeTurn(ctx: Pick<GenericActionCtx<DataModel>, "runQuery" | "runMutation">, result: RecordedTurn): Promise<VoiceToolResponse> {
+/**
+ * Voice only: when the agent stops waiting for the reply. Cartesia times the tool out (live
+ * 2026-10-24: "Client disconnected" at 15 s), gives its LLM an error and the agent asks the caller to
+ * repeat; a question issued after that is never heard, but would be logged as asked and the repeat
+ * recorded as its answer. So past `respondBy`, or once the request is aborted, no question is issued.
+ */
+export interface TurnDeadline {
+  respondBy: number;
+  signal?: AbortSignal;
+}
+
+export async function takeTurn(ctx: Pick<GenericActionCtx<DataModel>, "runQuery" | "runMutation">, result: RecordedTurn, delivery?: TurnDeadline): Promise<VoiceToolResponse> {
+  // The call page shows "Thinking" and holds the microphone until the next question is ready.
+  const since = await ctx.runMutation(internal.voice.markThinking, { sessionId: result.sessionId });
+  try {
+    return await workOnTurn(ctx, result, delivery);
+  } finally {
+    if (since !== null) await ctx.runMutation(internal.voice.markThinking, { sessionId: result.sessionId, since });
+  }
+}
+
+async function workOnTurn(ctx: Pick<GenericActionCtx<DataModel>, "runQuery" | "runMutation">, result: RecordedTurn, delivery?: TurnDeadline): Promise<VoiceToolResponse> {
   // Live interpretation runs in the background. Wait for it so the next question reflects what the
   // customer just said; if it still isn't ready, the next question comes from earlier statements.
   let awaiting = result.pending;
@@ -66,6 +87,11 @@ export async function takeTurn(ctx: Pick<GenericActionCtx<DataModel>, "runQuery"
     while (Date.now() < deadline && (await ctx.runQuery(internal.voice.assessmentPending, { sessionId: result.sessionId }))) {
       await new Promise((r) => setTimeout(r, POLL_MS));
     }
+  }
+  if (delivery && (delivery.signal?.aborted || Date.now() > delivery.respondBy)) {
+    await ctx.runMutation(internal.voice.logUndeliveredTurn, { sessionId: result.sessionId, ref: result.ref, waitedMs: Date.now() - started });
+    // Nobody receives this; a later identical request (same question, same words) is handled afresh.
+    return { recorded: result.ref, duplicate: result.duplicate, question_id: null, question: null, next_questions: [], awaiting_interpretation: awaiting };
   }
   // Questions come from the backend: a reviewer's, the model's, or the rules' as the fallback. No
   // recommendation or eligibility is sent to the customer.

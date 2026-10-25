@@ -247,6 +247,11 @@ export default defineSchema({
     channel: v.optional(v.union(v.literal("voice"), v.literal("text"))),
     /** When the backend gave the agent the closing message (end_call: true); the customer page then hangs up. */
     closingAt: v.optional(v.number()),
+    /**
+     * Set while a turn is being worked on (the customer was told to wait; the model is reading the
+     * statement and choosing the next question). The call page holds the microphone meanwhile.
+     */
+    thinkingSince: v.optional(v.number()),
   })
     .index("by_token", ["token"])
     .index("by_call", ["callId"])

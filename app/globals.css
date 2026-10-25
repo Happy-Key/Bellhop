@@ -1150,7 +1150,18 @@ th {
 .cl-stage[data-activity="connecting"] .cl-ring {
   --cl-ring: var(--cl-ring-quiet);
 }
+/* Thinking: agent-coloured rings breathing slowly while the backend works on the turn. */
+.cl-stage[data-activity="thinking"] .cl-ring {
+  --cl-ring: var(--cl-ring-agent);
+}
 @media (prefers-reduced-motion: no-preference) {
+  .cl-stage[data-activity="thinking"] .cl-ring-2 {
+    animation: cl-breathe 2.2s ease-in-out infinite;
+  }
+  .cl-stage[data-activity="thinking"] .cl-ring-3 {
+    animation: cl-breathe 2.2s ease-in-out 0.5s infinite;
+  }
+
   .cl-stage[data-activity="connecting"] .cl-ring-2 {
     animation: cl-breathe 1.6s ease-in-out infinite;
   }

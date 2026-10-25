@@ -52,6 +52,38 @@ export const sessionClosing = query({
   },
 });
 
+/**
+ * Whether the backend is working on the customer's last turn (interpreting it and choosing the next
+ * question). The call page shows "Thinking" and holds the microphone so speech can't interrupt.
+ * Takes the session token the page already holds; returns nothing else about the case.
+ */
+export const sessionThinking = query({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, { sessionToken }) => {
+    const session = await ctx.db.query("voiceSessions").withIndex("by_token", (q) => q.eq("token", sessionToken)).unique();
+    return session?.thinkingSince !== undefined;
+  },
+});
+
+/**
+ * Marks a turn as being worked on (`since` absent) or finished (`since` = the value the start
+ * returned). A finish clears only its own mark, so an overlapping later turn stays marked.
+ */
+export const markThinking = internalMutation({
+  args: { sessionId: v.id("voiceSessions"), since: v.optional(v.number()) },
+  handler: async (ctx, { sessionId, since }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) return null;
+    if (since === undefined) {
+      const now = Date.now();
+      await ctx.db.patch(sessionId, { thinkingSince: now });
+      return now;
+    }
+    if (session.thinkingSince === since) await ctx.db.patch(sessionId, { thinkingSince: undefined });
+    return null;
+  },
+});
+
 export const CALL_ID_PATTERN = /^ac_[A-Za-z0-9]{8,64}$/;
 
 /** Replies this short don't wait for the live model (see recordVoiceUtterance). */
@@ -166,6 +198,16 @@ export const recordVoiceUtterance = internalMutation({
       statementId: r.statementId,
       storedResponse: null,
     };
+  },
+});
+
+/** The agent stopped waiting before the next question was ready, so none was issued (convex/intakeTurn.ts). */
+export const logUndeliveredTurn = internalMutation({
+  args: { sessionId: v.id("voiceSessions"), ref: v.string(), waitedMs: v.number() },
+  handler: async (ctx, { sessionId, ref, waitedMs }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) return;
+    await logActivity(ctx, session.caseId, "voice", "question_not_issued", `${ref} was recorded, but the voice agent stopped waiting for the reply (after ${(waitedMs / 1000).toFixed(1)} s), so no question was issued: the caller did not hear one.`);
   },
 });
 

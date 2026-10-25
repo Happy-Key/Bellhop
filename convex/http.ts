@@ -13,6 +13,10 @@ import { internal } from "./_generated/api";
 import { voiceUtteranceKey } from "../lib/domain/idempotency";
 import { CALL_ID_PATTERN } from "./voice";
 import { takeTurn } from "./intakeTurn";
+import { RECORD_STATEMENT_TIMEOUT_SECS } from "../lib/providers/cartesia";
+
+/** Margin under Cartesia's tool timeout: past it the reply would arrive after Cartesia gave up. */
+const RESPONSE_MARGIN_MS = 1500;
 
 // Live calls send call_id (from Cartesia's system__conversation_id). session_token remains for
 // direct testing. Exactly one must be present.
@@ -44,6 +48,7 @@ http.route({
   path: "/voice/tools/record-statement",
   method: "POST",
   handler: httpAction(async (ctx, req) => {
+    const receivedAt = Date.now();
     const secret = process.env.VOICE_TOOL_SECRET;
     if (!secret) return json(503, { error: "voice tool not configured" });
     const auth = req.headers.get("authorization") ?? "";
@@ -62,7 +67,7 @@ http.route({
     // A retry gets exactly the response the first call got.
     if (result.storedResponse) return json(200, { ...result.storedResponse, duplicate: true });
 
-    return json(200, await takeTurn(ctx, result));
+    return json(200, await takeTurn(ctx, result, { respondBy: receivedAt + RECORD_STATEMENT_TIMEOUT_SECS * 1000 - RESPONSE_MARGIN_MS, signal: req.signal }));
   }),
 });
 

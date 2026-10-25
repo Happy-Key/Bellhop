@@ -29,8 +29,8 @@ const NOTE: Partial<Record<CallStatus, string>> = { idle: "Use headphones. Calls
 
 const formatClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-export function CustomerCallView(props: { status: CallStatus; detail: string | null; turns: CallTurn[]; elapsed: number; maxSeconds: number; agentSpeaking: boolean; muted: boolean; levels: MutableRefObject<AudioLevels>; onStart: () => void; onHangUp: () => void; onToggleMute: () => void }) {
-  const { status, detail, turns, elapsed, maxSeconds, agentSpeaking, muted, levels, onStart, onHangUp, onToggleMute } = props;
+export function CustomerCallView(props: { status: CallStatus; detail: string | null; turns: CallTurn[]; elapsed: number; maxSeconds: number; agentSpeaking: boolean; thinking: boolean; muted: boolean; levels: MutableRefObject<AudioLevels>; onStart: () => void; onHangUp: () => void; onToggleMute: () => void }) {
+  const { status, detail, turns, elapsed, maxSeconds, agentSpeaking, thinking, muted, levels, onStart, onHangUp, onToggleMute } = props;
   const inCall = status === "connecting" || status === "live";
   const reduce = useReducedMotion();
   const stage = useRef<HTMLDivElement>(null);
@@ -61,8 +61,9 @@ export function CustomerCallView(props: { status: CallStatus; detail: string | n
     if (transcriptOpen) transcriptEnd.current?.scrollIntoView({ block: "nearest" });
   }, [turns.length, transcriptOpen]);
 
-  const label = status === "live" && agentSpeaking ? "Speaking" : STATE_LABEL[status];
-  const activity = status === "live" ? (agentSpeaking ? "agent" : "customer") : status;
+  // Thinking wins over speaking: the agent may still be finishing "one moment" when it starts.
+  const label = status === "live" && thinking ? "Thinking" : status === "live" && agentSpeaking ? "Speaking" : STATE_LABEL[status];
+  const activity = status === "live" ? (thinking ? "thinking" : agentSpeaking ? "agent" : "customer") : status;
   return (
     <div className="cl-canvas" data-transcript={transcriptOpen || undefined}>
       <div ref={stage} className="cl-stage" data-activity={activity} data-muted={muted || undefined}>
@@ -77,7 +78,7 @@ export function CustomerCallView(props: { status: CallStatus; detail: string | n
         {label}
       </p>
       <p className="cl-note">
-        {status === "live" ? `${formatClock(elapsed)} / ${formatClock(maxSeconds)}` : status === "connecting" ? (detail ?? "") : (NOTE[status] ?? "")}
+        {status === "live" ? (thinking ? "One moment, please." : `${formatClock(elapsed)} / ${formatClock(maxSeconds)}`) : status === "connecting" ? (detail ?? "") : (NOTE[status] ?? "")}
         {status === "error" && detail ? <span className="cl-error">{detail}</span> : null}
       </p>
 
