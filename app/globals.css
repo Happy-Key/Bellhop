@@ -688,11 +688,25 @@ th {
   color: var(--rail-ink-3);
 }
 .shell-main {
+  position: relative;
+  isolation: isolate;
   min-width: 0;
   /* The same veil as the customer line, pinned to the viewport so long pages look the same top to bottom. */
   background: var(--page-veil);
   background-image: var(--page-veil-washes);
   background-attachment: fixed;
+}
+/* A soft white glow radiating from the top-left corner of the workspace: behind the wordmark, not bounded by the bar. */
+.shell-main::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 720px;
+  height: 720px;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle at 0 0, color-mix(in srgb, var(--surface) 72%, transparent) 0, color-mix(in srgb, var(--surface) 40%, transparent) 260px, transparent 560px);
 }
 .page {
   max-width: 1480px;
@@ -744,9 +758,8 @@ th {
   justify-content: space-between;
   gap: var(--s3) var(--s4);
   min-height: 112px;
-  padding: var(--s5) 0;
-  margin: 0 0 var(--s6);
-  border-bottom: 1px solid var(--line-2);
+  padding: var(--s5) var(--s6);
+  margin: 0 calc(-1 * var(--s6)) var(--s6);
 }
 .page-head h1 {
   font-size: 32px;
@@ -784,8 +797,8 @@ th {
   }
   .page-head {
     min-height: 76px;
-    padding: var(--s4) 0;
-    margin-bottom: var(--s4);
+    padding: var(--s4) var(--s4);
+    margin: 0 calc(-1 * var(--s4)) var(--s4);
   }
   .page-head h1 {
     font-size: 26px;
