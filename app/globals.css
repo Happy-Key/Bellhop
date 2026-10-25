@@ -9,6 +9,7 @@
   color-scheme: light;
   --font-sans: var(--font-plex-sans), "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --font-brand: var(--font-brand), "Fraunces", Georgia, serif;
 
   --bg: #eae9ee;
   --surface: #ffffff;
@@ -698,6 +699,43 @@ th {
   margin: 0 auto;
   padding: 0 var(--s6) 56px;
 }
+/* The wordmark: brand face, tight tracking, the "o" drawn as a bell whose clapper hangs below the baseline. */
+.wm {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-brand);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+.wm-bell {
+  width: 0.56em;
+  height: 0.74em;
+  margin: 0 0.015em 0 0.03em;
+  vertical-align: baseline;
+  transform: translateY(0.163em);
+  flex: none;
+}
+.page-head h1.page-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  line-height: 1;
+}
+.page-brand-org {
+  padding-left: 16px;
+  border-left: 1px solid var(--line-2);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  line-height: 1.2;
+}
+
 /* A tall page bar on the page colour, separated from the controls by a rule. */
 .page-head {
   display: flex;
@@ -705,9 +743,9 @@ th {
   align-items: center;
   justify-content: space-between;
   gap: var(--s3) var(--s4);
-  min-height: 76px;
-  padding: var(--s4) 0;
-  margin: 0 0 var(--s5);
+  min-height: 112px;
+  padding: var(--s5) 0;
+  margin: 0 0 var(--s6);
   border-bottom: 1px solid var(--line-2);
 }
 .page-head h1 {
@@ -745,8 +783,8 @@ th {
     padding: 0 var(--s4) var(--s5);
   }
   .page-head {
-    min-height: 60px;
-    padding: var(--s3) 0;
+    min-height: 76px;
+    padding: var(--s4) 0;
     margin-bottom: var(--s4);
   }
   .page-head h1 {

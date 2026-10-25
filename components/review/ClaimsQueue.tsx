@@ -1,5 +1,7 @@
 "use client";
 
+import { Wordmark } from "@/components/shell/Wordmark";
+
 /**
  * Claims queue: every case grouped by who has to act, the counts as filters. Selection lives in the
  * URL (?case=<id>). Keyboard: ↑/↓/Home/End move the selection, Enter opens the case. Rows move
@@ -104,7 +106,10 @@ export function ClaimsQueue() {
   return (
     <main className="page">
       <div className="page-head">
-        <h1>Claims Queue</h1>
+        <h1 className="page-brand">
+          <Wordmark size={48} />
+          <span className="page-brand-org">Demo Bank</span>
+        </h1>
       </div>
 
       <div className="q-stats" role="group" aria-label="Filter by who needs to act">
@@ -292,7 +297,10 @@ function QueueSkeleton() {
   return (
     <main className="page" aria-busy="true">
       <div className="page-head">
-        <h1>Claims Queue</h1>
+        <h1 className="page-brand">
+          <Wordmark size={48} />
+          <span className="page-brand-org">Demo Bank</span>
+        </h1>
       </div>
       <div className="q-layout">
         <div className="q-list">

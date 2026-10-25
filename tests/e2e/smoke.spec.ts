@@ -36,7 +36,7 @@ test("claims queue renders live cases or an honest empty state", async ({ page }
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/review");
-  await expect(page.getByRole("heading", { name: "Claims Queue" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bellhop" })).toBeVisible();
   await expect(page.locator("[role=option], .empty").first()).toBeVisible();
   expect(errors).toEqual([]);
 });
