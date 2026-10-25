@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { AppShell } from "@/components/shell/AppShell";
+import { DoorBackdrop } from "@/components/shell/DoorBackdrop";
 import { ConvexClientProvider } from "@/components/ConvexClientProvider";
 import "./globals.css";
 
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" data-scroll-behavior="smooth" className={`${sans.variable} ${mono.variable}`}>
       <body>
+        <DoorBackdrop />
         <ConvexClientProvider>
           <AppShell>{children}</AppShell>
         </ConvexClientProvider>

@@ -56,6 +56,10 @@
   --cl-ring-agent: rgba(90, 67, 168, 0.18);
   --cl-ring-customer: rgba(11, 110, 138, 0.2);
   --cl-end: #c4262e;
+  /* The veil over the door backdrop, shared by the customer line and the staff pages so the
+     pattern reads the same everywhere: a translucent page colour plus soft peach and purple washes. */
+  --page-veil: color-mix(in srgb, var(--cl-bg) 35%, transparent);
+  --page-veil-washes: radial-gradient(60% 55% at 12% 8%, var(--cl-peach-wash), transparent 70%), radial-gradient(45% 45% at 90% 20%, var(--cl-sage-wash), transparent 70%), radial-gradient(50% 40% at 50% 100%, var(--cl-peach-wash), transparent 70%);
 
   --s1: 4px;
   --s2: 8px;
@@ -144,6 +148,117 @@ body {
   background: var(--bg);
   color: var(--ink);
   min-height: 100vh;
+}
+
+/* ---------- Door backdrop (components/shell/DoorBackdrop.tsx) ----------
+   A fixed hotel corridor behind every page: rows of doors, tilted, alternate rows drifting in
+   opposite directions. Low contrast by design; surfaces sit on top of it. Page-level backgrounds
+   (the call canvas, the demo stage) are translucent so it shows through. */
+.door-backdrop {
+  --door: color-mix(in srgb, var(--surface) 62%, var(--bg));
+  --door-line: color-mix(in srgb, var(--line-2) 75%, transparent);
+  --door-plate: var(--surface);
+  --door-number: var(--ink-4);
+  --door-brass: color-mix(in srgb, var(--peach) 70%, var(--bg));
+  --door-carpet: color-mix(in srgb, var(--accent-weak) 70%, var(--bg));
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.42;
+}
+.db-field {
+  position: absolute;
+  top: -45vh;
+  left: -40vw;
+  width: 180vw;
+  height: 190vh;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  transform: rotate(-8deg);
+}
+.db-row {
+  flex: none;
+  margin-left: calc(-1 * var(--db-tile));
+  will-change: transform;
+  animation: db-drift 110s linear infinite;
+}
+.db-row-left {
+  animation-direction: reverse;
+}
+.db-row:nth-child(4n + 2) {
+  animation-duration: 130s;
+}
+.db-row:nth-child(4n + 3) {
+  animation-duration: 95s;
+}
+.db-row svg {
+  display: block;
+}
+@keyframes db-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--db-tile));
+  }
+}
+.db-door {
+  fill: var(--door);
+  stroke: var(--door-line);
+  stroke-width: 1.5;
+}
+.db-frame {
+  fill: none;
+  stroke: var(--door-line);
+  stroke-width: 1;
+}
+.db-panel {
+  fill: none;
+  stroke: var(--door-line);
+  stroke-width: 1.25;
+}
+.db-plate {
+  fill: var(--door-plate);
+  stroke: var(--door-line);
+}
+.db-number {
+  fill: var(--door-number);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.db-peep {
+  fill: var(--door-line);
+}
+.db-brass {
+  fill: var(--door-brass);
+}
+.db-carpet {
+  fill: var(--door-carpet);
+}
+.db-hanger path {
+  fill: var(--peach-weak);
+  stroke: color-mix(in srgb, var(--peach) 65%, transparent);
+  stroke-width: 1;
+}
+.db-hanger-hole {
+  fill: var(--door);
+}
+.db-hanger-text {
+  fill: color-mix(in srgb, var(--peach) 55%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  .door-backdrop {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .db-row {
+    animation: none;
+  }
 }
 h1,
 h2,
@@ -573,6 +688,10 @@ th {
 }
 .shell-main {
   min-width: 0;
+  /* The same veil as the customer line, pinned to the viewport so long pages look the same top to bottom. */
+  background: var(--page-veil);
+  background-image: var(--page-veil-washes);
+  background-attachment: fixed;
 }
 .page {
   max-width: 1480px;
@@ -644,8 +763,9 @@ th {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: var(--cl-bg);
-  background-image: radial-gradient(60% 55% at 12% 8%, var(--cl-peach-wash), transparent 70%), radial-gradient(45% 45% at 90% 20%, var(--cl-sage-wash), transparent 70%), radial-gradient(50% 40% at 50% 100%, var(--cl-peach-wash), transparent 70%);
+  /* Translucent so the door backdrop shows through (the shared page veil). */
+  background: var(--page-veil);
+  background-image: var(--page-veil-washes);
   color: var(--ink);
 }
 .cl-head {

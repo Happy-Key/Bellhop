@@ -2,7 +2,6 @@
 
 .story {
   position: relative;
-  background: var(--bg);
 }
 .story-back {
   position: fixed;
@@ -45,21 +44,22 @@
   top: 0;
   height: 100vh;
   overflow: hidden;
-  background: var(--bg);
+  /* Scene tints are translucent so the door backdrop shows through. */
+  background: transparent;
   color: var(--ink);
   transition: background-color 600ms ease, color 600ms ease;
 }
 .story-stage[data-scene="evidence"] {
-  background: var(--sunken);
+  background: color-mix(in srgb, var(--sunken) 70%, transparent);
 }
 .story-stage[data-scene="model"] {
-  background: color-mix(in srgb, var(--accent-weak) 55%, var(--bg));
+  background: color-mix(in srgb, var(--accent-weak) 45%, transparent);
 }
 .story-stage[data-scene="model"] .stage-title {
   color: var(--accent-ink);
 }
 .story-stage[data-scene="code"] {
-  background: var(--surface-inspect);
+  background: color-mix(in srgb, var(--surface-inspect) 75%, transparent);
 }
 
 .stage {

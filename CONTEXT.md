@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (claim-suite experiment pushed as a do-not-merge branch)_
+_Last updated: 2026-10-24 (hotel-door backdrop behind every page)_
 
 ## What this is
 
@@ -256,3 +256,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | **Finished claims no longer read "human review" on the customer line** (user report). `/call`'s existing-case picker showed the rule analysis `stage`, which stays `human_review` after a case is approved or decided. `cases.list` now returns the workstation's `statusLabel` / `attention` (shared `loadCaseStatus` in `convex/review.ts`, also used by the queue), and a decided or auto-approved case has no "question(s) waiting". Live check on `friendly-grouse-183`: Margaret's case `human_review` → "Approved automatically". 221 tests pass. Pushed |
 | 2026-10-24 | Developer tools panel: **Factory Droid row removed** (not planned; `integrationStatus` no longer reports it; CLAUDE.md, README and `docs/status.md` updated). **Cartesia no longer "partial"**: that label was hard-coded from before the browser call client and live agent existed; it now reads "configured" when the API key, agent id and tool secret are set (like Nessie and CRS). CLAUDE.md integration status updated. Pushed |
 | 2026-10-24 | Pushed the parked claim-suite work as **`experiment/claim-suite-do-not-merge`** (user request: keep it, never merge). The branch carries `DO_NOT_MERGE.md` and do-not-merge banners in its CONTEXT.md and porting notes; it was prepared in a separate worktree so the local Convex watcher never deployed it. Local branch renamed to match |
+| 2026-10-24 | **Hotel-door backdrop on every page** (user idea). `components/shell/DoorBackdrop.tsx`, rendered once in `app/layout.tsx`: a fixed, aria-hidden layer of 14 rows of doors (each row a floor, rooms 1501…201, a few "Do not disturb" hangers), tilted −8°, alternate rows drifting in opposite directions (95–130 s per tile), off for `prefers-reduced-motion`. Drawn with theme tokens (light and dark), low contrast (opacity 0.42 / 0.3 dark, lowered on request from 0.55 / 0.4). The call canvas and demo stage backgrounds became translucent so it shows through, and the staff pages (`.shell-main`: queue, case workspace, developer) got the same veil as the call page (shared `--page-veil` / `--page-veil-washes` tokens), so the pattern reads the same everywhere. Checked: screenshots of `/review`, `/call`, `/review/demo`; row motion measured in Chrome; `npm run verify` (221) and the 4 Playwright smoke tests pass. Committed locally, not pushed |
