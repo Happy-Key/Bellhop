@@ -1,5 +1,8 @@
 # CONTEXT.md: current project state
 
+> **DO NOT MERGE:** this is the parked `experiment/claim-suite-do-not-merge` branch, not the live project.
+> The current project is `foundation` (Bellhop UI). See `DO_NOT_MERGE.md`.
+
 > Living summary of where the project stands. **Update it on every prompt that changes anything**: change
 > the sections below and add an entry to the revision log at the bottom.
 > New agent? Start with `docs/agent-handoff.md` (self-contained briefing).

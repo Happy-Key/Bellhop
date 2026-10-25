@@ -1,5 +1,8 @@
 # Claim suite experiment: notes for porting
 
+> **DO NOT MERGE this branch** (`experiment/claim-suite-do-not-merge`). It predates the Bellhop UI; port
+> the pieces by hand onto `foundation` instead. See `DO_NOT_MERGE.md`.
+
 Written 2026-10-24 so this work can be carried to another branch (e.g. the frontend overhaul) later.
 The work lives on `foundation` in three commits on top of `5097cd3`:
 
@@ -9,7 +12,7 @@ The work lives on `foundation` in three commits on top of `5097cd3`:
 | `8817abf` | Fast Bitdeer case reasoning (`REASONING_EFFORT=low`), transient retry, lenient parsing, fairer verdicts |
 | `1a7814c` | Double-payment guard (AUTO-1 v3), reset that restores the Nessie seeds, dynamic customers, question tied to the plan |
 
-To port everything: `git cherry-pick c28ef4e 8817abf 1a7814c` (expect conflicts in UI files if the other
+To port everything, cherry-pick (never merge the branch): `git cherry-pick c28ef4e 8817abf 1a7814c` (expect conflicts in UI files if the other
 branch rewrote `/review` and `/call`; the backend and `lib/` pieces are mostly self-contained). To port
 selectively, use the per-feature file lists below.
 
