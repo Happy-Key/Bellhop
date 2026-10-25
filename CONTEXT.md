@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (Factory Droid removed from the developer panel; Cartesia shown as configured)_
+_Last updated: 2026-10-24 (claim-suite experiment pushed as a do-not-merge branch)_
 
 ## What this is
 
@@ -143,7 +143,7 @@ Rules that always hold:
 
 - **Main dev deployment:** run `npx convex env set REASONING_EFFORT low` on `dynamic-chihuahua-120` (or every case review there keeps timing out), and deploy this code to it.
 
-- **Claim-suite work (parked, not pushed):** local branch `claim-suite` (`ad7a191`, 4 commits on `5097cd3`) holds the 17-persona suite, `/review/suite` runner, `npm run reset:convex`, the AUTO-1 v3 double-payment guard, `REASONING_EFFORT`, and several bug fixes. Porting notes: `docs/claim-suite-experiment.md` on that branch. Decide whether to push the branch and/or port it onto Bellhop.
+- **Claim-suite work (parked, DO NOT MERGE):** pushed as `origin/experiment/claim-suite-do-not-merge` (5 commits on `5097cd3`, before the Bellhop UI). It holds the 17-persona suite, `/review/suite` runner, `npm run reset:convex`, the AUTO-1 v3 double-payment guard and several conversation fixes. Port pieces by hand using its `docs/claim-suite-experiment.md`; never merge it (it would undo Bellhop). `REASONING_EFFORT` and lenient parsing are already ported.
 
 - **Cartesia Playground (by hand), if not done yet:** paste the agent instructions from `docs/integrations.md`;
   enable **end_call** (description in the doc, pre-tool speech Off); set the **inactivity check-in to 20 s**.
@@ -255,3 +255,4 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | **Case reasoning timeouts fixed** (user report: every model call ended in a timeout). Diagnosis on `friendly-grouse-183`: statement reading 9/9 fine; case reviews 12/12 failed (10 timed out at exactly 60 s, 2 answered at ~54 s and were rejected over `investigation.findings` / `rulesConsulted`). Cause: Bellhop didn't send `reasoning_effort`, so GLM-5.3-Flash spent 8–9k thinking tokens. Ported from `claim-suite`: `REASONING_EFFORT` → `reasoning_effort` on both Bitdeer calls (`lib/providers/reasoning.ts`, `convex/reasoning.ts`, `convex/caseReasoning.ts`), and lenient investigation parsing (over-long lists cut to their caps, work-item extras defaulted, `rulesConsulted` normalized; `lib/domain/investigation.ts`). Pulled `5344872` first (rebased the CONTEXT note; revision-log conflict kept both). Live check: review done in 12.8 s with a model-chosen question. 220 tests pass. Pushed to `origin/foundation` (user request) |
 | 2026-10-24 | **Finished claims no longer read "human review" on the customer line** (user report). `/call`'s existing-case picker showed the rule analysis `stage`, which stays `human_review` after a case is approved or decided. `cases.list` now returns the workstation's `statusLabel` / `attention` (shared `loadCaseStatus` in `convex/review.ts`, also used by the queue), and a decided or auto-approved case has no "question(s) waiting". Live check on `friendly-grouse-183`: Margaret's case `human_review` → "Approved automatically". 221 tests pass. Pushed |
 | 2026-10-24 | Developer tools panel: **Factory Droid row removed** (not planned; `integrationStatus` no longer reports it; CLAUDE.md, README and `docs/status.md` updated). **Cartesia no longer "partial"**: that label was hard-coded from before the browser call client and live agent existed; it now reads "configured" when the API key, agent id and tool secret are set (like Nessie and CRS). CLAUDE.md integration status updated. Pushed |
+| 2026-10-24 | Pushed the parked claim-suite work as **`experiment/claim-suite-do-not-merge`** (user request: keep it, never merge). The branch carries `DO_NOT_MERGE.md` and do-not-merge banners in its CONTEXT.md and porting notes; it was prepared in a separate worktree so the local Convex watcher never deployed it. Local branch renamed to match |
