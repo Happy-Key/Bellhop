@@ -4,6 +4,13 @@
 
 Built at CalHacks 13.0. A working prototype on **synthetic data only**: no real customers, and every payout is a clearly labelled **simulated** deposit.
 
+## How we use Convex
+
+- Convex is the single source of truth: every case, statement, piece of evidence, model proposal and decision lives in typed, indexed tables (`convex/schema.ts`).
+- Cartesia's voice agent calls a Convex HTTP action after each customer statement, and that action returns the next question (`convex/http.ts`).
+- Model reasoning and payouts run as scheduled background actions; the claims queue, case workspace and call page update live through `useQuery`.
+- Full details, evidence and the commit log: [hackathon.md](hackathon.md).
+
 ---
 
 ## The problem
