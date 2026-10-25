@@ -1,4 +1,4 @@
-# CalHacks: Fraud Claims Investigator (prototype)
+# Bellhop: Fraud Claims Investigator
 
 A web-based investigator for suspected-fraud claims on U.S. consumer bank accounts. It records
 the customer's account of events, matches it against bank records retrieved from Capital One
