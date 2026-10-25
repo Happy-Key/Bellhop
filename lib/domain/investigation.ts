@@ -21,36 +21,60 @@ import { evidenceKindOf } from "./schemas";
 import type { CaseAnalysis } from "./workflow";
 
 const text = (max: number) => z.string().transform((s) => s.trim().slice(0, max));
-const refs = z.array(z.string()).max(10);
+/**
+ * A list the model may overfill: extra entries beyond the cap are dropped instead of rejecting the
+ * whole assessment (live 2026-10-24: whole assessments were lost to "investigation.findings").
+ * Nothing is invented; entries are only cut, and refs are still checked by validateInvestigation.
+ */
+const capped = <T extends z.ZodTypeAny>(item: T, max: number) => z.preprocess((v) => (Array.isArray(v) ? v.slice(0, max) : v), z.array(item).max(max));
+const refs = capped(z.string(), 10);
 
 export const WORK_STATUSES = ["in_progress", "awaiting_customer", "awaiting_bank", "done", "not_needed"] as const;
 export type WorkStatus = (typeof WORK_STATUSES)[number];
 
 export const InvestigationOutput = z.object({
   /** What is established, each with its evidence. */
-  findings: z.array(z.object({ text: text(300).pipe(z.string().min(1)), basis: z.enum(["reported", "corroborated"]), refs })).max(8),
+  findings: capped(z.object({ text: text(300).pipe(z.string().min(1)), basis: z.enum(["reported", "corroborated"]), refs }), 8),
   /** Working interpretations being tested. Not findings. */
-  hypotheses: z.array(z.object({ text: text(200).pipe(z.string().min(1)), status: z.enum(["open", "supported", "ruled_out"]), refs })).max(5),
+  hypotheses: capped(z.object({ text: text(200).pipe(z.string().min(1)), status: z.enum(["open", "supported", "ruled_out"]), refs }), 5),
   /** Material uncertainties. `blocking` = no disposition can be proposed until it is settled. */
-  uncertainties: z.array(z.object({ text: text(300).pipe(z.string().min(1)), blocking: z.boolean() })).max(6),
+  uncertainties: capped(z.object({ text: text(300).pipe(z.string().min(1)), blocking: z.boolean() }), 6),
   /** Meaningful investigative work for this case, chosen by the model. Keys stay stable across revisions. */
-  workItems: z
-    .array(
-      z.object({
-        key: z.string().regex(/^[a-z0-9][a-z0-9_-]{1,40}$/),
-        title: text(80).pipe(z.string().min(1)),
-        doneTitle: text(80).nullable(),
-        detail: text(240),
-        status: z.enum(WORK_STATUSES),
-        outcome: text(240).nullable(),
-        refs,
-      }),
-    )
-    .max(6),
+  workItems: capped(
+    z.object({
+      key: z.string().regex(/^[a-z0-9][a-z0-9_-]{1,40}$/),
+      title: text(80).pipe(z.string().min(1)),
+      // Optional extras default rather than reject: a missing doneTitle shouldn't cost the whole assessment.
+      doneTitle: text(80).nullable().default(null),
+      detail: text(240).default(""),
+      status: z.enum(WORK_STATUSES),
+      outcome: text(240).nullable().default(null),
+      refs: refs.default([]),
+    }),
+    6,
+  ),
   /** Why the assessment changed since the previous version, if it did. */
-  changes: z.array(z.object({ text: text(300).pipe(z.string().min(1)), refs })).max(5),
+  changes: capped(z.object({ text: text(300).pipe(z.string().min(1)), refs }), 5),
   /** Reference-registry rules (legislative-reference/) the model used to decide what is needed. Research reference only. */
-  rulesConsulted: z.array(z.object({ ruleId: z.string(), why: text(240) })).max(8).default([]),
+  // Lenient: a bare id ("R-E09") or another key name is normalized and anything else dropped, so a slip
+  // in this reference-only field can't cost the whole assessment (live 2026-10-24).
+  rulesConsulted: z
+    .preprocess(
+      (v) =>
+        Array.isArray(v)
+          ? v
+              .map((r) => {
+                if (typeof r === "string") return { ruleId: r, why: "" };
+                if (!r || typeof r !== "object") return null;
+                const o = r as Record<string, unknown>;
+                return { ruleId: o.ruleId ?? o.rule_id ?? o.id, why: o.why ?? "" };
+              })
+              .filter((r) => r && typeof r.ruleId === "string" && typeof r.why === "string")
+              .slice(0, 8)
+          : [],
+      z.array(z.object({ ruleId: z.string(), why: text(240) })),
+    )
+    .default([]),
 });
 export type Investigation = z.infer<typeof InvestigationOutput>;
 export type WorkItem = Investigation["workItems"][number];

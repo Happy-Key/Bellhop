@@ -654,3 +654,24 @@ describe("cases stored with an older analysis shape (live 2026-10-24)", () => {
     expect(rows.map((r) => r._id)).toContain(caseId);
   });
 });
+
+describe("customer line case list", () => {
+  it("shows a finished claim as decided, not waiting for human review, with no questions waiting", async () => {
+    const t = convexTest(schema, modules);
+    const caseId = await t.mutation(api.cases.createSynthetic, {});
+    await t.mutation(api.cases.submitStatement, { caseId, text: "I did not make the $23 purchase at Corner Grocer", clientEventId: "evt-00000001" });
+    const before = (await t.query(api.cases.list, {})).find((c) => c._id === caseId)!;
+    expect(before.attention).not.toBe("auto_approved");
+
+    // The claim is approved and paid (SIMULATED) under AUTO-1.
+    await t.run((ctx) =>
+      ctx.db.insert("reimbursementDecisions", {
+        caseId, txnRef: "T:eee555", amount: 23, policy: "AUTO-1@test", outcome: "auto_approved", checks: [], decidedAt: Date.now(),
+        payout: { simulated: true, status: "deposited", depositId: "d1", at: Date.now() },
+      }),
+    );
+    const after = (await t.query(api.cases.list, {})).find((c) => c._id === caseId)!;
+    expect(after).toMatchObject({ attention: "auto_approved", statusLabel: "Approved automatically", openCustomerQuestions: 0 });
+    expect(after.statusLabel).not.toMatch(/human review/i);
+  });
+});

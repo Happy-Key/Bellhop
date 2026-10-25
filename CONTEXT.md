@@ -7,7 +7,7 @@
 > facts), `docs/architecture.md` (design), `docs/claim-intake-design.md` (product design and
 > decisions), and `CLAUDE.md` (rules).
 
-_Last updated: 2026-10-24 (merged the text-chat, reviewer-question and auto-approval-category work into the Bellhop UI)_
+_Last updated: 2026-10-24 (claim-suite experiment pushed as a do-not-merge branch)_
 
 ## What this is
 
@@ -39,7 +39,7 @@ Rules that always hold:
 | Backend (Convex) | ✅ Main dev deployment `dev:dynamic-chihuahua-120`. ⚠️ On the user's machine (this working copy), **two `npx convex dev` watchers push every saved change to it**, so dev tracks this working copy (including uncommitted work), not a chosen commit. Dev runs `c0e064a`. `REASONING_PROVIDER=openai-compatible` and `CASE_REASONING` unset, so **Bitdeer extraction and whole-case reasoning are ON on dev**. `NESSIE_PERSONA_ACCOUNTS` set. A separate machine runs a watcher against the personal review deployment `friendly-grouse-183` (no Bitdeer key, so the rule fallback shows there) |
 | Bank records (Nessie) | ✅ Live: purchases **and deposits** (deposits drive the refund check; never matched as the disputed payment) |
 | Extraction (Bitdeer) | ✅ Live on dev: `zai-org/GLM-5.3-Flash`, 4–8 s per statement. ✅ **CalHacks promo active**; the $0.00 balance Bitdeer shows is a display bug. Refusals show on the case. Off switch: `npx convex env set REASONING_PROVIDER scripted` |
-| Case investigation (Bitdeer) | 🟡 Live on dev, **not yet rehearsed on purpose**. The model reassesses each case whenever it changes: findings (reported / corroborated), hypotheses, uncertainties, work items, the next question, and a proposed disposition (approve / deny / request information / escalate) with cited reasons, legal reading and drafts, planned against the **reference rule registry** (`legislative-reference/`). Every assessment is kept with a code-computed diff. Info requests and escalations apply automatically; approvals pay only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Off switch: `CASE_REASONING=off` |
+| Case investigation (Bitdeer) | 🟡 Live on dev, **not yet rehearsed on purpose**. ⚠️ **Needs `REASONING_EFFORT=low` on every deployment** (`npx convex env set REASONING_EFFORT low`): without it every case review timed out at 60 s (GLM-5.3-Flash thinks 8–9k tokens, 50–110 s); with it, 12–16 s (verified live on `friendly-grouse-183`, 12.8 s, model-chosen question). Set on `friendly-grouse-183`; **not yet on `dynamic-chihuahua-120`**. The model reassesses each case whenever it changes: findings (reported / corroborated), hypotheses, uncertainties, work items, the next question, and a proposed disposition (approve / deny / request information / escalate) with cited reasons, legal reading and drafts, planned against the **reference rule registry** (`legislative-reference/`). Every assessment is kept with a code-computed diff. Info requests and escalations apply automatically; approvals pay only if AUTO-1 passes, otherwise a person approves in `/review/<id>`; denials always need a person. Off switch: `CASE_REASONING=off` |
 | Voice (Cartesia) | ✅ Live and **re-tested by the user after the fixes ("much better")**. One question per turn (`question_id`): the model's question first, the rule question as the logged fallback (`rule_question_fallback`). Waits up to 12 s for extraction and 16 s in total with the reassessment (tool timeout 20 s). No "anything else?" acknowledgement turns; a wait line before every tool call (`pre_tool_speech: force`); one wrap-up question, then the closing with `end_call: true`; `/call` hangs up itself once the closing is heard. Tool definition applied live. **Whether the new agent instructions and Playground settings were pasted is unconfirmed** (see Waiting on the user) |
 | Text chat (customer) | ✅ Built, tested in headless Chrome on the review deployment: `/call` → **Chat by text**. Same backend turn as a call (`convex/chat.ts` → `recordVoiceUtterance` → `takeTurn`): `text` statements linked to the question asked, the same reviewer → model → rules question order, repeat limit, waits (12 s / 16 s), wrap-up question and closing (the chat ends on the closing); retried messages recorded once. On an existing case it lists what the bank is still waiting for and opens with the first question. Committed and pushed |
 | Reviewer questions | ✅ "Ask the customer" in `/review/<id>` (reviewer controls; the list sits in the Investigation panel): asked first on the customer's next call or chat, marked answered with the reply's ref, can be withdrawn; the model sees open ones; the queue puts the case under "Waiting on the customer" |
@@ -49,8 +49,8 @@ Rules that always hold:
 | Case control | ✅ **Delete** on `/` (`cases.remove`: the case and every row recorded for it, batched; payment origins and Nessie records stay; in-flight work leaves no orphans). **Call back** on `/call` via "An existing case" (DEMO ONLY, no logins); every new-report call opens a new case |
 | Payment-origin records | ✅ SYNTHETIC presets per transaction (case page dropdown); persona cases attach their own automatically |
 | Login / access control | ❌ None: every Convex function is public (synthetic data only) |
-| Factory Droid | ❌ Not started |
-| Checks | ✅ `npm run verify`: typecheck, lint, **218 tests**, build pass. ✅ `npm run test:e2e`: **4 Playwright smoke tests** (read-only, drive the installed Chrome) pass against a running dev server |
+| Factory Droid | 🚫 Dropped (user decision 2026-10-24) |
+| Checks | ✅ `npm run verify`: typecheck, lint, **221 tests**, build pass. ✅ `npm run test:e2e`: **4 Playwright smoke tests** (read-only, drive the installed Chrome) pass against a running dev server |
 
 ## Branch and git
 
@@ -94,7 +94,6 @@ Rules that always hold:
 7. **The redesign phases** in `docs/claim-intake-design.md`: per-payment fact model, screening results,
    disputes and recovery events, deadline estimates, documents.
 8. **Regulatory:** verify the 1005.6 and 1005.11 excerpts word for word (the CFPB FAQ excerpt is done).
-9. **Factory Droid loop.**
 
 ## Claims workstation (`/review`)
 
@@ -142,6 +141,10 @@ Rules that always hold:
 
 ## Waiting on the user
 
+- **Main dev deployment:** run `npx convex env set REASONING_EFFORT low` on `dynamic-chihuahua-120` (or every case review there keeps timing out), and deploy this code to it.
+
+- **Claim-suite work (parked, DO NOT MERGE):** pushed as `origin/experiment/claim-suite-do-not-merge` (5 commits on `5097cd3`, before the Bellhop UI). It holds the 17-persona suite, `/review/suite` runner, `npm run reset:convex`, the AUTO-1 v3 double-payment guard and several conversation fixes. Port pieces by hand using its `docs/claim-suite-experiment.md`; never merge it (it would undo Bellhop). `REASONING_EFFORT` and lenient parsing are already ported.
+
 - **Cartesia Playground (by hand), if not done yet:** paste the agent instructions from `docs/integrations.md`;
   enable **end_call** (description in the doc, pre-tool speech Off); set the **inactivity check-in to 20 s**.
   Also check the retention settings so audio isn't kept.
@@ -149,7 +152,6 @@ Rules that always hold:
   `CASE_REASONING` stays on for dev.
 - **Frontend branch:** push it, then tell the agent to pull.
 - **Housekeeping:** rotate the CRS password (it was pasted in chat once).
-- **Factory:** API key and `droid` CLI, when we reach that step.
 
 ## How to run
 
@@ -256,3 +258,9 @@ Configuration: see `README.md` and `.env.example`. Never paste keys into chat.
 | 2026-10-24 | Demo beats 0–1: the title (44–76 px) and the call surface are centred together as one block, the hint pinned to the bottom; beat 1 bubbles 18–24 px in a wider column |
 | 2026-10-24 | Wordmark bell reverted to the committed original (concierge and notification-bell variants were tried and withdrawn) |
 | 2026-10-24 | Committed the demo opening-beat sizing and the taller queue page bar (`npm run verify` passed: 218 tests) |
+| 2026-10-24 | On the second machine: fetched the Bellhop push (`ebe589b`). Local `foundation` had 4 unpushed claim-suite commits; they were moved to a new local branch `claim-suite` (`ad7a191`), the personal review deployment `friendly-grouse-183` was emptied with that branch's reset (its schema had a `suiteRuns` table Bellhop lacks), and local `foundation` was reset to `origin/foundation`. Bellhop deployed to `friendly-grouse-183`; `npm run verify` passes (218 tests); `/review`, `/review/demo` and `/call` render |
+| 2026-10-24 | **Case reasoning timeouts fixed** (user report: every model call ended in a timeout). Diagnosis on `friendly-grouse-183`: statement reading 9/9 fine; case reviews 12/12 failed (10 timed out at exactly 60 s, 2 answered at ~54 s and were rejected over `investigation.findings` / `rulesConsulted`). Cause: Bellhop didn't send `reasoning_effort`, so GLM-5.3-Flash spent 8–9k thinking tokens. Ported from `claim-suite`: `REASONING_EFFORT` → `reasoning_effort` on both Bitdeer calls (`lib/providers/reasoning.ts`, `convex/reasoning.ts`, `convex/caseReasoning.ts`), and lenient investigation parsing (over-long lists cut to their caps, work-item extras defaulted, `rulesConsulted` normalized; `lib/domain/investigation.ts`). Pulled `5344872` first (rebased the CONTEXT note; revision-log conflict kept both). Live check: review done in 12.8 s with a model-chosen question. 220 tests pass. Pushed to `origin/foundation` (user request) |
+| 2026-10-24 | **Finished claims no longer read "human review" on the customer line** (user report). `/call`'s existing-case picker showed the rule analysis `stage`, which stays `human_review` after a case is approved or decided. `cases.list` now returns the workstation's `statusLabel` / `attention` (shared `loadCaseStatus` in `convex/review.ts`, also used by the queue), and a decided or auto-approved case has no "question(s) waiting". Live check on `friendly-grouse-183`: Margaret's case `human_review` → "Approved automatically". 221 tests pass. Pushed |
+| 2026-10-24 | Developer tools panel: **Factory Droid row removed** (not planned; `integrationStatus` no longer reports it; CLAUDE.md, README and `docs/status.md` updated). **Cartesia no longer "partial"**: that label was hard-coded from before the browser call client and live agent existed; it now reads "configured" when the API key, agent id and tool secret are set (like Nessie and CRS). CLAUDE.md integration status updated. Pushed |
+| 2026-10-24 | Pushed the parked claim-suite work as **`experiment/claim-suite-do-not-merge`** (user request: keep it, never merge). The branch carries `DO_NOT_MERGE.md` and do-not-merge banners in its CONTEXT.md and porting notes; it was prepared in a separate worktree so the local Convex watcher never deployed it. Local branch renamed to match |
+| 2026-10-24 | Merged `origin/foundation` (reasoning timeout fix, customer-line status, developer panel cleanup, context notes) into the UI work; only `CONTEXT.md` overlapped |

@@ -7,7 +7,7 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { OpenAICompatibleReasoningProvider } from "../lib/providers/reasoning";
+import { OpenAICompatibleReasoningProvider, reasoningEffortFromEnv } from "../lib/providers/reasoning";
 import { redact } from "../lib/providers/errors";
 
 export const interpretLive = internalAction({
@@ -30,6 +30,7 @@ export const interpretLive = internalAction({
       apiKey: REASONING_API_KEY,
       model: REASONING_MODEL,
       providerLabel: process.env.REASONING_PROVIDER_LABEL ?? "openai-compatible",
+      reasoningEffort: reasoningEffortFromEnv(process.env.REASONING_EFFORT),
     });
     try {
       const result = await provider.interpret(input);

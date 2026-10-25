@@ -55,7 +55,6 @@ Copy names from `.env.example`. Never commit `.env.local` and never paste keys i
 | `.env.local` (auto) | `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL` |
 | **Convex env** (`npx convex env set NAME value`) | `NESSIE_API_KEY`, `NESSIE_DEMO_ACCOUNT_ID`, `REASONING_*`, `CARTESIA_API_KEY`, `CARTESIA_AGENT_ID`, `VOICE_TOOL_SECRET`, later `CRS_*` |
 | `.env.local` (scripts only) | `NESSIE_API_KEY`, `NESSIE_DEMO_ACCOUNT_ID` for `seed:nessie` / `live:nessie` |
-| Developer shell only | `FACTORY_API_KEY` (future) |
 
 Convex functions read **only** the Convex deployment environment.
 

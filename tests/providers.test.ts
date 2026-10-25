@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NessieClient, retrieveAccountTransactions } from "@/lib/providers/nessie";
-import { OpenAICompatibleReasoningProvider } from "@/lib/providers/reasoning";
+import { OpenAICompatibleReasoningProvider, reasoningEffortFromEnv } from "@/lib/providers/reasoning";
 import { ProviderError, redact, type FetchLike } from "@/lib/providers/errors";
 import { voiceIdempotencyKey, voiceUtteranceKey } from "@/lib/domain/idempotency";
 
@@ -142,6 +142,26 @@ describe("OpenAI-compatible reasoning provider (mocked)", () => {
     expect(sent!.url).toBe("https://api-inference.bitdeer.ai/v1/chat/completions");
     expect(sent!.auth).toBe("Bearer k");
     expect(JSON.parse(sent!.body.messages[1]!.content)).toMatchObject({ statement: "Me.", questionAsked: expect.stringContaining("personally enter and send") });
+  });
+});
+
+describe("reasoning effort (REASONING_EFFORT)", () => {
+  const out = { amounts: [], dates: [], merchantTerms: [], authorization: "unspecified", credentialSharing: "unspecified", scamIndicators: [], findings: [], followUpQuestion: null };
+  const ctx = { statement: { ref: "S1", text: "x", receivedAt: 0 }, priorStatements: [], citableRefs: ["S1"] } as unknown as Parameters<OpenAICompatibleReasoningProvider["interpret"]>[0];
+  const sent = async (reasoningEffort: ReturnType<typeof reasoningEffortFromEnv>) => {
+    let body: Record<string, unknown> = {};
+    const p = new OpenAICompatibleReasoningProvider({ baseUrl: "https://x.invalid/v1", apiKey: "k", model: "m", providerLabel: "bitdeer", reasoningEffort }, async (_url, init) => {
+      body = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] }));
+    });
+    await p.interpret(ctx);
+    return body;
+  };
+
+  it("sends reasoning_effort only when configured, and only a known value", async () => {
+    expect((await sent(reasoningEffortFromEnv("low"))).reasoning_effort).toBe("low");
+    expect(await sent(reasoningEffortFromEnv(undefined))).not.toHaveProperty("reasoning_effort");
+    expect(reasoningEffortFromEnv("max")).toBeUndefined();
   });
 });
 

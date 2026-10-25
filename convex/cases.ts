@@ -6,13 +6,18 @@ import { currentEvidence, logActivity, recomputeAnalysis, recordStatement } from
 import { transactionFields } from "./validators";
 import { DEMO_CUSTOMER_LABEL } from "../lib/fixtures/demo";
 import { applyPersonaOrigins } from "./personas";
+import { loadCaseStatus } from "./review";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
     const cases = await ctx.db.query("cases").order("desc").take(50);
-    return cases.map((c) => {
+    return Promise.all(cases.map(async (c) => {
       const analysis = c.analysis as { stage?: string; questions?: { audience: string }[]; recommendation?: { action: string } } | null;
+      // The workstation's status, not the rule analysis stage: a decided case stays at stage
+      // "human_review" forever, which read as "waiting for human review" on /call.
+      const { status } = await loadCaseStatus(ctx, c);
+      const finished = status.attention === "decided" || status.attention === "auto_approved";
       return {
         _id: c._id,
         title: c.title,
@@ -21,10 +26,13 @@ export const list = query({
         customerLabel: c.customerLabel,
         demoPersonaId: c.demoPersonaId ?? null,
         recommendation: analysis?.recommendation?.action ?? null,
-        /** Questions waiting on the customer (the /call page shows which cases need a call back). */
-        openCustomerQuestions: analysis?.questions?.filter((q) => q.audience === "customer").length ?? 0,
+        /** Where the case stands, as the claims queue shows it ("Approved automatically", "Decided", …). */
+        statusLabel: status.statusLabel,
+        attention: status.attention,
+        /** Questions waiting on the customer (the /call page shows which cases need a call back). None once the case is decided. */
+        openCustomerQuestions: finished ? 0 : (analysis?.questions?.filter((q) => q.audience === "customer").length ?? 0),
       };
-    });
+    }));
   },
 });
 

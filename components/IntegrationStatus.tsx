@@ -33,8 +33,9 @@ export function IntegrationStatus() {
           <tr>
             <td>Cartesia (voice)</td>
             <td>
-              <span className="label notimpl">partial</span>
-              API key {yes(s.cartesia.apiKey)}, agent id {yes(s.cartesia.agentId)}, tool secret {yes(s.cartesia.toolSecret)}. {s.cartesia.status}.
+              <span className={`label ${s.cartesia.status === "configured" ? "live" : "error"}`}>{s.cartesia.status.replace(/_/g, " ")}</span>
+              API key {yes(s.cartesia.apiKey)}, agent id {yes(s.cartesia.agentId)}, tool secret {yes(s.cartesia.toolSecret)}. Managed Agent voice calls from the browser
+              (short-lived agent tokens), with the webhook tool recording each turn.
             </td>
           </tr>
           <tr>
@@ -49,12 +50,6 @@ export function IntegrationStatus() {
             <td>
               <span className="label synthetic">simulated</span>
               {s.payout.status}
-            </td>
-          </tr>
-          <tr>
-            <td>Factory Droid (reviewed improvements)</td>
-            <td>
-              <span className="label notimpl">{s.factory.status.replace(/_/g, " ")}</span>
             </td>
           </tr>
         </tbody>
